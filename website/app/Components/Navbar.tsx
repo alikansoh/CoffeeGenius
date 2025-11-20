@@ -447,7 +447,7 @@ export default function Navbar() {
               {/* slightly larger logo inside the opened mobile nav (the "second logo") */}
               <Image src={logoSrc} alt="Logo" width={64} height={64} className="object-contain" />
               <div className="font-semibold" style={{ color: COLORS.primary }}>
-                Coffee Store
+                Coffee Genius
               </div>
             </div>
 
