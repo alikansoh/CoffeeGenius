@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import {
   ShoppingCart,
   Coffee,
@@ -30,6 +30,9 @@ const PLACEHOLDER_TEXT = "Search coffee, beans, equipment...";
 
 export default function Navbar() {
   const router = useRouter();
+  const pathnameRaw = usePathname();
+  const pathname = normalizePath(pathnameRaw ?? "/");
+
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [cartCount] = useState(3);
@@ -303,17 +306,23 @@ export default function Navbar() {
 
             {/* Center: Nav */}
             <nav className="flex items-center gap-1" aria-label="Primary">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150"
-                  style={{ color: COLORS.primary }}
-                >
-                  {link.icon}
-                  <span>{link.label}</span>
-                </Link>
-              ))}
+              {navLinks.map((link) => {
+                const active = isLinkActive(link.href, pathname);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150 ${
+                      active ? "bg-gray-100 font-semibold" : ""
+                    }`}
+                    style={{ color: COLORS.primary }}
+                  >
+                    {link.icon}
+                    <span>{link.label}</span>
+                  </Link>
+                );
+              })}
             </nav>
 
             {/* Right actions (only cart on desktop; search moved to its own row below) */}
@@ -506,18 +515,24 @@ export default function Navbar() {
           </form>
 
           <div className="mt-2 space-y-1">
-            {navLinks.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                onClick={() => setMobileOpen(false)}
-                className="flex items-center gap-3 w-full text-left py-3 px-4 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150"
-                style={{ color: COLORS.primary }}
-              >
-                {link.icon}
-                <span>{link.label}</span>
-              </Link>
-            ))}
+            {navLinks.map((link) => {
+              const active = isLinkActive(link.href, pathname);
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setMobileOpen(false)}
+                  aria-current={active ? "page" : undefined}
+                  className={`flex items-center gap-3 w-full text-left py-3 px-4 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150 ${
+                    active ? "bg-gray-100 font-semibold" : ""
+                  }`}
+                  style={{ color: COLORS.primary }}
+                >
+                  {link.icon}
+                  <span>{link.label}</span>
+                </Link>
+              );
+            })}
           </div>
 
           {/* Removed the "Contact us" link here because you already have a Contact button elsewhere */}
@@ -525,4 +540,25 @@ export default function Navbar() {
       </div>
     </nav>
   );
+}
+
+/* Helpers */
+
+function normalizePath(p: string) {
+  // Remove trailing slash except when root "/"
+  if (!p) return "/";
+  if (p.length > 1 && p.endsWith("/")) return p.slice(0, -1);
+  return p;
+}
+
+function isLinkActive(href: string, currentPath: string) {
+  const nh = normalizePath(href);
+  const cp = normalizePath(currentPath);
+
+  if (nh === "/") {
+    return cp === "/";
+  }
+
+  // exact match or parent of a deeper route (so /coffee matches /coffee/espresso)
+  return cp === nh || cp.startsWith(nh + "/");
 }
