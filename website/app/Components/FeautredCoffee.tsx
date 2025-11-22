@@ -94,7 +94,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     };
   }, [products.length]);
 
-  // Define scroll functions first
   function scrollByView(direction: "left" | "right") {
     const container = containerRef.current;
     if (!container) return;
@@ -110,28 +109,28 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     if (!container) return;
     const card = container.children[i] as HTMLElement | undefined;
     if (!card) return;
-    container.scrollTo({ left: card.offsetLeft - 16, behavior: "smooth" });
+    const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
+    container.scrollTo({ left: offset, behavior: "smooth" });
   }
 
   useEffect(() => {
-    function centerMiddleIfLarge() {
+    function centerFirstCard() {
       const container = containerRef.current;
       if (!container) return;
       const isLarge = window.innerWidth >= 1024;
-      if (!isLarge) return;
-      const mid = Math.floor(products.length / 2);
-      const card = container.children[mid] as HTMLElement | undefined;
+      const targetIndex = isLarge ? Math.floor(products.length / 2) : 0;
+      const card = container.children[targetIndex] as HTMLElement | undefined;
       if (!card) return;
       const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
       container.scrollTo({ left: offset, behavior: "smooth" });
     }
 
-    centerMiddleIfLarge();
+    centerFirstCard();
 
     let t: number | undefined;
     function onResize() {
       window.clearTimeout(t);
-      t = window.setTimeout(() => centerMiddleIfLarge(), 120);
+      t = window.setTimeout(() => centerFirstCard(), 120);
     }
     window.addEventListener("resize", onResize);
     return () => {
@@ -140,7 +139,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     };
   }, [products.length]);
 
-  // Auto-scroll when not hovering
   useEffect(() => {
     if (!mounted || isHovering) return;
     
@@ -151,7 +149,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       const nextIndex = (activeIndex + 1) % products.length;
       const card = container.children[nextIndex] as HTMLElement | undefined;
       if (!card) return;
-      container.scrollTo({ left: card.offsetLeft - 16, behavior: "smooth" });
+      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
+      container.scrollTo({ left: offset, behavior: "smooth" });
     }, 4000);
 
     return () => clearInterval(interval);
@@ -233,20 +232,22 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
         <div className="relative">
           <div
             ref={containerRef}
-            className="flex gap-6 overflow-x-auto pb-6 pt-2 px-4 -mx-4 snap-x snap-mandatory scrollbar-hide"
+            className="flex gap-5 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide"
             role="list"
             aria-label="Best seller products"
             style={{ 
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
-              msOverflowStyle: "none"
+              msOverflowStyle: "none",
+              paddingLeft: "calc(50% - 41%)",
+              paddingRight: "calc(50% - 41%)",
             }}
           >
             {products.map((p, i) => (
               <article
                 key={p.id}
                 role="listitem"
-                className={`snap-start shrink-0 w-[280px] sm:w-[300px] md:w-[320px] lg:w-[300px] transition-all duration-500 ${
+                className={`snap-center shrink-0 w-[82%] sm:w-[46%] md:w-[32%] lg:w-[24%] xl:w-[22%] transition-all duration-500 ${
                   mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
                 }`}
                 style={{ transitionDelay: `${i * 100}ms` }}
@@ -254,7 +255,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 <div className={`group rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-500 hover:shadow-2xl ${
                   activeIndex === i ? "scale-[1.02] shadow-xl" : "hover:-translate-y-2"
                 }`}>
-                  {/* Image container */}
                   <div className="relative w-full aspect-[4/5] bg-neutral-100 overflow-hidden">
                     {p.img ? (
                       <Image
@@ -267,10 +267,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                       <div className="w-full h-full bg-gradient-to-br from-neutral-200 to-neutral-100" />
                     )}
                     
-                    {/* Animated overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                     
-                    {/* Badge with pulse */}
                     <div className="absolute top-3 left-3">
                       <span className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full transition-all duration-300 ${
                         activeIndex === i ? "animate-pulse" : ""
@@ -279,7 +277,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                       </span>
                     </div>
 
-                    {/* Floating quick add button on hover */}
                     <div className="absolute bottom-4 left-4 right-4 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
                       <button
                         onClick={() => handleAdd(p)}
@@ -291,7 +288,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                     </div>
                   </div>
 
-                  {/* Content */}
                   <div className="p-5 flex flex-col flex-1 bg-white">
                     {p.origin && (
                       <p className="text-[11px] font-medium uppercase tracking-wider text-neutral-400 mb-1">
@@ -327,7 +323,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                         }`}
                         aria-label={`Add ${p.name} to cart`}
                       >
-                        {/* Ripple effect on added */}
                         {addedMap[p.id] && (
                           <span className="absolute inset-0 bg-green-400 animate-ping opacity-30 rounded-full" />
                         )}
@@ -350,7 +345,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             ))}
           </div>
 
-          {/* Animated progress dots */}
           <div className="mt-8 flex items-center justify-center gap-3">
             {products.map((_, i) => (
               <button
@@ -359,18 +353,15 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 className="relative p-1 group"
                 aria-label={`Go to product ${i + 1}`}
               >
-                {/* Background ring on hover */}
                 <span className={`absolute inset-0 rounded-full transition-all duration-300 ${
                   activeIndex === i ? "bg-black/5 scale-150" : "group-hover:bg-black/5 group-hover:scale-150"
                 }`} />
                 
-                {/* Dot */}
                 <span className={`relative block rounded-full transition-all duration-500 ${
                   activeIndex === i
                     ? "w-8 h-2 bg-black"
                     : "w-2 h-2 bg-neutral-300 group-hover:bg-neutral-500"
                 }`}>
-                  {/* Active dot progress indicator */}
                   {activeIndex === i && !isHovering && (
                     <span 
                       className="absolute inset-0 bg-neutral-400 rounded-full origin-left"
