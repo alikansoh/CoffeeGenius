@@ -110,8 +110,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     if (!container) return;
     const card = container.children[i] as HTMLElement | undefined;
     if (!card) return;
-    const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
-    container.scrollTo({ left: offset, behavior: "smooth" });
+    container.scrollTo({ left: card.offsetLeft - 16, behavior: "smooth" });
   }
 
   useEffect(() => {
@@ -152,8 +151,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       const nextIndex = (activeIndex + 1) % products.length;
       const card = container.children[nextIndex] as HTMLElement | undefined;
       if (!card) return;
-      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
-      container.scrollTo({ left: offset, behavior: "smooth" });
+      container.scrollTo({ left: card.offsetLeft - 16, behavior: "smooth" });
     }, 4000);
 
     return () => clearInterval(interval);
@@ -235,7 +233,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
         <div className="relative">
           <div
             ref={containerRef}
-            className="flex gap-5 overflow-x-auto pb-4 snap-x snap-mandatory scroll-pl-4 scrollbar-hide"
+            className="flex gap-6 overflow-x-auto pb-6 pt-2 px-4 -mx-4 snap-x snap-mandatory scrollbar-hide"
             role="list"
             aria-label="Best seller products"
             style={{ 
@@ -248,7 +246,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
               <article
                 key={p.id}
                 role="listitem"
-                className={`snap-center shrink-0 w-[82%] sm:w-[46%] md:w-[32%] lg:w-[24%] xl:w-[22%] transition-all duration-500 ${
+                className={`snap-start shrink-0 w-[280px] sm:w-[300px] md:w-[320px] lg:w-[300px] transition-all duration-500 ${
                   mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-8"
                 }`}
                 style={{ transitionDelay: `${i * 100}ms` }}
