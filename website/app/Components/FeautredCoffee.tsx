@@ -28,7 +28,7 @@ const defaultProducts: Product[] = [
     origin: "House Blend",
     notes: "Rich chocolate, silky body, long finish",
     price: 14.0,
-    img: "/placeholder-espresso.jpg",
+    img: "/test.webp",
   },
   {
     id: "ethiopian-light",
@@ -36,7 +36,7 @@ const defaultProducts: Product[] = [
     origin: "Yirgacheffe, Ethiopia",
     notes: "Bright citrus, floral notes, honey sweetness",
     price: 12.5,
-    img: "/placeholder-bean.jpg",
+    img: "/test.webp",
   },
   {
     id: "colombian-medium",
@@ -44,7 +44,7 @@ const defaultProducts: Product[] = [
     origin: "Huila, Colombia",
     notes: "Caramel sweetness, balanced body, chocolate",
     price: 11.0,
-    img: "/placeholder-bean2.jpg",
+    img: "/test.webp",
   },
   {
     id: "sumatra-dark",
@@ -52,7 +52,7 @@ const defaultProducts: Product[] = [
     origin: "Sumatra, Indonesia",
     notes: "Earthy, spicy, full body",
     price: 13.5,
-    img: "/placeholder-bean3.jpg",
+    img: "/test.webp",
   },
 ];
 
@@ -296,7 +296,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                     )}
                     
                     <h3
-                      className="text-base font-semibold mb-2 leading-snug group-hover:text-neutral-600 transition-colors"
+                      className="text-base font-bold mb-2 leading-snug group-hover:text-neutral-600 transition-colors"
                       style={{ color: COLORS.primary }}
                     >
                       {p.name}
@@ -373,6 +373,16 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 </span>
               </button>
             ))}
+          </div>
+
+          <div className="mt-10 flex justify-center">
+            <a
+              href="/shop"
+              className="group inline-flex items-center gap-2 px-8 py-4 bg-black text-white font-semibold rounded-full hover:bg-neutral-800 transition-all duration-300 hover:shadow-lg active:scale-95"
+            >
+              View All Coffee
+              <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+            </a>
           </div>
         </div>
       </div>
