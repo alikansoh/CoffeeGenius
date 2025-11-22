@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useRef } from "react";
 import EspressoMachinesIcon from "../../public/EspressoMachinesIcon";
+import CartDrawer from "./CartDrawer";
+import useCart from "../store/CartStore";
 
 const COLORS = {
   primary: "#111827",
@@ -35,7 +37,6 @@ export default function Navbar() {
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
-  const [cartCount] = useState(3);
   const [query, setQuery] = useState("");
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const desktopInputRef = useRef<HTMLInputElement | null>(null);
@@ -48,6 +49,18 @@ export default function Navbar() {
   const typingIntervalRef = useRef<number | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+
+  // Hydration guard for dynamic UI (cart badge)
+  const [mounted, setMounted] = useState(false);
+
+  // Cart hooks (Zustand)
+  const openCart = useCart((s) => s.open);
+  const totalCount = useCart((s) => s.totalCount());
+
+  useEffect(() => {
+    // mark component as mounted on client so we don't render client-only badges during SSR
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -220,8 +233,6 @@ export default function Navbar() {
             >
               <span className="sr-only">{mobileOpen ? "Close menu" : "Open menu"}</span>
 
-              {/* When menu is open show a larger X icon (back svg X) as requested,
-                  otherwise show the hamburger indicator */}
               {mobileOpen ? (
                 <X size={26} color={COLORS.primary} />
               ) : (
@@ -274,19 +285,20 @@ export default function Navbar() {
                 />
               </button>
 
-              {/* Cart */}
-              <Link
-                href="/cart"
+              {/* Cart (opens drawer) */}
+              <button
+                type="button"
+                onClick={() => openCart()}
+                aria-label="Open cart"
                 className="relative flex items-center justify-center w-10 h-10"
-                aria-label="View cart"
               >
                 <ShoppingCart size={24} style={{ color: COLORS.black }} />
-                {cartCount > 0 && (
+                {mounted && totalCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {cartCount}
+                    {totalCount}
                   </span>
                 )}
-              </Link>
+              </button>
             </div>
           </div>
 
@@ -327,18 +339,19 @@ export default function Navbar() {
 
             {/* Right actions (only cart on desktop; search moved to its own row below) */}
             <div className="flex items-center gap-4">
-              <Link
-                href="/cart"
+              <button
+                type="button"
+                onClick={() => openCart()}
+                aria-label="Open cart"
                 className="relative flex items-center justify-center w-10 h-10"
-                aria-label="View cart"
               >
                 <ShoppingCart size={24} style={{ color: COLORS.black }} />
-                {cartCount > 0 && (
+                {mounted && totalCount > 0 && (
                   <span className="absolute -top-1 -right-1 bg-black text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {cartCount}
+                    {totalCount}
                   </span>
                 )}
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -453,7 +466,6 @@ export default function Navbar() {
         <div className="flex flex-col p-4 pb-6 max-h-[80vh] overflow-y-auto">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
-              {/* slightly larger logo inside the opened mobile nav (the "second logo") */}
               <Image src={logoSrc} alt="Logo" width={64} height={64} className="object-contain" />
               <div className="font-semibold" style={{ color: COLORS.primary }}>
                 Coffee Genius
@@ -470,7 +482,7 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* Search row inside mobile menu for quick access - inline input */}
+          {/* Search row inside mobile menu */}
           <form
             onSubmit={(e) => handleSearchSubmit(e, true)}
             className="flex items-center gap-2 w-full text-left py-3 px-2 rounded-lg font-medium transition-colors duration-150"
@@ -534,10 +546,11 @@ export default function Navbar() {
               );
             })}
           </div>
-
-          {/* Removed the "Contact us" link here because you already have a Contact button elsewhere */}
         </div>
       </div>
+
+      {/* Cart Drawer (reads/writes Zustand store) */}
+      <CartDrawer />
     </nav>
   );
 }
