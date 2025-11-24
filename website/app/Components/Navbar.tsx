@@ -27,7 +27,7 @@ const COLORS = {
 
 const logoSrc = "/logo.png";
 
-// typing placeholder text (you can add more phrases to rotate)
+// placeholder text (non-layout animated - fade + blinking caret for best performance on iOS Safari)
 const PLACEHOLDER_TEXT = "Search coffee, beans, equipment...";
 
 export default function Navbar() {
@@ -41,17 +41,6 @@ export default function Navbar() {
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const desktopInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Removed animated-placeholder React state to avoid frequent re-renders that caused jank in Safari.
-  // Instead we'll update input.placeholder directly via refs.
-  const typingIntervalRef = useRef<number | null>(null);
-  const typingTimeoutRef = useRef<number | null>(null);
-  const caretIntervalRef = useRef<number | null>(null);
-  const mountedRef = useRef(true);
-
-  // caret visibility and current typed text as refs (DOM-only)
-  const caretVisibleRef = useRef(true);
-  const currentTypedRef = useRef("");
-
   // Hydration guard for dynamic UI (cart badge)
   const [mounted, setMounted] = useState(false);
 
@@ -59,7 +48,7 @@ export default function Navbar() {
   const openCart = useCart((s) => s.open);
   const totalCount = useCart((s) => s.totalCount());
 
-  // New: only user-controlled expanded search. When false nothing (zero height) is rendered.
+  // User-controlled expanded search (desktop)
   const [searchOpen, setSearchOpen] = useState(false);
 
   // scroll helpers
@@ -67,17 +56,10 @@ export default function Navbar() {
   const scrollTicking = useRef(false);
 
   useEffect(() => {
-    // mark component as mounted on client so we don't render client-only badges during SSR
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-      clearTypingTimers();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -92,168 +74,8 @@ export default function Navbar() {
   useEffect(() => {
     if (mobileSearchOpen) {
       setTimeout(() => mobileInputRef.current?.focus(), 50);
-      // restart typing loop when overlay opens (only if user hasn't typed)
-      if (query === "") startLoopTyping();
     }
-  }, [mobileSearchOpen, query]);
-
-  // restart typing when mobile menu opens (so inline mobile search types)
-  useEffect(() => {
-    if (mobileOpen && query === "") {
-      startLoopTyping();
-    }
-  }, [mobileOpen, query]);
-
-  // Start typing on mount (infinite loop) unless user typed
-  useEffect(() => {
-    if (query === "") startLoopTyping();
-    return () => {
-      clearTypingTimers();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // When the user starts typing (query becomes non-empty) stop the animation immediately
-  useEffect(() => {
-    if (query !== "") {
-      clearTypingTimers();
-      // ensure placeholders are cleared while user types
-      setPlaceholderText("", false);
-    } else {
-      // restart the loop if query was cleared
-      startLoopTyping();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  function clearTypingTimers() {
-    if (typingIntervalRef.current) {
-      window.clearTimeout(typingIntervalRef.current);
-      typingIntervalRef.current = null;
-    }
-    if (typingTimeoutRef.current) {
-      window.clearTimeout(typingTimeoutRef.current);
-      typingTimeoutRef.current = null;
-    }
-    if (caretIntervalRef.current) {
-      window.clearInterval(caretIntervalRef.current);
-      caretIntervalRef.current = null;
-    }
-    // clear any placeholder text on inputs when timers stop
-    if (query !== "") {
-      setPlaceholderText("", false);
-    }
-  }
-
-  // Update input placeholders directly to avoid React re-renders
-  function setPlaceholderText(text: string, useCaret = true) {
-    currentTypedRef.current = text;
-    const caret = useCaret && caretVisibleRef.current ? "|" : "";
-    const val = text ? text + (useCaret ? caret : "") : "";
-
-    const updateIfAllowed = (el: HTMLInputElement | null) => {
-      if (!el) return;
-      // avoid overwriting placeholder while the input is focused (user might be typing)
-      if (document.activeElement === el) {
-        el.placeholder = "";
-      } else {
-        el.placeholder = val;
-      }
-    };
-
-    updateIfAllowed(desktopInputRef.current);
-    updateIfAllowed(mobileInputRef.current);
-  }
-
-  // Typing animation implementation (infinite loop unless user types)
-  function startLoopTyping() {
-    // Respect prefers-reduced-motion — don't animate if user prefers reduced motion
-    if (typeof window !== "undefined") {
-      const prefersReduced =
-        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (prefersReduced) {
-        setPlaceholderText(PLACEHOLDER_TEXT, false);
-        return;
-      }
-    }
-
-    clearTypingTimers();
-
-    const text = PLACEHOLDER_TEXT;
-    const typingSpeed = 30; // ms per character
-    const pauseAfterFinish = 1400; // ms to wait after full text before clearing and restarting
-    let idx = 0;
-
-    // start caret blink interval (DOM-only)
-    caretVisibleRef.current = true;
-    caretIntervalRef.current = window.setInterval(() => {
-      caretVisibleRef.current = !caretVisibleRef.current;
-      // only update placeholder when there's typed text and user hasn't typed
-      if (currentTypedRef.current && query === "") {
-        setPlaceholderText(currentTypedRef.current, true);
-      }
-    }, 500);
-
-    function step() {
-      // stop if component unmounted or user started typing
-      if (!mountedRef.current || query !== "") return;
-
-      idx += 1;
-      const current = text.slice(0, idx);
-      setPlaceholderText(current, true);
-
-      if (idx < text.length) {
-        typingIntervalRef.current = window.setTimeout(step, typingSpeed);
-      } else {
-        // finished typing, wait then clear and restart
-        typingTimeoutRef.current = window.setTimeout(() => {
-          if (!mountedRef.current || query !== "") return;
-          setPlaceholderText("", false);
-          idx = 0;
-          // short pause before typing again
-          typingTimeoutRef.current = window.setTimeout(() => {
-            if (!mountedRef.current || query !== "") return;
-            step();
-          }, 300);
-        }, pauseAfterFinish);
-      }
-    }
-
-    // initialize placeholder to empty then start
-    setPlaceholderText("", false);
-    step();
-  }
-
-  function getPlaceholderWithCaret() {
-    // We no longer use React state for the animated placeholder; inputs are updated via refs.
-    // Return empty so React doesn't manage the placeholder prop.
-    if (query !== "") return "";
-    return undefined as unknown as string;
-  }
-
-  function handleSearchSubmit(e?: React.FormEvent, closeMenu = false) {
-    e?.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    if (closeMenu) setMobileOpen(false);
-    setMobileSearchOpen(false);
-    setSearchOpen(false);
-  }
-
-  const navLinks = [
-    { href: "/", label: "Home", icon: <Home size={18} /> },
-    { href: "/coffee", label: "Coffee", icon: <Coffee size={18} /> },
-    {
-      href: "/equipment",
-      label: "Equipment",
-      icon: <EspressoMachinesIcon width={18} height={18} />,
-    },
-    { href: "/classes", label: "Classes", icon: <BookOpen size={18} /> },
-    { href: "/wholesale", label: "Wholesale", icon: <Users size={18} /> },
-    { href: "/about", label: "About", icon: <Info size={18} /> },
-    { href: "/contact", label: "Contact", icon: <Mail size={18} /> },
-  ];
+  }, [mobileSearchOpen]);
 
   // Scroll listener: if user scrolls on large screens, close the expanded search immediately.
   useEffect(() => {
@@ -285,7 +107,6 @@ export default function Navbar() {
     lastScrollY.current = window.scrollY || 0;
     window.addEventListener("scroll", handleScroll, { passive: true });
 
-    // listen for resize so behavior only runs on large screens
     function handleResize() {
       if (!isLargeScreen()) {
         setSearchOpen(false);
@@ -333,8 +154,122 @@ export default function Navbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
+  function handleSearchSubmit(e?: React.FormEvent, closeMenu = false) {
+    e?.preventDefault();
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+    if (closeMenu) setMobileOpen(false);
+    setMobileSearchOpen(false);
+    setSearchOpen(false);
+  }
+
+  const navLinks = [
+    { href: "/", label: "Home", icon: <Home size={18} /> },
+    { href: "/coffee", label: "Coffee", icon: <Coffee size={18} /> },
+    {
+      href: "/equipment",
+      label: "Equipment",
+      icon: <EspressoMachinesIcon width={18} height={18} />,
+    },
+    { href: "/classes", label: "Classes", icon: <BookOpen size={18} /> },
+    { href: "/wholesale", label: "Wholesale", icon: <Users size={18} /> },
+    { href: "/about", label: "About", icon: <Info size={18} /> },
+    { href: "/contact", label: "Contact", icon: <Mail size={18} /> },
+  ];
+
   return (
     <nav className=" sticky top-0 z-40 bg-white " aria-label="Main navigation">
+      {/* Inline styles for the performant CSS placeholder (no layout animation) */}
+      <style jsx>{`
+        /* We avoid animating width (layout). Instead we animate opacity and use a blinking caret via a pseudo element.
+           Animating opacity + transform (composited) is usually smooth on iOS Safari. */
+        .search-wrapper {
+          position: relative;
+        }
+
+        .animated-placeholder {
+          position: absolute;
+          left: 1rem;
+          top: 50%;
+          transform: translateY(-50%);
+          color: #9ca3af; /* placeholder gray */
+          pointer-events: none;
+          white-space: nowrap;
+          overflow: hidden;
+          display: inline-block;
+          font-size: 0.875rem; /* match input text-sm */
+          line-height: 1;
+          opacity: 1;
+          will-change: opacity, transform;
+        }
+
+        /* caret implemented as pseudo-element and animated only via opacity (composited) */
+        .animated-placeholder::after {
+          content: "";
+          display: inline-block;
+          width: 1px;
+          height: 1em;
+          margin-left: 6px;
+          vertical-align: middle;
+          background-color: rgba(156, 163, 175, 0.95);
+          animation: blink-caret 1s steps(1, start) infinite;
+          will-change: opacity, transform;
+        }
+
+        /* simple fade loop for the placeholder to draw attention without layout changes */
+        .animated-placeholder {
+          animation: placeholder-fade 3.5s ease-in-out infinite;
+        }
+
+        /* hide placeholder when input has value or is focused */
+        .search-wrapper:focus-within .animated-placeholder,
+        .search-wrapper.has-value .animated-placeholder {
+          opacity: 0;
+          transform: translateY(-50%) translateX(6px);
+          transition: opacity 140ms ease-out, transform 140ms ease-out;
+          animation: none;
+        }
+
+        @keyframes placeholder-fade {
+          0% {
+            opacity: 0;
+            transform: translateY(-50%) translateX(2px);
+          }
+          10% {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+          }
+          85% {
+            opacity: 1;
+            transform: translateY(-50%) translateX(0);
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(-50%) translateX(2px);
+          }
+        }
+
+        @keyframes blink-caret {
+          0%,
+          100% {
+            opacity: 0;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
+        /* Respect prefers-reduced-motion */
+        @media (prefers-reduced-motion: reduce) {
+          .animated-placeholder,
+          .animated-placeholder::after {
+            animation: none;
+            opacity: 1;
+          }
+        }
+      `}</style>
+
       {/* Top announcement bar */}
       <div
         className="text-center py-2 text-xs lg:font-medium text-white"
@@ -435,7 +370,7 @@ export default function Navbar() {
             {/* Left: Logo */}
             <Link href="/" className="flex items-center" aria-label="Homepage">
               <Image
-                src={logoSrc}
+                src={logoSourceSafe(logoSrc)}
                 alt="Logo"
                 width={120}
                 height={120}
@@ -496,12 +431,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* SEARCH ROW
-          IMPORTANT: this row is now conditionally rendered only when searchOpen === true.
-          That guarantees zero height / zero space in the DOM when closed (not just visually hidden).
-          It will expand (push page content down) when the user clicks the search icon.
-          Any scroll will immediately close it (see scroll listener above).
-      */}
+      {/* SEARCH ROW */}
       {searchOpen && (
         <div className="hidden lg:flex justify-center border-b border-gray-200 bg-white transition-all duration-200">
           <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-3">
@@ -512,16 +442,28 @@ export default function Navbar() {
               aria-label="Site search"
             >
               <Search size={18} className="text-gray-500 mr-3" />
-              <input
-                ref={desktopInputRef}
-                type="search"
-                name="q"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder={getPlaceholderWithCaret()}
-                aria-label="Search"
-                className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
-              />
+              <div
+                className={`search-wrapper flex items-center flex-1 ${query ? "has-value" : ""}`}
+              >
+                <input
+                  ref={desktopInputRef}
+                  type="search"
+                  name="q"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  aria-label="Search"
+                  className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+                />
+                {/* Animated placeholder overlay (fade + blinking caret only) */}
+                <span
+                  className="animated-placeholder"
+                  aria-hidden="true"
+                  onClick={() => desktopInputRef.current?.focus()}
+                >
+                  {PLACEHOLDER_TEXT}
+                </span>
+              </div>
+
               {query ? (
                 <button
                   type="button"
@@ -566,16 +508,25 @@ export default function Navbar() {
             aria-label="Mobile search form"
           >
             <Search size={18} className="text-gray-500" />
-            <input
-              ref={mobileInputRef}
-              type="search"
-              name="q"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={getPlaceholderWithCaret()}
-              aria-label="Search"
-              className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
-            />
+            <div className={`search-wrapper flex items-center flex-1 ${query ? "has-value" : ""}`}>
+              <input
+                ref={mobileInputRef}
+                type="search"
+                name="q"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                aria-label="Search"
+                className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+              />
+              <span
+                className="animated-placeholder"
+                aria-hidden="true"
+                onClick={() => mobileInputRef.current?.focus()}
+              >
+                {PLACEHOLDER_TEXT}
+              </span>
+            </div>
+
             {query ? (
               <button
                 type="button"
@@ -644,23 +595,21 @@ export default function Navbar() {
                 name="q"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={getPlaceholderWithCaret()}
+                placeholder={""} // placeholder handled by animated overlay
                 aria-label="Search"
                 className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
               />
-              {query && (
-                <button
-                  type="button"
-                  aria-label="Clear search"
-                  onClick={() => {
-                    setQuery("");
-                    mobileInputRef.current?.focus();
-                  }}
-                  className="ml-2 text-gray-500 hover:text-gray-700"
-                >
-                  <X size={16} />
-                </button>
-              )}
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setQuery("");
+                  mobileInputRef.current?.focus();
+                }}
+                className="ml-2 text-gray-500 hover:text-gray-700"
+              >
+                <X size={16} />
+              </button>
             </div>
 
             <button
@@ -720,4 +669,10 @@ function isLinkActive(href: string, currentPath: string) {
 
   // exact match or parent of a deeper route (so /coffee matches /coffee/espresso)
   return cp === nh || cp.startsWith(nh + "/");
+}
+
+/* Small helper to avoid Next/Image warnings in some environments */
+function logoSourceSafe(src: string) {
+  // Next/Image accepts string path; return original for now.
+  return src;
 }
