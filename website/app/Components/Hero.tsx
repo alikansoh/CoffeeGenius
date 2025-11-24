@@ -16,6 +16,9 @@ import Image from "next/image";
  * - On mobile / when user prefers reduced motion / Save-Data enabled, the hero uses the poster image
  *   instead of autoplaying video to save bandwidth and respect accessibility preferences.
  * - Video uses muted, playsInline, loop, autoplay attributes for background playback.
+ *
+ * Added: scroll-down indicator button at bottom-center. Respects prefers-reduced-motion and
+ * scrolls to the next section on click or Enter/Space.
  */
 
 type CTA = {
@@ -123,6 +126,29 @@ export default function Hero({
 
   const shouldRenderVideo = shouldUseVideo && inView;
 
+  // Scroll to next content: try nextElementSibling, otherwise scroll by viewport height
+  function scrollToNext() {
+    if (!containerRef.current) return;
+    const next = containerRef.current.nextElementSibling as HTMLElement | null;
+    if (next) {
+      next.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    // fallback: scroll down by viewport height
+    if (typeof window !== "undefined") {
+      window.scrollBy({ top: window.innerHeight, behavior: "smooth" });
+    }
+  }
+
+  // allow keyboard activation (Enter/Space) on the custom button -- button element already handles that,
+  // but keeping an explicit handler to ensure compatibility
+  function onScrollIndicatorKey(e: React.KeyboardEvent) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      scrollToNext();
+    }
+  }
+
   return (
     <section
       ref={containerRef}
@@ -222,10 +248,92 @@ export default function Hero({
         </div>
       </div>
 
+      {/* Scroll-down indicator (bottom center) */}
+      <div className="absolute inset-x-0 bottom-8 flex justify-center pointer-events-none">
+        <button
+          type="button"
+          onClick={scrollToNext}
+          onKeyDown={onScrollIndicatorKey}
+          aria-label="Scroll to content"
+          className="pointer-events-auto bg-black/30 hover:bg-black/40 focus:bg-black/40 text-white rounded-full p-3 flex items-center justify-center focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-white/70"
+          title="Scroll to content"
+        >
+          <span className="sr-only">Scroll to content</span>
+          <svg
+            className="w-6 h-6 -mb-0.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            aria-hidden="true"
+          >
+            {/* three chevrons stacked; animation controlled via CSS below */}
+            <g className="chev-group">
+              <path className="chev" d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path className="chev" d="M6 5l6 6 6-6" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+              <path className="chev" d="M6 13l6 6 6-6" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
+            </g>
+          </svg>
+        </button>
+      </div>
+
       {/* optional: lazy-loaded decorative image for small screens */}
       <div className="lg:hidden absolute inset-0 -z-11">
         {/* nothing here — poster applied via background style for small screens */}
       </div>
+
+      {/* Component-scoped styles for the scroll indicator animation.
+          Respects prefers-reduced-motion and will disable animations if the user requests reduced motion. */}
+      <style jsx>{`
+        .chev {
+          opacity: 0.9;
+          transform-origin: center;
+          /* animation declared below via chevronKeyframes */
+          animation-name: chevronMove;
+          animation-duration: 1.2s;
+          animation-iteration-count: infinite;
+          animation-timing-function: cubic-bezier(.2,.8,.2,1);
+        }
+        /* stagger the three paths so they pulse in sequence */
+        .chev:nth-of-type(1) {
+          animation-delay: 0s;
+        }
+        .chev:nth-of-type(2) {
+          animation-delay: 0.12s;
+        }
+        .chev:nth-of-type(3) {
+          animation-delay: 0.24s;
+        }
+
+        @keyframes chevronMove {
+          0% {
+            transform: translateY(-2px);
+            opacity: 0.95;
+          }
+          50% {
+            transform: translateY(6px);
+            opacity: 0.22;
+          }
+          100% {
+            transform: translateY(-2px);
+            opacity: 0.95;
+          }
+        }
+
+        /* Reduce motion: don’t animate, show a subtle static indicator */
+        @media (prefers-reduced-motion: reduce) {
+          .chev {
+            animation: none;
+            opacity: 0.85;
+            transform: none;
+          }
+        }
+
+        /* Improve touch target on small devices */
+        @media (max-width: 640px) {
+          button[title="Scroll to content"] {
+            padding: 0.75rem;
+          }
+        }
+      `}</style>
     </section>
   );
 }
