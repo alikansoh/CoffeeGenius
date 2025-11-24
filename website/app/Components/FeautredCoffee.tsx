@@ -113,7 +113,7 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
       className="shrink-0 w-[82%] sm:w-[46%] md:w-[32%] lg:w-[24%] xl:w-[22%] transition-all duration-500 opacity-100 translate-y-0"
       style={{ transitionDelay: `${index * 80}ms` }}
     >
-      <div className="group relative rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-300 hover:shadow-2xl hover:-translate-y-2">
+      <div className="group relative rounded-xl overflow-hidden bg-white flex flex-col h-full transition-all duration-300 border-2 border-neutral-200 hover:border-black hover:shadow-2xl hover:-translate-y-2">
         <div 
           ref={imageRef}
           className={`relative w-full aspect-[6/5] bg-neutral-100 overflow-hidden ${isLargeScreen ? 'cursor-zoom-in' : ''}`}
@@ -168,7 +168,7 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
           </div>
         </div>
 
-        <div className="p-4 flex flex-col flex-1 bg-white">
+        <div className="p-5 flex flex-col flex-1 bg-white">
           {product.origin && (
             <p className="text-[11px] font-medium uppercase tracking-wider text-neutral-400 mb-1">
               {product.origin}
@@ -186,7 +186,7 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
             {product.notes}
           </p>
 
-          <div className="flex items-center justify-between gap-3 pt-3 border-t border-neutral-100">
+          <div className="flex items-center justify-between gap-3 pt-3 border-t-2 border-neutral-100">
             <div>
               <span className="text-xs text-neutral-400">From</span>
               <div className="text-xl font-bold tracking-tight" style={{ color: COLORS.primary }}>
@@ -196,10 +196,10 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
 
             <button
               onClick={() => onAddToCart(product)}
-              className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold overflow-hidden transition-all duration-300 ${
+              className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold overflow-hidden transition-all duration-300 border-2 ${
                 isAdded
-                  ? "bg-green-600 text-white"
-                  : "bg-black text-white hover:bg-neutral-800 active:scale-95 hover:shadow-lg"
+                  ? "bg-green-600 text-white border-green-600"
+                  : "bg-black text-white border-black hover:bg-neutral-800 hover:border-neutral-800 active:scale-95 hover:shadow-lg"
               }`}
               aria-label={`Add ${product.name} to cart`}
             >
