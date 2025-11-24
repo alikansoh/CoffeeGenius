@@ -68,8 +68,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
   // track if the user has interacted (so we don't auto-center after manual scroll)
   const userInteractedRef = useRef(false);
-  // mark that initial centering has run
-  const initialCenteredRef = useRef(false);
 
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0);
@@ -89,7 +87,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       setCanScrollRight(container.scrollLeft + container.clientWidth + 8 < container.scrollWidth);
 
       // compute the card whose center is closest to the container center
-      const children = Array.from(container.children) as HTMLElement[];
+      const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
       if (children.length === 0) return;
 
       const containerRect = container.getBoundingClientRect();
@@ -152,11 +150,10 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
       const isLarge = window.innerWidth >= 1024;
       const targetIndex = isLarge ? Math.floor(products.length / 2) : 0;
-      const card = container.children[targetIndex] as HTMLElement | undefined;
+      const card = container.querySelectorAll("[role='listitem']")[targetIndex] as HTMLElement | undefined;
       if (!card) return;
       const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
       container.scrollTo({ left: offset, behavior: "smooth" });
-      initialCenteredRef.current = true;
     }
 
     // run once on mount
@@ -187,7 +184,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
       // use the current activeIndex (derived from real scroll), then advance
       const nextIndex = (activeIndex + 1) % products.length;
-      const card = container.children[nextIndex] as HTMLElement | undefined;
+      const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
+      const card = children[nextIndex] as HTMLElement | undefined;
       if (!card) return;
       const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
       container.scrollTo({ left: offset, behavior: "smooth" });
@@ -209,7 +207,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   function scrollToIndex(i: number) {
     const container = containerRef.current;
     if (!container) return;
-    const card = container.children[i] as HTMLElement | undefined;
+    const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
+    const card = children[i] as HTMLElement | undefined;
     if (!card) return;
     const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
     container.scrollTo({ left: offset, behavior: "smooth" });
@@ -222,9 +221,10 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   }
 
   return (
+    // give the whole slider a low z-index so fixed nav (with higher z) stays above it
     <section
       aria-labelledby="bestseller-heading"
-      className="py-16 bg-white overflow-hidden"
+      className="py-16 bg-white overflow-hidden relative z-0"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
@@ -258,7 +258,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
               View All Products
               <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
             </a>
-            <div className="flex items-center gap-2">
+            {/* header buttons wrapper: lower z-index so nav (fixed) sits above */}
+            <div className="flex items-center gap-2 flex-shrink-0 z-10 relative">
               <button
                 onClick={() => scrollByView("left")}
                 aria-label="Scroll left"
@@ -298,10 +299,11 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
               msOverflowStyle: "none",
-              paddingLeft: "calc(50% - 41%)",
-              paddingRight: "calc(50% - 41%)",
             }}
           >
+            {/* left spacer to center the first card */}
+            <div aria-hidden style={{ minWidth: "calc(50% - 41%)", flex: "0 0 auto" }} />
+
             {products.map((p, i) => (
               <article
                 key={p.id}
@@ -311,10 +313,12 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 }`}
                 style={{ transitionDelay: `${i * 100}ms` }}
               >
+                {/* CARD: ensure isolation and overflow hidden; z's kept low so nav (fixed) can overlay */}
                 <div
-                  className={`group rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-500 hover:shadow-2xl ${
-                    activeIndex === i ? "scale-[1.02] shadow-xl" : "hover:-translate-y-2"
+                  className={`group relative isolate rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-500 ${
+                    activeIndex === i ? "shadow-xl -translate-y-1" : "hover:-translate-y-2"
                   }`}
+                  style={{ transformOrigin: "center", willChange: "transform" }}
                 >
                   <div className="relative w-full aspect-[4/5] bg-neutral-100 overflow-hidden">
                     {p.img ? (
@@ -322,7 +326,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                         src={p.img}
                         alt={p.name}
                         fill
-                        className="object-cover transition-transform duration-700 group-hover:scale-110"
+                        className="object-cover transition-transform duration-700 group-hover:scale-105"
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-neutral-200 to-neutral-100" />
@@ -330,7 +334,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
 
-                    <div className="absolute top-3 left-3">
+                    <div className="absolute top-3 left-3 z-10">
                       <span
                         className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full transition-all duration-300 ${
                           activeIndex === i ? "animate-pulse" : ""
@@ -340,10 +344,11 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                       </span>
                     </div>
 
-                    <div className="absolute bottom-4 left-4 right-4 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
+                    <div className="absolute bottom-4 left-4 right-4 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 z-0">
                       <button
                         onClick={() => handleAdd(p)}
                         className="w-full py-3 bg-white/95 backdrop-blur-sm text-black font-semibold rounded-lg flex items-center justify-center gap-2 hover:bg-white transition-colors"
+                        style={{ transformOrigin: "center" }}
                       >
                         <ShoppingCart size={16} />
                         Quick Add
@@ -381,10 +386,11 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                         onClick={() => handleAdd(p)}
                         className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold overflow-hidden transition-all duration-300 ${
                           addedMap[p.id]
-                            ? "bg-green-600 text-white scale-105"
+                            ? "bg-green-600 text-white" // avoid scale to prevent layout overflow/shift
                             : "bg-black text-white hover:bg-neutral-800 active:scale-95 hover:shadow-lg"
                         }`}
                         aria-label={`Add ${p.name} to cart`}
+                        style={{ transformOrigin: "center", zIndex: 10 }}
                       >
                         {addedMap[p.id] && (
                           <span className="absolute inset-0 bg-green-400 animate-ping opacity-30 rounded-full" />
@@ -406,6 +412,9 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 </div>
               </article>
             ))}
+
+            {/* right spacer to center the last card */}
+            <div aria-hidden style={{ minWidth: "calc(50% - 41%)", flex: "0 0 auto" }} />
           </div>
 
           <div className="mt-8 flex items-center justify-center gap-3">
