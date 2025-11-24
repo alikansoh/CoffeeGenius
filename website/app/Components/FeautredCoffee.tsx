@@ -72,10 +72,23 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
 }) {
   const [isZooming, setIsZooming] = useState(false);
   const [zoomPosition, setZoomPosition] = useState({ x: 0, y: 0 });
+  const [isLargeScreen, setIsLargeScreen] = useState(false);
   const imageRef = useRef<HTMLDivElement | null>(null);
 
+  // Check screen size
+  useEffect(() => {
+    const checkScreenSize = () => {
+      setIsLargeScreen(window.innerWidth >= 1024); // lg breakpoint
+    };
+
+    checkScreenSize();
+    window.addEventListener('resize', checkScreenSize);
+
+    return () => window.removeEventListener('resize', checkScreenSize);
+  }, []);
+
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!imageRef.current) return;
+    if (!imageRef.current || !isLargeScreen) return;
 
     const rect = imageRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -85,7 +98,9 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
   };
 
   const handleMouseEnter = () => {
-    setIsZooming(true);
+    if (isLargeScreen) {
+      setIsZooming(true);
+    }
   };
 
   const handleMouseLeave = () => {
@@ -101,7 +116,7 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
       <div className="group relative rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-300 hover:shadow-2xl hover:-translate-y-2">
         <div 
           ref={imageRef}
-          className="relative w-full aspect-[6/5] bg-neutral-100 overflow-hidden cursor-zoom-in"
+          className={`relative w-full aspect-[6/5] bg-neutral-100 overflow-hidden ${isLargeScreen ? 'cursor-zoom-in' : ''}`}
           onMouseMove={handleMouseMove}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -117,17 +132,19 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
                   opacity: isZooming ? 0 : 1,
                 }}
               />
-              {/* Zoomed image */}
-              <div
-                className="absolute inset-0 transition-opacity duration-300 pointer-events-none"
-                style={{
-                  opacity: isZooming ? 1 : 0,
-                  backgroundImage: `url(${product.img})`,
-                  backgroundSize: '250%',
-                  backgroundPosition: `${zoomPosition.x}% ${zoomPosition.y}%`,
-                  backgroundRepeat: 'no-repeat',
-                }}
-              />
+              {/* Zoomed image - only on large screens */}
+              {isLargeScreen && (
+                <div
+                  className="absolute inset-0 transition-opacity duration-300 pointer-events-none"
+                  style={{
+                    opacity: isZooming ? 1 : 0,
+                    backgroundImage: `url(${product.img})`,
+                    backgroundSize: '250%',
+                    backgroundPosition: `${zoomPosition.x}% ${zoomPosition.y}%`,
+                    backgroundRepeat: 'no-repeat',
+                  }}
+                />
+              )}
             </>
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-neutral-200 to-neutral-100" />
@@ -135,12 +152,14 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
 
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-          {/* Zoom icon indicator */}
-          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
-            <div className="bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg">
-              <ZoomIn size={16} className="text-black" />
+          {/* Zoom icon indicator - only show on large screens */}
+          {isLargeScreen && (
+            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-all duration-300">
+              <div className="bg-white/90 backdrop-blur-sm rounded-full p-2 shadow-lg">
+                <ZoomIn size={16} className="text-black" />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="absolute top-3 left-3 transition-all duration-300 group-hover:scale-110">
             <span className="inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full shadow-lg">
