@@ -12,6 +12,7 @@ export type Product = {
   notes?: string;
   price: number;
   img?: string;
+  roastLevel?: "light" | "medium" | "dark";
 };
 
 const COLORS = {
@@ -29,6 +30,7 @@ const defaultProducts: Product[] = [
     notes: "Rich chocolate, silky body, long finish",
     price: 14.0,
     img: "/test.webp",
+    roastLevel: "dark",
   },
   {
     id: "ethiopian-light",
@@ -37,6 +39,7 @@ const defaultProducts: Product[] = [
     notes: "Bright citrus, floral notes, honey sweetness",
     price: 12.5,
     img: "/test.webp",
+    roastLevel: "light",
   },
   {
     id: "colombian-medium",
@@ -45,6 +48,7 @@ const defaultProducts: Product[] = [
     notes: "Caramel sweetness, balanced body, chocolate",
     price: 11.0,
     img: "/test.webp",
+    roastLevel: "medium",
   },
   {
     id: "sumatra-dark",
@@ -53,6 +57,7 @@ const defaultProducts: Product[] = [
     notes: "Earthy, spicy, full body",
     price: 13.5,
     img: "/test.webp",
+    roastLevel: "dark",
   },
   {
     id: "kenya-aa",
@@ -61,8 +66,47 @@ const defaultProducts: Product[] = [
     notes: "Bold berry notes, bright acidity, crisp finish",
     price: 13.0,
     img: "/test.webp",
+    roastLevel: "medium",
   },
 ];
+
+function RoastLevelIndicator({ level }: { level: "light" | "medium" | "dark" }) {
+  const levelMap = {
+    light: 1,
+    medium: 2,
+    dark: 3,
+  };
+
+  const numericLevel = levelMap[level];
+
+  return (
+    <div className="inline-flex items-center gap-2 px-3 py-2 bg-gradient-to-br from-neutral-50 to-neutral-100 rounded-lg border border-neutral-200 transition-all duration-300 group-hover:border-neutral-300 group-hover:shadow-sm">
+      <div className="flex items-center gap-1">
+        {[1, 2, 3].map((bean) => (
+          <div
+            key={bean}
+            className="transition-transform duration-300 group-hover:scale-110"
+            style={{
+              transitionDelay: `${bean * 50}ms`,
+            }}
+          >
+            <Image
+              src={bean <= numericLevel ? "/bean-filled.svg" : "/bean.svg"}
+              alt=""
+              width={18}
+              height={18}
+              className="w-[18px] h-[18px]"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="h-4 w-px bg-neutral-300" />
+      <span className="text-[11px] text-neutral-600 uppercase tracking-wider font-bold">
+        {level}
+      </span>
+    </div>
+  );
+}
 
 function ProductCard({ product, index, onAddToCart, isAdded }: { 
   product: Product; 
@@ -177,11 +221,17 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
           )}
 
           <h3
-            className="text-base font-bold mb-2 leading-snug transition-colors group-hover:text-neutral-600"
+            className="text-base font-bold mb-3 leading-snug transition-colors group-hover:text-neutral-600"
             style={{ color: COLORS.primary }}
           >
             {product.name}
           </h3>
+
+          {product.roastLevel && (
+            <div className="mb-3">
+              <RoastLevelIndicator level={product.roastLevel} />
+            </div>
+          )}
 
           <p className="text-sm text-neutral-500 mb-4 line-clamp-2 flex-1 leading-relaxed">
             {product.notes}
@@ -350,7 +400,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             <div className="flex justify-center mt-6">
               <p className="text-xs text-neutral-400 font-medium flex items-center gap-2">
                 <span className="animate-arrow-left">←</span>
-                <span>Swipe to explore</span>
+                <span>Swipe</span>
                 <span className="animate-arrow-right">→</span>
               </p>
             </div>
