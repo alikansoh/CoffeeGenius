@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { ShoppingCart, Check, ChevronLeft, ChevronRight, Coffee, ArrowRight, ZoomIn } from "lucide-react";
+import { ShoppingCart, Check, ChevronLeft, ChevronRight, Coffee, ArrowRight, ZoomIn, MoveHorizontal } from "lucide-react";
 import useCart from "../store/CartStore";
 
 export type Product = {
@@ -232,9 +232,8 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [isDragging, setIsDragging] = useState(false);
-  const [startX, setStartX] = useState(0);
-  const [scrollLeft, setScrollLeft] = useState(0);
+  const [showSwipeHint, setShowSwipeHint] = useState(false);
+  const [hasInteracted, setHasInteracted] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -242,6 +241,29 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     }, 0);
     
     return () => clearTimeout(timer);
+  }, []);
+
+  // Show swipe hint on mobile after component mounts
+  useEffect(() => {
+    // Check if user has seen the hint before
+    const hasSeenHint = localStorage.getItem('hasSeenSwipeHint');
+    
+    if (!hasSeenHint && window.innerWidth < 1024) {
+      const timer = setTimeout(() => {
+        setShowSwipeHint(true);
+      }, 800);
+
+      // Hide hint after 4 seconds
+      const hideTimer = setTimeout(() => {
+        setShowSwipeHint(false);
+        localStorage.setItem('hasSeenSwipeHint', 'true');
+      }, 4800);
+
+      return () => {
+        clearTimeout(timer);
+        clearTimeout(hideTimer);
+      };
+    }
   }, []);
 
   // Update scroll button states
@@ -269,6 +291,28 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     };
   }, []);
 
+  // Hide hint on user interaction
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleInteraction = () => {
+      if (!hasInteracted) {
+        setHasInteracted(true);
+        setShowSwipeHint(false);
+        localStorage.setItem('hasSeenSwipeHint', 'true');
+      }
+    };
+
+    container.addEventListener("touchstart", handleInteraction);
+    container.addEventListener("scroll", handleInteraction);
+
+    return () => {
+      container.removeEventListener("touchstart", handleInteraction);
+      container.removeEventListener("scroll", handleInteraction);
+    };
+  }, [hasInteracted]);
+
   function scroll(direction: "left" | "right") {
     const container = containerRef.current;
     if (!container) return;
@@ -281,86 +325,10 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   }
 
   function handleAdd(p: Product) {
-    // Prevent adding if user was dragging
-    if (isDragging) return;
-    
     addItem({ id: p.id, name: p.name, price: p.price, img: p.img }, 1);
     setAddedMap((s) => ({ ...s, [p.id]: true }));
     setTimeout(() => setAddedMap((s) => ({ ...s, [p.id]: false })), 1200);
   }
-
-  // Mouse drag handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    setIsDragging(false);
-    setStartX(e.pageX - container.offsetLeft);
-    setScrollLeft(container.scrollLeft);
-    container.style.cursor = 'grabbing';
-    container.style.userSelect = 'none';
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const x = e.pageX - container.offsetLeft;
-    const walk = x - startX;
-    
-    // If mouse moved more than 5px, consider it a drag
-    if (Math.abs(walk) > 5) {
-      setIsDragging(true);
-      container.scrollLeft = scrollLeft - walk;
-    }
-  };
-
-  const handleMouseUp = () => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    container.style.cursor = 'grab';
-    container.style.removeProperty('user-select');
-    
-    // Reset dragging state after a short delay to allow click prevention
-    setTimeout(() => setIsDragging(false), 100);
-  };
-
-  const handleMouseLeave = () => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    container.style.cursor = 'grab';
-    container.style.removeProperty('user-select');
-  };
-
-  // Touch drag handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    setIsDragging(false);
-    setStartX(e.touches[0].pageX - container.offsetLeft);
-    setScrollLeft(container.scrollLeft);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    const container = containerRef.current;
-    if (!container) return;
-    
-    const x = e.touches[0].pageX - container.offsetLeft;
-    const walk = x - startX;
-    
-    // If touch moved more than 5px, consider it a drag
-    if (Math.abs(walk) > 5) {
-      setIsDragging(true);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    // Reset dragging state after a short delay to allow click prevention
-    setTimeout(() => setIsDragging(false), 100);
-  };
 
   return (
     <section
@@ -389,57 +357,35 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="hidden lg:flex items-center gap-4">
             <a
               href="/shop"
-              className="group text-sm font-medium hover:text-neutral-600 transition-colors hidden md:flex items-center gap-1"
+              className="group text-sm font-medium hover:text-neutral-600 transition-colors flex items-center gap-1"
             >
               View All Products
               <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
             </a>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => scroll("left")}
-                aria-label="Scroll left"
-                disabled={!mounted || !canScrollLeft}
-                className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
-                  !canScrollLeft
-                    ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
-                }`}
-              >
-                <ChevronLeft size={20} strokeWidth={2} />
-              </button>
-
-              <button
-                onClick={() => scroll("right")}
-                aria-label="Scroll right"
-                disabled={!mounted || !canScrollRight}
-                className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
-                  !canScrollRight
-                    ? "opacity-30 cursor-not-allowed"
-                    : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
-                }`}
-              >
-                <ChevronRight size={20} strokeWidth={2} />
-              </button>
-            </div>
           </div>
         </div>
 
         <div className="relative -mx-4 sm:-mx-6 lg:-mx-8">
+          {/* Swipe hint - only visible on small screens */}
+          <div
+            className={`lg:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none transition-opacity duration-500 ${
+              showSwipeHint ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            <div className="bg-black/80 backdrop-blur-sm text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3">
+              <MoveHorizontal size={24} className="animate-swipe-hint" />
+              <span className="text-sm font-semibold whitespace-nowrap">Swipe to explore</span>
+            </div>
+          </div>
+
           <div
             ref={containerRef}
-            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide px-4 sm:px-6 lg:px-8 cursor-grab active:cursor-grabbing"
+            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide px-4 sm:px-6 lg:px-8"
             role="list"
             aria-label="Best seller products"
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseLeave}
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
             style={{
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
@@ -457,6 +403,35 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             ))}
           </div>
 
+          {/* Navigation buttons - Only visible on large screens, positioned at bottom */}
+          <div className="hidden lg:flex items-center justify-center gap-2 mt-6">
+            <button
+              onClick={() => scroll("left")}
+              aria-label="Scroll left"
+              disabled={!mounted || !canScrollLeft}
+              className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
+                !canScrollLeft
+                  ? "opacity-30 cursor-not-allowed"
+                  : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
+              }`}
+            >
+              <ChevronLeft size={20} strokeWidth={2} />
+            </button>
+
+            <button
+              onClick={() => scroll("right")}
+              aria-label="Scroll right"
+              disabled={!mounted || !canScrollRight}
+              className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
+                !canScrollRight
+                  ? "opacity-30 cursor-not-allowed"
+                  : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
+              }`}
+            >
+              <ChevronRight size={20} strokeWidth={2} />
+            </button>
+          </div>
+
           <div className="mt-10 flex justify-center">
             <a
               href="/shop"
@@ -472,6 +447,19 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       <style jsx>{`
         .scrollbar-hide::-webkit-scrollbar {
           display: none;
+        }
+
+        @keyframes swipe-hint {
+          0%, 100% {
+            transform: translateX(0);
+          }
+          50% {
+            transform: translateX(8px);
+          }
+        }
+
+        .animate-swipe-hint {
+          animation: swipe-hint 1.5s ease-in-out infinite;
         }
       `}</style>
     </section>
