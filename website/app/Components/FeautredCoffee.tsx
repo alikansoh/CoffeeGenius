@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { ShoppingCart, Check, ChevronLeft, ChevronRight, Coffee, ArrowRight, ZoomIn, MoveHorizontal } from "lucide-react";
+import { ShoppingCart, Check, ChevronLeft, ChevronRight, Coffee, ArrowRight, ZoomIn } from "lucide-react";
 import useCart from "../store/CartStore";
 
 export type Product = {
@@ -233,57 +233,14 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [showSwipeHint, setShowSwipeHint] = useState(false);
-  const [hasInteracted, setHasInteracted] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    
+    return () => clearTimeout(timer);
   }, []);
-
-  // Show swipe hint on small screens after component mounts
-  useEffect(() => {
-    if (!mounted) return;
-
-    // Check screen size synchronously
-    const isSmallScreen = window.innerWidth < 1024;
-    
-    console.log('Swipe hint check:', { 
-      mounted, 
-      isSmallScreen, 
-      windowWidth: window.innerWidth 
-    });
-    
-    if (!isSmallScreen) {
-      console.log('Screen too large, skipping hint');
-      return;
-    }
-
-    // Check if user has seen the hint before
-    const hasSeenHint = localStorage.getItem('hasSeenSwipeHint');
-    
-    console.log('LocalStorage check:', { hasSeenHint });
-    
-    if (!hasSeenHint) {
-      const timer = setTimeout(() => {
-        console.log('Showing swipe hint NOW');
-        setShowSwipeHint(true);
-      }, 1000);
-
-      // Hide hint after 5 seconds
-      const hideTimer = setTimeout(() => {
-        console.log('Auto-hiding swipe hint');
-        setShowSwipeHint(false);
-        localStorage.setItem('hasSeenSwipeHint', 'true');
-      }, 6000);
-
-      return () => {
-        clearTimeout(timer);
-        clearTimeout(hideTimer);
-      };
-    } else {
-      console.log('User has already seen hint');
-    }
-  }, [mounted]);
 
   // Update scroll button states
   useEffect(() => {
@@ -309,29 +266,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       window.removeEventListener("resize", updateScrollState);
     };
   }, []);
-
-  // Hide hint on user interaction
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleInteraction = () => {
-      if (!hasInteracted) {
-        console.log('User interacted, hiding hint immediately');
-        setHasInteracted(true);
-        setShowSwipeHint(false);
-        localStorage.setItem('hasSeenSwipeHint', 'true');
-      }
-    };
-
-    container.addEventListener("touchstart", handleInteraction);
-    container.addEventListener("scroll", handleInteraction);
-
-    return () => {
-      container.removeEventListener("touchstart", handleInteraction);
-      container.removeEventListener("scroll", handleInteraction);
-    };
-  }, [hasInteracted]);
 
   function scroll(direction: "left" | "right") {
     const container = containerRef.current;
@@ -413,17 +347,12 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
           {/* Swipe hint - below slider, only visible on small screens */}
           <div className="lg:hidden">
-            <div
-              className={`flex justify-center mt-6 transition-all duration-500 ${
-                showSwipeHint 
-                  ? 'opacity-100 translate-y-0' 
-                  : 'opacity-0 -translate-y-2 pointer-events-none'
-              }`}
-            >
-              <div className="inline-flex items-center gap-3 px-6 py-3.5 bg-black text-white rounded-full shadow-lg border-2 border-neutral-800">
-                <MoveHorizontal size={22} className="animate-swipe-hint" strokeWidth={2.5} />
-                <span className="text-sm font-semibold">Swipe to explore more</span>
-              </div>
+            <div className="flex justify-center mt-6">
+              <p className="text-xs text-neutral-400 font-medium flex items-center gap-2">
+                <span className="animate-arrow-left">←</span>
+                <span>Swipe to explore</span>
+                <span className="animate-arrow-right">→</span>
+              </p>
             </div>
           </div>
 
@@ -473,17 +402,36 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
           display: none;
         }
 
-        @keyframes swipe-hint {
+        @keyframes arrow-left {
           0%, 100% {
             transform: translateX(0);
+            opacity: 0.4;
           }
           50% {
-            transform: translateX(12px);
+            transform: translateX(-4px);
+            opacity: 1;
           }
         }
 
-        .animate-swipe-hint {
-          animation: swipe-hint 1.5s ease-in-out infinite;
+        @keyframes arrow-right {
+          0%, 100% {
+            transform: translateX(0);
+            opacity: 0.4;
+          }
+          50% {
+            transform: translateX(4px);
+            opacity: 1;
+          }
+        }
+
+        .animate-arrow-left {
+          display: inline-block;
+          animation: arrow-left 1.5s ease-in-out infinite;
+        }
+
+        .animate-arrow-right {
+          display: inline-block;
+          animation: arrow-right 1.5s ease-in-out infinite;
         }
       `}</style>
     </section>
