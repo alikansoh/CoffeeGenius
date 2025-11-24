@@ -287,7 +287,7 @@ export default function Navbar() {
   }, [searchOpen]);
 
   return (
-    <nav className="relative sticky top-0 z-40 bg-white shadow-sm" aria-label="Main navigation">
+    <nav className="relative fixed top-0 z-40 bg-white shadow-sm" aria-label="Main navigation">
       {/* Top announcement bar */}
       <div
         className="text-center py-2 text-xs lg:font-medium text-white"
