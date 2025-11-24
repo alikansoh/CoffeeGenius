@@ -502,7 +502,7 @@ export default function Navbar() {
 
       {/* MOBILE SEARCH OVERLAY */}
       <div
-        className={`fixed inset-0 z-50 lg:hidden bg-black/40 backdrop-blur-sm transition-opacity ${
+        className={`fixed inset-0 z-50 lg:hidden bg-black/40  transition-opacity ${
           mobileSearchOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
         }`}
         aria-hidden={!mobileSearchOpen}
