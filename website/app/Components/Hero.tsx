@@ -184,7 +184,7 @@ export default function Hero({
 
       {/* Content */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="pt-20 pb-28 sm:pt-28 sm:pb-36 lg:pt-32 lg:pb-44">
+        <div className="pt-35 pb-28 sm:pt-28 sm:pb-36 lg:pt-32 lg:pb-44">
           <div className="max-w-4xl mx-auto text-center">
             <h1 className="text-white text-4xl sm:text-5xl lg:text-6xl font-extrabold leading-tight drop-shadow-sm">
               {headline}

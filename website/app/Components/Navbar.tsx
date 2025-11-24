@@ -610,7 +610,7 @@ export default function Navbar() {
           aria-hidden={!mobileOpen}
         >
           <div className="flex flex-col p-4 pb-6 max-h-[80vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
                 <Image src={logoSrc} alt="Logo" width={64} height={64} className="object-contain" />
                 <div className="font-semibold" style={{ color: COLORS.primary }}>
