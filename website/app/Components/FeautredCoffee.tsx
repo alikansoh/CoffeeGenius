@@ -232,6 +232,9 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeft, setScrollLeft] = useState(0);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -278,10 +281,86 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   }
 
   function handleAdd(p: Product) {
+    // Prevent adding if user was dragging
+    if (isDragging) return;
+    
     addItem({ id: p.id, name: p.name, price: p.price, img: p.img }, 1);
     setAddedMap((s) => ({ ...s, [p.id]: true }));
     setTimeout(() => setAddedMap((s) => ({ ...s, [p.id]: false })), 1200);
   }
+
+  // Mouse drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    setIsDragging(false);
+    setStartX(e.pageX - container.offsetLeft);
+    setScrollLeft(container.scrollLeft);
+    container.style.cursor = 'grabbing';
+    container.style.userSelect = 'none';
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const x = e.pageX - container.offsetLeft;
+    const walk = x - startX;
+    
+    // If mouse moved more than 5px, consider it a drag
+    if (Math.abs(walk) > 5) {
+      setIsDragging(true);
+      container.scrollLeft = scrollLeft - walk;
+    }
+  };
+
+  const handleMouseUp = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    container.style.cursor = 'grab';
+    container.style.removeProperty('user-select');
+    
+    // Reset dragging state after a short delay to allow click prevention
+    setTimeout(() => setIsDragging(false), 100);
+  };
+
+  const handleMouseLeave = () => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    container.style.cursor = 'grab';
+    container.style.removeProperty('user-select');
+  };
+
+  // Touch drag handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    setIsDragging(false);
+    setStartX(e.touches[0].pageX - container.offsetLeft);
+    setScrollLeft(container.scrollLeft);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const container = containerRef.current;
+    if (!container) return;
+    
+    const x = e.touches[0].pageX - container.offsetLeft;
+    const walk = x - startX;
+    
+    // If touch moved more than 5px, consider it a drag
+    if (Math.abs(walk) > 5) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    // Reset dragging state after a short delay to allow click prevention
+    setTimeout(() => setIsDragging(false), 100);
+  };
 
   return (
     <section
@@ -351,9 +430,16 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
         <div className="relative -mx-4 sm:-mx-6 lg:-mx-8">
           <div
             ref={containerRef}
-            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide px-4 sm:px-6 lg:px-8"
+            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide px-4 sm:px-6 lg:px-8 cursor-grab active:cursor-grabbing"
             role="list"
             aria-label="Best seller products"
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
             style={{
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
