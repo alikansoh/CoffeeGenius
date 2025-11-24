@@ -320,7 +320,12 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                   }`}
                   style={{ transformOrigin: "center", willChange: "transform" }}
                 >
-                  <div className="relative w-full aspect-[4/5] bg-neutral-100 overflow-hidden">
+                  {/*
+                    Make the image a little smaller:
+                    - Keep the original aspect on small screens for vertical layout,
+                    - Use a slightly wider aspect on md+ so the image height is reduced.
+                  */}
+                  <div className="relative w-full aspect-[4/5] md:aspect-[4/3] bg-neutral-100 overflow-hidden">
                     {p.img ? (
                       <Image
                         src={p.img}
