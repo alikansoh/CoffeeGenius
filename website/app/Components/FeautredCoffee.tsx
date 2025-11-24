@@ -66,52 +66,26 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   const [activeIndex, setActiveIndex] = useState(0);
   const [isHovering, setIsHovering] = useState(false);
 
-  // track if the user has interacted (so we don't auto-center after manual scroll)
-  const userInteractedRef = useRef(false);
-
   useEffect(() => {
     const timer = setTimeout(() => setMounted(true), 0);
     return () => clearTimeout(timer);
   }, []);
 
-  // robust activeIndex calculation based on child centers
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     function update() {
       if (!container) return;
-
-      // update arrows
       setCanScrollLeft(container.scrollLeft > 8);
       setCanScrollRight(container.scrollLeft + container.clientWidth + 8 < container.scrollWidth);
-
-      // compute the card whose center is closest to the container center
-      const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
-      if (children.length === 0) return;
-
-      const containerRect = container.getBoundingClientRect();
-      const containerCenter = container.scrollLeft + containerRect.width / 2;
-
-      let closestIdx = 0;
-      let closestDist = Infinity;
-      children.forEach((child, idx) => {
-        const childLeft = child.offsetLeft;
-        const childCenter = childLeft + child.clientWidth / 2;
-        const dist = Math.abs(childCenter - containerCenter);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestIdx = idx;
-        }
-      });
-
-      setActiveIndex(closestIdx);
+      
+      const cardWidth = container.scrollWidth / products.length;
+      const newIndex = Math.round(container.scrollLeft / cardWidth);
+      setActiveIndex(Math.min(newIndex, products.length - 1));
     }
-
-    // initial update
     update();
 
-    // listeners
     container.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
     return () => {
@@ -119,80 +93,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       window.removeEventListener("resize", update);
     };
   }, [products.length]);
-
-  // detect user interaction (pointer/touch/wheel) so we don't auto-recenter after manual scroll
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    function markUser() {
-      userInteractedRef.current = true;
-    }
-
-    container.addEventListener("pointerdown", markUser, { passive: true });
-    container.addEventListener("touchstart", markUser, { passive: true });
-    container.addEventListener("wheel", markUser, { passive: true });
-
-    return () => {
-      container.removeEventListener("pointerdown", markUser);
-      container.removeEventListener("touchstart", markUser);
-      container.removeEventListener("wheel", markUser);
-    };
-  }, []);
-
-  // initial centering: only run once on mount, and on resize only if user hasn't interacted
-  useEffect(() => {
-    function centerInitial() {
-      const container = containerRef.current;
-      if (!container) return;
-      // guard: don't re-center if user already interacted
-      if (userInteractedRef.current) return;
-
-      const isLarge = window.innerWidth >= 1024;
-      const targetIndex = isLarge ? Math.floor(products.length / 2) : 0;
-      const card = container.querySelectorAll("[role='listitem']")[targetIndex] as HTMLElement | undefined;
-      if (!card) return;
-      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
-      container.scrollTo({ left: offset, behavior: "smooth" });
-    }
-
-    // run once on mount
-    centerInitial();
-
-    let t: number | undefined;
-    function onResize() {
-      // schedule a re-center only if the user hasn't interacted
-      window.clearTimeout(t);
-      t = window.setTimeout(() => {
-        if (!userInteractedRef.current) centerInitial();
-      }, 120);
-    }
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      if (t) window.clearTimeout(t);
-    };
-  }, [products.length]);
-
-  // auto-scroll when not hovering (keeps using activeIndex computed from actual scroll)
-  useEffect(() => {
-    if (!mounted || isHovering) return;
-
-    const interval = setInterval(() => {
-      const container = containerRef.current;
-      if (!container) return;
-
-      // use the current activeIndex (derived from real scroll), then advance
-      const nextIndex = (activeIndex + 1) % products.length;
-      const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
-      const card = children[nextIndex] as HTMLElement | undefined;
-      if (!card) return;
-      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
-      container.scrollTo({ left: offset, behavior: "smooth" });
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, [mounted, isHovering, activeIndex, products.length]);
 
   function scrollByView(direction: "left" | "right") {
     const container = containerRef.current;
@@ -207,12 +107,54 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   function scrollToIndex(i: number) {
     const container = containerRef.current;
     if (!container) return;
-    const children = Array.from(container.querySelectorAll("[role='listitem']")) as HTMLElement[];
-    const card = children[i] as HTMLElement | undefined;
+    const card = container.children[i] as HTMLElement | undefined;
     if (!card) return;
     const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
     container.scrollTo({ left: offset, behavior: "smooth" });
   }
+
+  useEffect(() => {
+    function centerFirstCard() {
+      const container = containerRef.current;
+      if (!container) return;
+      const isLarge = window.innerWidth >= 1024;
+      const targetIndex = isLarge ? Math.floor(products.length / 2) : 0;
+      const card = container.children[targetIndex] as HTMLElement | undefined;
+      if (!card) return;
+      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
+      container.scrollTo({ left: offset, behavior: "smooth" });
+    }
+
+    centerFirstCard();
+
+    let t: number | undefined;
+    function onResize() {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => centerFirstCard(), 120);
+    }
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      if (t) window.clearTimeout(t);
+    };
+  }, [products.length]);
+
+  useEffect(() => {
+    if (!mounted || isHovering) return;
+    
+    const interval = setInterval(() => {
+      const container = containerRef.current;
+      if (!container) return;
+      
+      const nextIndex = (activeIndex + 1) % products.length;
+      const card = container.children[nextIndex] as HTMLElement | undefined;
+      if (!card) return;
+      const offset = card.offsetLeft - (container.clientWidth - card.clientWidth) / 2;
+      container.scrollTo({ left: offset, behavior: "smooth" });
+    }, 4000);
+
+    return () => clearInterval(interval);
+  }, [mounted, isHovering, activeIndex, products.length]);
 
   function handleAdd(p: Product) {
     addItem({ id: p.id, name: p.name, price: p.price, img: p.img }, 1);
@@ -221,10 +163,9 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   }
 
   return (
-    // give the whole slider a low z-index so fixed nav (with higher z) stays above it
-    <section
-      aria-labelledby="bestseller-heading"
-      className="py-16 bg-white overflow-hidden relative z-0"
+    <section 
+      aria-labelledby="bestseller-heading" 
+      className="py-16 bg-white overflow-hidden"
       onMouseEnter={() => setIsHovering(true)}
       onMouseLeave={() => setIsHovering(false)}
     >
@@ -251,15 +192,14 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
           </div>
 
           <div className="flex items-center gap-4">
-            <a
-              href="/shop"
+            <a 
+              href="/shop" 
               className="group text-sm font-medium hover:text-neutral-600 transition-colors hidden md:flex items-center gap-1"
             >
               View All Products
               <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
             </a>
-            {/* header buttons wrapper: lower z-index so nav (fixed) sits above */}
-            <div className="flex items-center gap-2 flex-shrink-0 z-10 relative">
+            <div className="flex items-center gap-2">
               <button
                 onClick={() => scrollByView("left")}
                 aria-label="Scroll left"
@@ -295,15 +235,14 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             className="flex gap-5 overflow-x-auto pb-4 snap-x snap-mandatory scrollbar-hide"
             role="list"
             aria-label="Best seller products"
-            style={{
+            style={{ 
               WebkitOverflowScrolling: "touch",
               scrollbarWidth: "none",
               msOverflowStyle: "none",
+              paddingLeft: "calc(50% - 41%)",
+              paddingRight: "calc(50% - 41%)",
             }}
           >
-            {/* left spacer to center the first card */}
-            <div aria-hidden style={{ minWidth: "calc(50% - 41%)", flex: "0 0 auto" }} />
-
             {products.map((p, i) => (
               <article
                 key={p.id}
@@ -313,47 +252,35 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 }`}
                 style={{ transitionDelay: `${i * 100}ms` }}
               >
-                {/* CARD: ensure isolation and overflow hidden; z's kept low so nav (fixed) can overlay */}
-                <div
-                  className={`group relative isolate rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-500 ${
-                    activeIndex === i ? "shadow-xl -translate-y-1" : "hover:-translate-y-2"
-                  }`}
-                  style={{ transformOrigin: "center", willChange: "transform" }}
-                >
-                  {/*
-                    Make the image a little smaller:
-                    - Keep the original aspect on small screens for vertical layout,
-                    - Use a slightly wider aspect on md+ so the image height is reduced.
-                  */}
-                  <div className="relative w-full aspect-[4/5] md:aspect-[4/3] bg-neutral-100 overflow-hidden">
+                <div className={`group rounded-xl overflow-hidden bg-neutral-50 flex flex-col h-full transition-all duration-500 hover:shadow-2xl ${
+                  activeIndex === i ? "scale-[1.02] shadow-xl" : "hover:-translate-y-2"
+                }`}>
+                  <div className="relative w-full aspect-[4/5] bg-neutral-100 overflow-hidden">
                     {p.img ? (
                       <Image
                         src={p.img}
                         alt={p.name}
                         fill
-                        className="object-cover transition-transform duration-700 group-hover:scale-105"
+                        className="object-cover transition-transform duration-700 group-hover:scale-110"
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-neutral-200 to-neutral-100" />
                     )}
-
+                    
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
-
-                    <div className="absolute top-3 left-3 z-10">
-                      <span
-                        className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full transition-all duration-300 ${
-                          activeIndex === i ? "animate-pulse" : ""
-                        }`}
-                      >
+                    
+                    <div className="absolute top-3 left-3">
+                      <span className={`inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full transition-all duration-300 ${
+                        activeIndex === i ? "animate-pulse" : ""
+                      }`}>
                         Best Seller
                       </span>
                     </div>
 
-                    <div className="absolute bottom-4 left-4 right-4 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300 z-0">
+                    <div className="absolute bottom-4 left-4 right-4 opacity-0 translate-y-4 group-hover:opacity-100 group-hover:translate-y-0 transition-all duration-300">
                       <button
                         onClick={() => handleAdd(p)}
                         className="w-full py-3 bg-white/95 backdrop-blur-sm text-black font-semibold rounded-lg flex items-center justify-center gap-2 hover:bg-white transition-colors"
-                        style={{ transformOrigin: "center" }}
                       >
                         <ShoppingCart size={16} />
                         Quick Add
@@ -367,7 +294,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                         {p.origin}
                       </p>
                     )}
-
+                    
                     <h3
                       className="text-base font-bold mb-2 leading-snug group-hover:text-neutral-600 transition-colors"
                       style={{ color: COLORS.primary }}
@@ -391,11 +318,10 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                         onClick={() => handleAdd(p)}
                         className={`relative inline-flex items-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold overflow-hidden transition-all duration-300 ${
                           addedMap[p.id]
-                            ? "bg-green-600 text-white" // avoid scale to prevent layout overflow/shift
+                            ? "bg-green-600 text-white scale-105"
                             : "bg-black text-white hover:bg-neutral-800 active:scale-95 hover:shadow-lg"
                         }`}
                         aria-label={`Add ${p.name} to cart`}
-                        style={{ transformOrigin: "center", zIndex: 10 }}
                       >
                         {addedMap[p.id] && (
                           <span className="absolute inset-0 bg-green-400 animate-ping opacity-30 rounded-full" />
@@ -417,9 +343,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 </div>
               </article>
             ))}
-
-            {/* right spacer to center the last card */}
-            <div aria-hidden style={{ minWidth: "calc(50% - 41%)", flex: "0 0 auto" }} />
           </div>
 
           <div className="mt-8 flex items-center justify-center gap-3">
@@ -430,19 +353,17 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 className="relative p-1 group"
                 aria-label={`Go to product ${i + 1}`}
               >
-                <span
-                  className={`absolute inset-0 rounded-full transition-all duration-300 ${
-                    activeIndex === i ? "bg-black/5 scale-150" : "group-hover:bg-black/5 group-hover:scale-150"
-                  }`}
-                />
-
-                <span
-                  className={`relative block rounded-full transition-all duration-500 ${
-                    activeIndex === i ? "w-8 h-2 bg-black" : "w-2 h-2 bg-neutral-300 group-hover:bg-neutral-500"
-                  }`}
-                >
+                <span className={`absolute inset-0 rounded-full transition-all duration-300 ${
+                  activeIndex === i ? "bg-black/5 scale-150" : "group-hover:bg-black/5 group-hover:scale-150"
+                }`} />
+                
+                <span className={`relative block rounded-full transition-all duration-500 ${
+                  activeIndex === i
+                    ? "w-8 h-2 bg-black"
+                    : "w-2 h-2 bg-neutral-300 group-hover:bg-neutral-500"
+                }`}>
                   {activeIndex === i && !isHovering && (
-                    <span
+                    <span 
                       className="absolute inset-0 bg-neutral-400 rounded-full origin-left"
                       style={{
                         animation: "progress 4s linear infinite",

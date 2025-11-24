@@ -57,6 +57,13 @@ export default function Navbar() {
   const openCart = useCart((s) => s.open);
   const totalCount = useCart((s) => s.totalCount());
 
+  // New: only user-controlled expanded search. When false nothing (zero height) is rendered.
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // scroll helpers
+  const lastScrollY = useRef(0);
+  const scrollTicking = useRef(false);
+
   useEffect(() => {
     // mark component as mounted on client so we don't render client-only badges during SSR
     setMounted(true);
@@ -189,6 +196,7 @@ export default function Navbar() {
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
     if (closeMenu) setMobileOpen(false);
     setMobileSearchOpen(false);
+    setSearchOpen(false);
   }
 
   const navLinks = [
@@ -204,6 +212,79 @@ export default function Navbar() {
     { href: "/about", label: "About", icon: <Info size={18} /> },
     { href: "/contact", label: "Contact", icon: <Mail size={18} /> },
   ];
+
+  // Scroll listener: if user scrolls on large screens, close the expanded search immediately.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const isLargeScreen = () => window.innerWidth >= 1024;
+
+    function handleScroll() {
+      const currentY = window.scrollY || 0;
+
+      if (scrollTicking.current) return;
+      scrollTicking.current = true;
+
+      window.requestAnimationFrame(() => {
+        const delta = currentY - lastScrollY.current;
+
+        // If search is open by user and there's any scroll movement, close it.
+        if (searchOpen && Math.abs(delta) > 0) {
+          setSearchOpen(false);
+        }
+
+        lastScrollY.current = currentY;
+        scrollTicking.current = false;
+      });
+    }
+
+    if (!isLargeScreen()) return;
+
+    lastScrollY.current = window.scrollY || 0;
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    // listen for resize so behavior only runs on large screens
+    function handleResize() {
+      if (!isLargeScreen()) {
+        setSearchOpen(false);
+      }
+    }
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [searchOpen]);
+
+  // Toggle the desktop search open/closed. When opened, focus the input.
+  function toggleDesktopSearch() {
+    setSearchOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setTimeout(() => {
+          desktopInputRef.current?.focus();
+        }, 50);
+      }
+      return next;
+    });
+  }
+
+  // keyboard handlers (Escape closes, "/" opens)
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape" && searchOpen) {
+        setSearchOpen(false);
+      }
+      if (e.key === "/" && !searchOpen && (document.activeElement?.tagName ?? "") !== "INPUT" && (document.activeElement?.tagName ?? "") !== "TEXTAREA") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => desktopInputRef.current?.focus(), 50);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [searchOpen]);
 
   return (
     <nav className="relative sticky top-0 z-40 bg-white shadow-sm" aria-label="Main navigation">
@@ -337,8 +418,19 @@ export default function Navbar() {
               })}
             </nav>
 
-            {/* Right actions (only cart on desktop; search moved to its own row below) */}
+            {/* Right actions (search icon before cart on desktop) */}
             <div className="flex items-center gap-4">
+              {/* Desktop search button (toggles the search section) */}
+              <button
+                type="button"
+                onClick={() => toggleDesktopSearch()}
+                aria-label="Toggle search"
+                aria-expanded={searchOpen}
+                className="relative flex items-center justify-center w-10 h-10"
+              >
+                <Search size={20} style={{ color: COLORS.black }} />
+              </button>
+
               <button
                 type="button"
                 onClick={() => openCart()}
@@ -357,49 +449,56 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* SEARCH ROW (separate line below main nav on large screens) */}
-      <div className="hidden lg:flex justify-center border-b border-gray-200 bg-white">
-        <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-3">
-          <form
-            onSubmit={(e) => handleSearchSubmit(e)}
-            className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-4 py-3 shadow-sm"
-            role="search"
-            aria-label="Site search"
-          >
-            <Search size={18} className="text-gray-500 mr-3" />
-            <input
-              ref={desktopInputRef}
-              type="search"
-              name="q"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={getPlaceholderWithCaret()}
-              aria-label="Search"
-              className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
-            />
-            {query ? (
-              <button
-                type="button"
-                aria-label="Clear search"
-                onClick={() => {
-                  setQuery("");
-                  desktopInputRef.current?.focus();
-                }}
-                className="ml-3 text-gray-500 hover:text-gray-700"
-              >
-                <X size={16} />
-              </button>
-            ) : null}
-            <button
-              type="submit"
-              className="ml-3 bg-black text-white px-4 py-2 rounded-full font-semibold hover:opacity-95"
-              aria-label="Search"
+      {/* SEARCH ROW
+          IMPORTANT: this row is now conditionally rendered only when searchOpen === true.
+          That guarantees zero height / zero space in the DOM when closed (not just visually hidden).
+          It will expand (push page content down) when the user clicks the search icon.
+          Any scroll will immediately close it (see scroll listener above).
+      */}
+      {searchOpen && (
+        <div className="hidden lg:flex justify-center border-b border-gray-200 bg-white transition-all duration-200">
+          <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-3">
+            <form
+              onSubmit={(e) => handleSearchSubmit(e)}
+              className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-4 py-3 shadow-sm"
+              role="search"
+              aria-label="Site search"
             >
-              Search
-            </button>
-          </form>
+              <Search size={18} className="text-gray-500 mr-3" />
+              <input
+                ref={desktopInputRef}
+                type="search"
+                name="q"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={getPlaceholderWithCaret()}
+                aria-label="Search"
+                className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setQuery("");
+                    desktopInputRef.current?.focus();
+                  }}
+                  className="ml-3 text-gray-500 hover:text-gray-700"
+                >
+                  <X size={16} />
+                </button>
+              ) : null}
+              <button
+                type="submit"
+                className="ml-3 bg-black text-white px-4 py-2 rounded-full font-semibold hover:opacity-95"
+                aria-label="Search"
+              >
+                Search
+              </button>
+            </form>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* MOBILE SEARCH OVERLAY */}
       <div
@@ -456,7 +555,7 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* MOBILE / TABLET MENU (anchored under the nav, no weird hard-coded top) */}
+      {/* MOBILE / TABLET MENU (anchored under the nav) */}
       <div
         className={`absolute left-0 right-0 top-full z-30 lg:hidden transform transition-all duration-200 bg-white shadow-lg ${
           mobileOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"
