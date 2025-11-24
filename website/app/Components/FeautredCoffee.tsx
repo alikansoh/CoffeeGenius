@@ -127,6 +127,7 @@ function ProductCard({ product, index, onAddToCart, isAdded }: {
                 src={product.img}
                 alt={product.name}
                 fill
+                sizes="(max-width: 640px) 82vw, (max-width: 768px) 46vw, (max-width: 1024px) 32vw, (max-width: 1280px) 24vw, 22vw"
                 className="object-cover transition-opacity duration-300"
                 style={{
                   opacity: isZooming ? 0 : 1,
@@ -236,35 +237,53 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
   const [hasInteracted, setHasInteracted] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setMounted(true);
-    }, 0);
-    
-    return () => clearTimeout(timer);
+    setMounted(true);
   }, []);
 
-  // Show swipe hint on mobile after component mounts
+  // Show swipe hint on small screens after component mounts
   useEffect(() => {
+    if (!mounted) return;
+
+    // Check screen size synchronously
+    const isSmallScreen = window.innerWidth < 1024;
+    
+    console.log('Swipe hint check:', { 
+      mounted, 
+      isSmallScreen, 
+      windowWidth: window.innerWidth 
+    });
+    
+    if (!isSmallScreen) {
+      console.log('Screen too large, skipping hint');
+      return;
+    }
+
     // Check if user has seen the hint before
     const hasSeenHint = localStorage.getItem('hasSeenSwipeHint');
     
-    if (!hasSeenHint && window.innerWidth < 1024) {
+    console.log('LocalStorage check:', { hasSeenHint });
+    
+    if (!hasSeenHint) {
       const timer = setTimeout(() => {
+        console.log('Showing swipe hint NOW');
         setShowSwipeHint(true);
-      }, 800);
+      }, 1000);
 
-      // Hide hint after 4 seconds
+      // Hide hint after 5 seconds
       const hideTimer = setTimeout(() => {
+        console.log('Auto-hiding swipe hint');
         setShowSwipeHint(false);
         localStorage.setItem('hasSeenSwipeHint', 'true');
-      }, 4800);
+      }, 6000);
 
       return () => {
         clearTimeout(timer);
         clearTimeout(hideTimer);
       };
+    } else {
+      console.log('User has already seen hint');
     }
-  }, []);
+  }, [mounted]);
 
   // Update scroll button states
   useEffect(() => {
@@ -298,6 +317,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
     const handleInteraction = () => {
       if (!hasInteracted) {
+        console.log('User interacted, hiding hint immediately');
         setHasInteracted(true);
         setShowSwipeHint(false);
         localStorage.setItem('hasSeenSwipeHint', 'true');
@@ -368,22 +388,10 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
           </div>
         </div>
 
-        <div className="relative -mx-4 sm:-mx-6 lg:-mx-8">
-          {/* Swipe hint - only visible on small screens */}
-          <div
-            className={`lg:hidden absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 pointer-events-none transition-opacity duration-500 ${
-              showSwipeHint ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            <div className="bg-black/80 backdrop-blur-sm text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3">
-              <MoveHorizontal size={24} className="animate-swipe-hint" />
-              <span className="text-sm font-semibold whitespace-nowrap">Swipe to explore</span>
-            </div>
-          </div>
-
+        <div className="relative">
           <div
             ref={containerRef}
-            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide px-4 sm:px-6 lg:px-8"
+            className="flex gap-5 overflow-x-auto pb-4 scrollbar-hide -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8"
             role="list"
             aria-label="Best seller products"
             style={{
@@ -401,6 +409,22 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
                 isAdded={addedMap[p.id] || false}
               />
             ))}
+          </div>
+
+          {/* Swipe hint - below slider, only visible on small screens */}
+          <div className="lg:hidden">
+            <div
+              className={`flex justify-center mt-6 transition-all duration-500 ${
+                showSwipeHint 
+                  ? 'opacity-100 translate-y-0' 
+                  : 'opacity-0 -translate-y-2 pointer-events-none'
+              }`}
+            >
+              <div className="inline-flex items-center gap-3 px-6 py-3.5 bg-black text-white rounded-full shadow-lg border-2 border-neutral-800">
+                <MoveHorizontal size={22} className="animate-swipe-hint" strokeWidth={2.5} />
+                <span className="text-sm font-semibold">Swipe to explore more</span>
+              </div>
+            </div>
           </div>
 
           {/* Navigation buttons - Only visible on large screens, positioned at bottom */}
@@ -454,7 +478,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             transform: translateX(0);
           }
           50% {
-            transform: translateX(8px);
+            transform: translateX(12px);
           }
         }
 
