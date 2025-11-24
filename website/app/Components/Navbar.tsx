@@ -286,8 +286,19 @@ export default function Navbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
+  // ---- NAV STYLE FIXES FOR SAFARI SMOOTH SCROLL ----
+  // These inline styles force the nav into its own composited layer and reduce repaints.
+  // If issues persist, try switching sticky -> fixed as a diagnostic.
+  const navStyle: React.CSSProperties = {
+    willChange: "transform",
+    WebkitBackfaceVisibility: "hidden",
+    backfaceVisibility: "hidden",
+    transform: "translateZ(0)",
+    boxShadow: "0 1px 0 rgba(0,0,0,0.06)", // very light shadow => cheaper to paint than a large blur shadow
+  };
+
   return (
-    <nav className=" sticky top-0 z-40 bg-white " aria-label="Main navigation">
+    <nav className="relative sticky top-0 z-40 bg-white" style={navStyle} aria-label="Main navigation">
       {/* Top announcement bar */}
       <div
         className="text-center py-2 text-xs lg:font-medium text-white"
