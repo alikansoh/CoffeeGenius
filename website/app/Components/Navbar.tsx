@@ -41,14 +41,16 @@ export default function Navbar() {
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const desktopInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Typing animation state
-  const [typedPlaceholder, setTypedPlaceholder] = useState("");
-  const [showCaret, setShowCaret] = useState(true);
-
-  // Refs to manage timers so we can clear them when user types or component unmounts
+  // Removed animated-placeholder React state to avoid frequent re-renders that caused jank in Safari.
+  // Instead we'll update input.placeholder directly via refs.
   const typingIntervalRef = useRef<number | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
+  const caretIntervalRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
+
+  // caret visibility and current typed text as refs (DOM-only)
+  const caretVisibleRef = useRef(true);
+  const currentTypedRef = useRef("");
 
   // Hydration guard for dynamic UI (cart badge)
   const [mounted, setMounted] = useState(false);
@@ -105,12 +107,9 @@ export default function Navbar() {
   // Start typing on mount (infinite loop) unless user typed
   useEffect(() => {
     if (query === "") startLoopTyping();
-
-    // caret blink
-    const caretInterval = window.setInterval(() => {
-      setShowCaret((s) => !s);
-    }, 500);
-    return () => window.clearInterval(caretInterval);
+    return () => {
+      clearTypingTimers();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -118,7 +117,8 @@ export default function Navbar() {
   useEffect(() => {
     if (query !== "") {
       clearTypingTimers();
-      setTypedPlaceholder(""); // remove animated placeholder while user types
+      // ensure placeholders are cleared while user types
+      setPlaceholderText("", false);
     } else {
       // restart the loop if query was cleared
       startLoopTyping();
@@ -135,15 +135,44 @@ export default function Navbar() {
       window.clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = null;
     }
+    if (caretIntervalRef.current) {
+      window.clearInterval(caretIntervalRef.current);
+      caretIntervalRef.current = null;
+    }
+    // clear any placeholder text on inputs when timers stop
+    if (query !== "") {
+      setPlaceholderText("", false);
+    }
+  }
+
+  // Update input placeholders directly to avoid React re-renders
+  function setPlaceholderText(text: string, useCaret = true) {
+    currentTypedRef.current = text;
+    const caret = useCaret && caretVisibleRef.current ? "|" : "";
+    const val = text ? text + (useCaret ? caret : "") : "";
+
+    const updateIfAllowed = (el: HTMLInputElement | null) => {
+      if (!el) return;
+      // avoid overwriting placeholder while the input is focused (user might be typing)
+      if (document.activeElement === el) {
+        el.placeholder = "";
+      } else {
+        el.placeholder = val;
+      }
+    };
+
+    updateIfAllowed(desktopInputRef.current);
+    updateIfAllowed(mobileInputRef.current);
   }
 
   // Typing animation implementation (infinite loop unless user types)
   function startLoopTyping() {
     // Respect prefers-reduced-motion — don't animate if user prefers reduced motion
     if (typeof window !== "undefined") {
-      const prefersReduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const prefersReduced =
+        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (prefersReduced) {
-        setTypedPlaceholder(PLACEHOLDER_TEXT);
+        setPlaceholderText(PLACEHOLDER_TEXT, false);
         return;
       }
     }
@@ -155,12 +184,23 @@ export default function Navbar() {
     const pauseAfterFinish = 1400; // ms to wait after full text before clearing and restarting
     let idx = 0;
 
+    // start caret blink interval (DOM-only)
+    caretVisibleRef.current = true;
+    caretIntervalRef.current = window.setInterval(() => {
+      caretVisibleRef.current = !caretVisibleRef.current;
+      // only update placeholder when there's typed text and user hasn't typed
+      if (currentTypedRef.current && query === "") {
+        setPlaceholderText(currentTypedRef.current, true);
+      }
+    }, 500);
+
     function step() {
       // stop if component unmounted or user started typing
       if (!mountedRef.current || query !== "") return;
 
       idx += 1;
-      setTypedPlaceholder(text.slice(0, idx));
+      const current = text.slice(0, idx);
+      setPlaceholderText(current, true);
 
       if (idx < text.length) {
         typingIntervalRef.current = window.setTimeout(step, typingSpeed);
@@ -168,7 +208,7 @@ export default function Navbar() {
         // finished typing, wait then clear and restart
         typingTimeoutRef.current = window.setTimeout(() => {
           if (!mountedRef.current || query !== "") return;
-          setTypedPlaceholder("");
+          setPlaceholderText("", false);
           idx = 0;
           // short pause before typing again
           typingTimeoutRef.current = window.setTimeout(() => {
@@ -179,14 +219,16 @@ export default function Navbar() {
       }
     }
 
-    // start the loop
+    // initialize placeholder to empty then start
+    setPlaceholderText("", false);
     step();
   }
 
   function getPlaceholderWithCaret() {
-    // When user has typed, we don't show placeholder; when animation is running show caret
+    // We no longer use React state for the animated placeholder; inputs are updated via refs.
+    // Return empty so React doesn't manage the placeholder prop.
     if (query !== "") return "";
-    return typedPlaceholder + (showCaret && typedPlaceholder.length < PLACEHOLDER_TEXT.length ? "|" : "");
+    return undefined as unknown as string;
   }
 
   function handleSearchSubmit(e?: React.FormEvent, closeMenu = false) {
@@ -276,7 +318,12 @@ export default function Navbar() {
       if (e.key === "Escape" && searchOpen) {
         setSearchOpen(false);
       }
-      if (e.key === "/" && !searchOpen && (document.activeElement?.tagName ?? "") !== "INPUT" && (document.activeElement?.tagName ?? "") !== "TEXTAREA") {
+      if (
+        e.key === "/" &&
+        !searchOpen &&
+        (document.activeElement?.tagName ?? "") !== "INPUT" &&
+        (document.activeElement?.tagName ?? "") !== "TEXTAREA"
+      ) {
         e.preventDefault();
         setSearchOpen(true);
         setTimeout(() => desktopInputRef.current?.focus(), 50);
@@ -286,19 +333,8 @@ export default function Navbar() {
     return () => window.removeEventListener("keydown", onKey);
   }, [searchOpen]);
 
-  // ---- NAV STYLE FIXES FOR SAFARI SMOOTH SCROLL ----
-  // These inline styles force the nav into its own composited layer and reduce repaints.
-  // If issues persist, try switching sticky -> fixed as a diagnostic.
-  const navStyle: React.CSSProperties = {
-    willChange: "transform",
-    WebkitBackfaceVisibility: "hidden",
-    backfaceVisibility: "hidden",
-    transform: "translateZ(0)",
-    boxShadow: "0 1px 0 rgba(0,0,0,0.06)", // very light shadow => cheaper to paint than a large blur shadow
-  };
-
   return (
-    <nav className="relative sticky top-0 z-40 bg-white" style={navStyle} aria-label="Main navigation">
+    <nav className=" sticky top-0 z-40 bg-white " aria-label="Main navigation">
       {/* Top announcement bar */}
       <div
         className="text-center py-2 text-xs lg:font-medium text-white"
