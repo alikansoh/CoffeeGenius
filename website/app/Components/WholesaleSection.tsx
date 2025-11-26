@@ -69,7 +69,7 @@ export default function WholesaleHeroMedium() {
             min-h-[260px] sm:min-h-[320px] md:min-h-[480px] lg:min-h-[520px]
             px-5 sm:px-7 md:px-8 py-6 sm:py-8 md:py-12
             rounded-2xl
-            bg-white/8 backdrop-blur-sm border border-white/8
+            bg-white/8  border border-white/8
             shadow-lg hover:shadow-2xl transition-all duration-300
             z-10
           "
