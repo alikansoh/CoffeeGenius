@@ -96,21 +96,14 @@ export default function WholesaleHeroMedium() {
             </p>
 
             <div className="mt-5 sm:mt-6 flex flex-wrap gap-3 items-center">
+              {/* Single primary CTA */}
               <a
                 href="/wholesale"
-                className={`group inline-flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-4 rounded-lg ${brownBg} text-white text-base sm:text-lg font-semibold shadow-md hover:brightness-105 transition-all duration-200 focus:outline-none focus-visible:ring-2 ${brownRing} focus-visible:ring-offset-2 focus-visible:ring-offset-black/40`}
-                aria-label="Discover wholesale offerings"
+                className={`group inline-flex items-center gap-2 px-5 py-3 sm:px-6 sm:py-4 rounded-lg ${brownBg} text-white text-base sm:text-lg font-semibold shadow-md hover:brightness-105 transition-all duration-200 focus:outline-none focus-visible:ring-2 ${brownRing} focus-visible:ring-offset-2 focus-visible:ring-offset-black/40`}
+                aria-label="Explore wholesale offerings"
               >
-                Explore Offerings
+                Work With Us
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5 group-hover:translate-x-1 transition-transform" />
-              </a>
-
-              <a
-                href="/wholesale/apply"
-                className={`group inline-flex items-center gap-2 px-4 py-3 sm:px-5 sm:py-4 rounded-lg border border-white/20 bg-white/6 text-white text-base sm:text-lg font-semibold hover:bg-white/10 transition-all duration-200 focus:outline-none focus-visible:ring-2 ${brownRing}`}
-                aria-label="Apply for wholesale"
-              >
-                Apply Now
               </a>
             </div>
           </div>
