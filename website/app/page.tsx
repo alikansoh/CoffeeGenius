@@ -4,6 +4,7 @@ import FeaturedCoffee from "./Components/FeautredCoffee";
 import  Sections from "./Components/FeautredSections";
 import WholesaleSection from "./Components/WholesaleSection";
 import GoogleReviews from "./Components/GoogleReviews";
+import Cta from "./Components/Cta";
 export default function Home() {
   return (
     <main>
@@ -12,6 +13,8 @@ export default function Home() {
       <Sections />
       <WholesaleSection />
       <GoogleReviews />
+      <Cta />
+
 
     </main>
   );
