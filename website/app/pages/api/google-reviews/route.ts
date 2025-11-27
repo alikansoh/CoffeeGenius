@@ -3,10 +3,8 @@ import { NextResponse } from "next/server";
 /**
  * app/api/google-reviews/route.ts
  *
- * Type-safe app-router route that fetches Google Places reviews with in-memory caching.
- * Returns overall rating and total ratings:
- * - rating?: number
- * - user_ratings_total?: number
+ * App-router route that fetches Google Places reviews with in-memory caching.
+ * Includes author_url for individual review links and place.url for the place page.
  *
  * Env:
  * - GOOGLE_PLACES_API_KEY (required)
@@ -17,6 +15,7 @@ import { NextResponse } from "next/server";
 
 type GoogleReview = {
   author_name?: string;
+  author_url?: string;
   rating?: number;
   text?: string;
   relative_time_description?: string;
@@ -26,6 +25,7 @@ type GoogleReview = {
 type ResponseData = {
   reviews?: GoogleReview[];
   place_name?: string;
+  place_url?: string;
   rating?: number;
   user_ratings_total?: number;
   fetched_at?: string;
@@ -44,9 +44,10 @@ function getTtlMs(): number {
   return Math.max(0, hours) * 60 * 60 * 1000;
 }
 
-/** Partial typings for the Google Places Details response we use */
+/** Partial typings for the Google Places Details response we expect */
 type PlacesReview = {
   author_name?: string;
+  author_url?: string;
   rating?: number;
   text?: string;
   relative_time_description?: string;
@@ -55,6 +56,7 @@ type PlacesReview = {
 
 type PlacesResult = {
   name?: string;
+  url?: string;
   reviews?: PlacesReview[];
   rating?: number;
   user_ratings_total?: number;
@@ -67,56 +69,60 @@ type PlacesResponse = {
 };
 
 export async function GET(_: Request) {
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-  const placeId = process.env.GOOGLE_PLACE_ID;
+  const apiKey = typeof process.env.GOOGLE_PLACES_API_KEY === "string" ? process.env.GOOGLE_PLACES_API_KEY.trim() : "";
+  const placeId = typeof process.env.GOOGLE_PLACE_ID === "string" ? process.env.GOOGLE_PLACE_ID.trim() : "";
   const maxReviewsEnv = process.env.GOOGLE_REVIEWS_MAX_REVIEWS;
-
   const maxReviews =
     maxReviewsEnv && !Number.isNaN(Number(maxReviewsEnv))
       ? Math.max(1, Math.floor(Number(maxReviewsEnv)))
       : DEFAULT_MAX_REVIEWS;
 
   if (!apiKey || !placeId) {
-    return NextResponse.json(
-      { error: "Server misconfigured: missing GOOGLE_PLACES_API_KEY or GOOGLE_PLACE_ID" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Server misconfigured: missing GOOGLE_PLACES_API_KEY or GOOGLE_PLACE_ID" }, { status: 500 });
   }
 
   const ttlMs = getTtlMs();
 
-  // Serve cached response if still valid
   if (cache.data && Date.now() < cache.expiry) {
     return NextResponse.json(cache.data, { status: 200, headers: { "x-cache": "HIT" } });
   }
 
   try {
-    const fields = encodeURIComponent("name,rating,user_ratings_total,reviews");
-    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
+    const fields = encodeURIComponent("name,rating,user_ratings_total,reviews,url");
+    const fetchUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
     )}&fields=${fields}&key=${encodeURIComponent(apiKey)}`;
 
-    const r = await fetch(url);
+    const r = await fetch(fetchUrl);
+    const bodyText = await r.text();
+
     if (!r.ok) {
-      const text = await r.text().catch(() => "");
-      throw new Error(`Google API responded with ${r.status}: ${text}`);
+      const preview = bodyText.slice(0, 1000);
+      throw new Error(`Google API responded with ${r.status}: ${preview}${bodyText.length > preview.length ? "..." : ""}`);
     }
 
-    const json = (await r.json()) as PlacesResponse;
+    let json: PlacesResponse;
+    try {
+      json = JSON.parse(bodyText) as PlacesResponse;
+    } catch (parseErr) {
+      const preview = bodyText.slice(0, 1000);
+      throw new Error(`Failed to parse Google response as JSON. Preview: ${preview}${bodyText.length > preview.length ? "..." : ""}`);
+    }
 
     if (json.status !== "OK") {
       throw new Error(`Google Places error: ${json.status || "UNKNOWN"} - ${json.error_message || "no message"}`);
     }
 
     const place_name = json.result?.name;
-    const overall_rating = typeof json.result?.rating === "number" ? json.result!.rating! : undefined;
-    const total_ratings =
-      typeof json.result?.user_ratings_total === "number" ? json.result!.user_ratings_total! : undefined;
+    const place_url = json.result?.url;
+    const overall_rating = typeof json.result?.rating === "number" ? json.result.rating : undefined;
+    const total_ratings = typeof json.result?.user_ratings_total === "number" ? json.result.user_ratings_total : undefined;
 
     const rawReviews: PlacesReview[] = Array.isArray(json.result?.reviews) ? json.result!.reviews! : [];
 
     const reviews: GoogleReview[] = rawReviews.slice(0, maxReviews).map((rv) => ({
       author_name: rv.author_name,
+      author_url: rv.author_url,
       rating: rv.rating,
       text: rv.text,
       relative_time_description: rv.relative_time_description,
@@ -127,13 +133,13 @@ export async function GET(_: Request) {
     const data: ResponseData = {
       reviews,
       place_name,
+      place_url,
       rating: overall_rating,
       user_ratings_total: total_ratings,
       fetched_at: now.toISOString(),
       cached_until: new Date(now.getTime() + ttlMs).toISOString(),
     };
 
-    // Update in-memory cache
     cache = { expiry: Date.now() + ttlMs, data };
 
     return NextResponse.json(data, { status: 200, headers: { "x-cache": "MISS" } });
@@ -141,7 +147,6 @@ export async function GET(_: Request) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error fetching Google Reviews:", message);
 
-    // If we have stale cached data, return it instead of failing
     if (cache.data) {
       const stale: ResponseData = {
         ...cache.data,

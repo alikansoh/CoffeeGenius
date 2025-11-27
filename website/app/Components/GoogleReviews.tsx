@@ -1,10 +1,12 @@
 "use client";
 import Image from "next/image";
-import { Star, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { JSX, useEffect, useState } from "react";
 
 type Review = {
+  id?: string;
   author_name?: string;
+  author_url?: string;
   rating?: number;
   text?: string;
   relative_time_description?: string;
@@ -14,6 +16,7 @@ type Review = {
 type ApiResponse = {
   reviews?: Review[];
   place_name?: string;
+  place_url?: string;
   rating?: number;
   user_ratings_total?: number;
   fetched_at?: string;
@@ -36,7 +39,6 @@ export default function GoogleReviews(): JSX.Element {
         const contentType = String(res.headers.get("content-type") ?? "").toLowerCase();
         const text = await res.text();
 
-        // If the response isn't JSON, surface the body (usually HTML) for debugging
         if (!contentType.includes("application/json")) {
           const snippet = text.slice(0, 1000);
           throw new Error(
@@ -46,13 +48,7 @@ export default function GoogleReviews(): JSX.Element {
           );
         }
 
-        let json: ApiResponse;
-        try {
-          json = JSON.parse(text) as ApiResponse;
-        } catch (parseErr) {
-          const snippet = text.slice(0, 1000);
-          throw new Error(`Failed to parse JSON response. Response preview: ${snippet}${text.length > snippet.length ? "..." : ""}`);
-        }
+        const json = JSON.parse(text) as ApiResponse;
 
         if (!res.ok) {
           throw new Error(json?.error || `HTTP ${res.status}`);
@@ -75,10 +71,6 @@ export default function GoogleReviews(): JSX.Element {
     };
   }, []);
 
-  const placeId = process.env.NEXT_PUBLIC_GOOGLE_PLACE_ID ?? "";
-  const PLACE_LINK = (p?: string) =>
-    p ? `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(p)}` : "https://www.google.com/maps";
-
   function normalizePhotoUrl(url?: string): string | null {
     if (!url) return null;
     if (url.startsWith("//")) return `https:${url}`;
@@ -86,26 +78,32 @@ export default function GoogleReviews(): JSX.Element {
     return `https://${url}`;
   }
 
-  function renderStars(rating?: number, size = 20) {
-    const stars = [];
+  function StarRow({ rating, size = 20 }: { rating?: number; size?: number }) {
     const value = typeof rating === "number" && Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
+    const stars = [];
+    const starPath =
+      "M12 .587l3.668 7.431 8.2 1.192-5.934 5.788 1.402 8.174L12 18.896l-7.336 3.876 1.402-8.174L.132 9.21l8.2-1.192z";
     for (let i = 0; i < 5; i++) {
       const fill = Math.max(0, Math.min(1, value - i));
       stars.push(
-        <div key={i} className="relative inline-block" style={{ width: size, height: size }}>
-          <Star className="text-slate-300" style={{ width: size, height: size }} />
+        <div key={i} style={{ width: size, height: size }} className="relative inline-block">
+          <svg viewBox="0 0 24 24" width={size} height={size} className="text-slate-300">
+            <path fill="currentColor" d={starPath} />
+          </svg>
           <div
             aria-hidden
             style={{
               position: "absolute",
               left: 0,
               top: 0,
-              width: `${fill * 100}%`,
+              width: `${Math.round(fill * 100)}%`,
               height: "100%",
               overflow: "hidden",
             }}
           >
-            <Star className="text-amber-400" style={{ width: size, height: size }} />
+            <svg viewBox="0 0 24 24" width={size} height={size} className="text-amber-400">
+              <path fill="currentColor" d={starPath} />
+            </svg>
           </div>
         </div>
       );
@@ -136,7 +134,7 @@ export default function GoogleReviews(): JSX.Element {
 
             <div className="flex-1 text-center md:text-left">
               <div className="flex items-center md:items-start justify-center md:justify-start gap-3">
-                {renderStars(data?.rating, 20)}
+                <StarRow rating={data?.rating} size={22} />
                 <div className="text-sm text-slate-700 font-medium">{data?.rating ? data.rating.toFixed(1) : "—"} / 5</div>
               </div>
               <div className="text-sm text-slate-500 mt-1">
@@ -149,7 +147,7 @@ export default function GoogleReviews(): JSX.Element {
 
             <div className="flex flex-col gap-3 items-center md:items-end">
               <a
-                href={PLACE_LINK(placeId)}
+                href={data?.place_url ?? `pages/api/google-reviews`}
                 target="_blank"
                 rel="noreferrer noopener"
                 className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all duration-300 hover:bg-slate-800 hover:shadow-xl border-2 border-slate-900"
@@ -157,14 +155,11 @@ export default function GoogleReviews(): JSX.Element {
                 See on Google
                 <ArrowRight className="w-4 h-4" />
               </a>
-              <a href={PLACE_LINK(placeId)} target="_blank" rel="noreferrer noopener" className="text-xs text-slate-500 underline">
-                Write a review
-              </a>
             </div>
           </div>
         </div>
 
-        {/* Content */}
+        {/* Reviews Grid */}
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 3 }).map((_, i) => (
@@ -181,10 +176,11 @@ export default function GoogleReviews(): JSX.Element {
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {data.reviews.map((r, idx) => {
+              {data.reviews.map((r) => {
                 const photoUrl = normalizePhotoUrl(r.profile_photo_url ?? undefined);
+                const internalReviewLink = r.id ? `/reviews/${encodeURIComponent(r.id)}` : data.place_url ?? "#";
                 return (
-                  <article key={idx} className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between hover:shadow-xl transition-all duration-300">
+                  <article key={r.id ?? Math.random()} className="bg-white border border-slate-200 rounded-2xl p-5 flex flex-col justify-between hover:shadow-xl transition-all duration-300">
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-100 flex-shrink-0">
                         {photoUrl ? (
@@ -200,7 +196,7 @@ export default function GoogleReviews(): JSX.Element {
                         <div className="flex items-center justify-between">
                           <h3 className="text-sm font-semibold text-slate-900">{r.author_name ?? "Anonymous"}</h3>
                           <div className="flex items-center gap-2">
-                            {renderStars(r.rating, 16)}
+                            <StarRow rating={r.rating} size={16} />
                             <span className="text-sm text-slate-600">{typeof r.rating === "number" ? r.rating.toFixed(1) : "—"}</span>
                           </div>
                         </div>
@@ -212,12 +208,10 @@ export default function GoogleReviews(): JSX.Element {
 
                     <div className="pt-4">
                       <a
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        href={PLACE_LINK(placeId)}
+                        href={internalReviewLink}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all duration-300 hover:bg-slate-800 hover:shadow-xl border-2 border-slate-900"
                       >
-                        Read on Google
+                        Read this review
                         <ArrowRight className="w-4 h-4" />
                       </a>
                     </div>
@@ -230,7 +224,7 @@ export default function GoogleReviews(): JSX.Element {
               <a
                 target="_blank"
                 rel="noreferrer noopener"
-                href={PLACE_LINK(placeId)}
+                href={data?.place_url ?? `pages/api/google-reviews`}
                 className="inline-flex items-center gap-2 px-6 py-3 bg-white text-slate-900 font-semibold text-sm rounded-xl border border-slate-200 hover:shadow-md transition-all duration-300"
               >
                 See all reviews on Google
@@ -244,7 +238,7 @@ export default function GoogleReviews(): JSX.Element {
   );
 }
 
-/* re-used helper inside the file to keep component self-contained */
+/* helper */
 function normalizePhotoUrl(url?: string): string | null {
   if (!url) return null;
   if (url.startsWith("//")) return `https:${url}`;
