@@ -1,11 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import crypto from "crypto";
 
 /**
  * pages/api/google-reviews.ts
  *
- * Adds deterministic `id` to each review so the client can link to an internal page for that review.
- * Other behavior unchanged: in-memory cache, TTL, stale fallback.
+ * Pages-router route that fetches Google Places reviews with in-memory caching.
+ * TypeScript-safe version: explicit response types, defensive JSON parsing,
+ * safe env parsing, and robust error handling (returns stale cache when Google fails).
+ *
+ * Requests fields: name, rating, user_ratings_total, reviews, url
+ *
+ * Env:
+ * - GOOGLE_PLACES_API_KEY (required)
+ * - GOOGLE_PLACE_ID (required)
+ * - GOOGLE_REVIEWS_CACHE_HOURS (optional, default 24)
+ * - GOOGLE_REVIEWS_MAX_REVIEWS (optional, default 9)
  */
 
 type GoogleReview = {
@@ -16,7 +24,7 @@ type GoogleReview = {
   text?: string;
   relative_time_description?: string;
   profile_photo_url?: string;
-  time?: number; // unix timestamp if available
+  time?: number;
 };
 
 type ResponseData = {
@@ -35,6 +43,9 @@ const DEFAULT_MAX_REVIEWS = 9;
 
 let cache: { expiry: number; data?: ResponseData } = { expiry: 0 };
 
+/**
+ * Helper: parse TTL hours from env and return ms
+ */
 function getTtlMs(): number {
   const raw = process.env.GOOGLE_REVIEWS_CACHE_HOURS;
   const parsed = raw ? Number(raw) : DEFAULT_CACHE_HOURS;
@@ -90,7 +101,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return;
   }
 
+  // Otherwise attempt to fetch from Google
   try {
+    // Request url and reviews (reviews may include author_url if available)
     const fields = encodeURIComponent("name,rating,user_ratings_total,reviews,url");
     const fetchUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
@@ -123,22 +136,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const rawReviews: PlacesReview[] = Array.isArray(json.result?.reviews) ? json.result!.reviews! : [];
 
-    // map and add deterministic id
-    const reviews = rawReviews.slice(0, maxReviews).map((rv) => {
-      // build fingerprint string
-      const fingerprint = `${rv.author_name ?? ""}|${rv.time ?? ""}|${(rv.text ?? "").slice(0, 200)}`;
-      const id = crypto.createHash("sha1").update(fingerprint).digest("hex");
-      return {
-        id,
-        author_name: rv.author_name,
-        author_url: rv.author_url,
-        rating: rv.rating,
-        text: rv.text,
-        relative_time_description: rv.relative_time_description,
-        profile_photo_url: rv.profile_photo_url,
-        time: rv.time,
-      } as GoogleReview;
-    });
+    const reviews: GoogleReview[] = rawReviews.slice(0, maxReviews).map((rv) => ({
+      id: rv.time || rv.author_name ? `${rv.time ?? ""}_${(rv.author_name ?? "").slice(0, 50)}` : undefined,
+      author_name: rv.author_name,
+      author_url: rv.author_url,
+      rating: rv.rating,
+      text: rv.text,
+      relative_time_description: rv.relative_time_description,
+      profile_photo_url: rv.profile_photo_url,
+      time: rv.time,
+    }));
 
     const now = new Date();
     const data: ResponseData = {
@@ -161,6 +168,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const message = err instanceof Error ? err.message : String(err);
     console.error("Error fetching Google Reviews:", message);
 
+    // If we have stale cache, return it rather than failing completely
     if (cache.data) {
       res.setHeader("x-cache", "STALE");
       const stale: ResponseData = {
@@ -171,6 +179,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       return;
     }
 
+    // No cache available -> return error
     res.status(500).json({ error: message || "Unknown error" });
   }
 }
