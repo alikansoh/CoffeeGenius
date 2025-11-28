@@ -422,21 +422,35 @@ export default function GallerySlider() {
             </p>
           </div>
 
-          {/* Dots */}
+          {/* Dots - increased touch target size for accessibility */}
           <div className="flex items-center justify-center gap-2 mt-4">
-            {media.map((_, i) => (
-              <button
-                key={i}
-                aria-label={`Go to slide ${i + 1}`}
-                onClick={() => goTo(i)}
-                disabled={isTransitioning}
-                className={`transition-all duration-300 rounded-full ${
-                  i === index
-                    ? "w-10 h-2.5 bg-gray-800"
-                    : "w-2.5 h-2.5 bg-gray-300 hover:bg-gray-500 hover:scale-125"
-                } disabled:cursor-not-allowed`}
-              />
-            ))}
+            {media.map((_, i) => {
+              const isActive = i === index;
+              return (
+                <button
+                  key={i}
+                  aria-label={`Go to slide ${i + 1}`}
+                  aria-current={isActive ? "true" : undefined}
+                  onClick={() => goTo(i)}
+                  disabled={isTransitioning}
+                  // Make the interactive target at least 44x44 CSS pixels while keeping the visual indicator compact
+                  className={`transition-all duration-300 rounded-full inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 disabled:cursor-not-allowed`}
+                  // Tailwind w-11/h-11 equates to 44px (default spacing scale), ensuring adequate touch target
+                  // keep visual inner element small so layout doesn't change
+                  style={{ width: 44, height: 44 }}
+                >
+                  {/* visual indicator inside the larger hit target */}
+                  <span
+                    className={`block transition-all duration-300 ${
+                      isActive
+                        ? "w-8 h-2.5 bg-gray-800 rounded-full"
+                        : "w-2.5 h-2.5 bg-gray-300 rounded-full hover:bg-gray-500"
+                    }`}
+                    aria-hidden="true"
+                  />
+                </button>
+              );
+            })}
           </div>
 
           {/* Thumbnail slider - HORIZONTAL ONLY */}
