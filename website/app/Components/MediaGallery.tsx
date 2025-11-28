@@ -307,7 +307,7 @@ export default function GallerySlider() {
           onMouseLeave={() => setIsPaused(false)}
         >
           <div
-            className="relative overflow-hidden rounded-xl shadow-2xl bg-black aspect-video lg:aspect-[4/3]"
+            className="relative overflow-hidden rounded-xl shadow-2xl bg-black aspect-video lg:aspect-4/3"
             onTouchStart={onTouchStart}
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
@@ -323,7 +323,7 @@ export default function GallerySlider() {
               {media.map((m, i) => (
                 <div
                   key={i}
-                  className="relative flex-shrink-0 h-full bg-black flex items-center justify-center"
+                  className="relative shrink-0 h-full bg-black flex items-center justify-center"
                   style={{ width: `${100 / media.length}%` }}
                 >
                   {m.type === "image" ? (
@@ -425,7 +425,7 @@ export default function GallerySlider() {
               aria-label="Scroll thumbnails left"
               onClick={() => scrollThumbsBy("left")}
               disabled={!thumbCanScrollLeft}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 hidden md:flex"
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex"
             >
               <ChevronLeft className="w-4 h-4 text-gray-800" />
             </button>
@@ -447,7 +447,7 @@ export default function GallerySlider() {
                   data-thumb-index={i}
                   onClick={() => goTo(i)}
                   disabled={isTransitioning}
-                  className={`relative flex-shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${
+                  className={`relative shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${
                     i === index ? "ring-2 ring-gray-800 scale-105 shadow-md" : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"
                   }`}
                   style={{ width: "110px", height: "74px" }}
@@ -479,7 +479,7 @@ export default function GallerySlider() {
               aria-label="Scroll thumbnails right"
               onClick={() => scrollThumbsBy("right")}
               disabled={!thumbCanScrollRight}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 hidden md:flex"
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex"
             >
               <ChevronRight className="w-4 h-4 text-gray-800" />
             </button>
