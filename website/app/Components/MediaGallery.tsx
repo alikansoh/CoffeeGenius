@@ -92,6 +92,7 @@ export default function GallerySlider() {
   const [index, setIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
@@ -168,6 +169,7 @@ export default function GallerySlider() {
   const touchDelta = useRef<number>(0);
 
   const onTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
     touchStartX.current = e.touches[0].clientX;
     touchDelta.current = 0;
   };
@@ -181,6 +183,7 @@ export default function GallerySlider() {
   };
 
   const onTouchEnd = () => {
+    setIsDragging(false);
     if (touchStartX.current == null) return;
     const delta = touchDelta.current;
     if (trackRef.current) trackRef.current.style.transform = "";
@@ -317,7 +320,7 @@ export default function GallerySlider() {
             ref={trackRef}
           >
             <div
-              className="flex h-full transition-transform duration-700 ease-out"
+              className={`flex h-full transition-transform duration-700 ease-out ${isDragging ? 'duration-0' : ''}`}
               style={{
                 width: `${media.length * 100}%`,
                 transform: `translateX(-${index * (100 / media.length)}%)`,
@@ -387,7 +390,7 @@ export default function GallerySlider() {
 
             <div className="absolute top-0 left-0 right-0 h-1 bg-white/10">
               <div
-                className="h-full bg-white transition-all duration-700 ease-linear"
+                className="h-full bg-white transition-all duration-700 ease-out"
                 style={{ width: `${((index + 1) / media.length) * 100}%` }}
               />
             </div>
@@ -462,7 +465,7 @@ export default function GallerySlider() {
                       priority={i === index}
                     />
                   ) : (
-                    <video src={m.src} className="object-cover w-full h-full rounded-lg" muted />
+                    <video src={m.src} className="object-cover w-full h-full rounded-lg" muted preload="metadata" />
                   )}
 
                   {i !== index && <div className="absolute inset-0 bg-black/30 rounded-lg" />}
