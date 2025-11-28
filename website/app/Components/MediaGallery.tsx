@@ -17,7 +17,6 @@ type ResolvedMediaItem = {
   src: string;
   title: string;
   description: string;
-  poster?: string;
 };
 
 type InputMediaItem = {
@@ -25,7 +24,6 @@ type InputMediaItem = {
   src: string;
   title: string;
   description: string;
-  poster?: string;
 };
 
 const COLORS = {
@@ -56,13 +54,11 @@ export default function GallerySlider() {
         title: "Latte Art Mastery",
         description:
           "Watch our expert baristas create stunning latte art with precision and care.",
-        poster: "/gallery1.jpg",
       },
       {
         src: "/gallery2.mp4",
         title: "Perfect Pour",
         description: "The art of pouring the perfect espresso shot, every single time.",
-        poster: "/gallery2.jpg",
       },
       {
         src: "/gallery3.jpg",
@@ -89,7 +85,6 @@ export default function GallerySlider() {
         src: item.src,
         title: item.title,
         description: item.description,
-        poster: item.poster,
       };
     });
   }, [inputMedia]);
@@ -463,15 +458,6 @@ export default function GallerySlider() {
                   {m.type === "image" ? (
                     <Image
                       src={m.src}
-                      alt={m.title}
-                      fill
-                      className="object-cover rounded-lg"
-                      sizes="110px"
-                      priority={i === index}
-                    />
-                  ) : m.poster ? (
-                    <Image
-                      src={m.poster}
                       alt={m.title}
                       fill
                       className="object-cover rounded-lg"
