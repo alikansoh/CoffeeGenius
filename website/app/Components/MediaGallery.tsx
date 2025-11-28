@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Star,
+  Play,
 } from "lucide-react";
 
 type ResolvedMediaItem = {
@@ -17,6 +18,7 @@ type ResolvedMediaItem = {
   src: string;
   title: string;
   description: string;
+  poster?: string;
 };
 
 type InputMediaItem = {
@@ -24,6 +26,7 @@ type InputMediaItem = {
   src: string;
   title: string;
   description: string;
+  poster?: string;
 };
 
 const COLORS = {
@@ -54,11 +57,13 @@ export default function GallerySlider() {
         title: "Latte Art Mastery",
         description:
           "Watch our expert baristas create stunning latte art with precision and care.",
+        // poster: "/gallery1-poster.jpg",
       },
       {
         src: "/gallery2.mp4",
         title: "Perfect Pour",
         description: "The art of pouring the perfect espresso shot, every single time.",
+        // poster: "/gallery2-poster.jpg",
       },
       {
         src: "/gallery3.jpg",
@@ -76,14 +81,19 @@ export default function GallerySlider() {
   );
 
   const media: ResolvedMediaItem[] = useMemo(() => {
-    return inputMedia.map((item, i) => {
+    return inputMedia.map((item) => {
       const resolvedType = item.type ?? inferTypeFromSrc(item.src);
       const type = (resolvedType ?? "image") as "image" | "video";
+      const poster =
+        type === "video"
+          ? item.poster ?? item.src.replace(/\.\w+$/, ".jpg")
+          : undefined;
       return {
         type,
         src: item.src,
         title: item.title,
         description: item.description,
+        poster,
       };
     });
   }, [inputMedia]);
@@ -314,7 +324,7 @@ export default function GallerySlider() {
             ref={trackRef}
           >
             <div
-              className={`flex h-full transition-transform duration-700 ease-out ${isDragging ? 'duration-0' : ''}`}
+              className={`flex h-full transition-transform duration-700 ease-out ${isDragging ? "duration-0" : ""}`}
               style={{
                 width: `${media.length * 100}%`,
                 transform: `translateX(-${index * (100 / media.length)}%)`,
@@ -349,7 +359,16 @@ export default function GallerySlider() {
                         playsInline
                         muted
                         loop
+                        poster={m.poster}
                       />
+                      {/* center play badge on main slide only when NOT the active playing slide */}
+                      {i !== index && (
+                        <div className="absolute z-20 flex items-center justify-center">
+                          <div className="flex items-center justify-center w-16 h-16 rounded-full bg-white/12 backdrop-blur-sm border border-white/20 shadow-lg">
+                            <Play className="w-7 h-7 text-white" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -364,11 +383,12 @@ export default function GallerySlider() {
               ))}
             </div>
 
+            {/* Prev/Next - always visible on small screens, hover-show on md+ */}
             <button
               aria-label="Previous slide"
               onClick={prev}
               disabled={isTransitioning}
-              className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-30 w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowLeft className="w-5 h-5 text-gray-800" strokeWidth={2.5} />
             </button>
@@ -376,7 +396,7 @@ export default function GallerySlider() {
               aria-label="Next slide"
               onClick={next}
               disabled={isTransitioning}
-              className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-30 w-10 h-10 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-0 group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <ArrowRight className="w-5 h-5 text-gray-800" strokeWidth={2.5} />
             </button>
@@ -435,10 +455,10 @@ export default function GallerySlider() {
               className="flex gap-3 overflow-x-auto overflow-y-hidden px-2 md:px-8"
               role="list"
               aria-label="Gallery thumbnails"
-              style={{ 
-                scrollbarWidth: 'none', 
-                msOverflowStyle: 'none',
-                WebkitOverflowScrolling: 'touch'
+              style={{
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                WebkitOverflowScrolling: "touch",
               }}
             >
               {media.map((m, i) => (
@@ -448,7 +468,9 @@ export default function GallerySlider() {
                   onClick={() => goTo(i)}
                   disabled={isTransitioning}
                   className={`relative shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${
-                    i === index ? "ring-2 ring-gray-800 scale-105 shadow-md" : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"
+                    i === index
+                      ? "ring-2 ring-gray-800 scale-105 shadow-md"
+                      : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"
                   }`}
                   style={{ width: "110px", height: "74px" }}
                   aria-label={`Thumbnail ${i + 1} ${m.title}`}
@@ -463,10 +485,26 @@ export default function GallerySlider() {
                       unoptimized
                     />
                   ) : (
-                    <video src={m.src} className="object-cover w-full h-full rounded-lg" muted preload="metadata" />
+                    <>
+                      <video
+                        src={m.src}
+                        poster={m.poster}
+                        className="object-cover w-full h-full rounded-lg"
+                        muted
+                        playsInline
+                        preload="metadata"
+                      />
+                      {/* center play icon for video thumbnails */}
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 shadow-md">
+                          <Play className="w-4 h-4 text-white" />
+                        </div>
+                      </div>
+                    </>
                   )}
 
-                  {i !== index && <div className="absolute inset-0 bg-black/30 rounded-lg" />}
+                  {/* subtle dim on non-active thumbs */}
+                  {i !== index && <div className="absolute inset-0 bg-black/20 rounded-lg" />}
 
                   <div className="absolute left-2 bottom-2 z-10 text-white text-xs px-1 py-0.5 rounded-md bg-black/40">
                     {m.title.length > 18 ? `${m.title.slice(0, 16)}…` : m.title}
