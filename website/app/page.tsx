@@ -7,6 +7,7 @@ import GoogleReviews from "./Components/GoogleReviews";
 import Cta from "./Components/Cta";
 import MediaGallery from "./Components/MediaGallery";
 import BlogSection from "./Components/blogComponent";
+import Footer from "./Components/Footer";
 export default function Home() {
   return (
     <main>
@@ -18,6 +19,8 @@ export default function Home() {
       <Cta />
       <MediaGallery />
       <BlogSection/>
+      <Footer />
+
 
 
 
