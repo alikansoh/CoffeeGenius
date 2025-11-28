@@ -56,7 +56,7 @@ export default function Hero({
     { src: "/videos/hero.webm", type: "video/webm" },
     { src: "/hero.mp4", type: "video/mp4" },
   ],
-  poster = "/images/hero-poster.jpg",
+  poster = "/hero.webp",
   className = "",
   allowVideoOnMobile = true,
 }: HeroProps) {

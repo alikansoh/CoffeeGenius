@@ -1,12 +1,10 @@
 "use client";
 
-import Image from "next/image";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Video,
-  Image as ImgIcon,
   ChevronLeft,
   ChevronRight,
   Star,
@@ -71,7 +69,6 @@ export default function GallerySlider() {
         title: "Artisan Brewing",
         description: "State-of-the-art equipment meets traditional craftsmanship.",
       },
-    
     ],
     []
   );
@@ -271,12 +268,7 @@ export default function GallerySlider() {
 
   return (
     <div className="relative w-full bg-gray-50 py-8 px-4 md:py-12">
-      {/* narrower container on large screens */}
       <div className="relative w-full max-w-3xl lg:max-w-2xl mx-auto">
-        {/* Header styled like BestSellerSlider but with tweaks:
-            - replaced the coffee icon with a star
-            - removed the "View Full Gallery" link on the right
-            - changed the accent bar color to black */}
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-3">
@@ -293,7 +285,6 @@ export default function GallerySlider() {
               Our Gallery
             </h2>
 
-            {/* accent bar now black */}
             <div className="mb-3">
               <div className="h-1 w-20 rounded-full bg-black shadow-sm" />
             </div>
@@ -302,11 +293,8 @@ export default function GallerySlider() {
               A curated selection of images and short videos showcasing our craft and moments from the café.
             </p>
           </div>
-
-          {/* intentionally removed the right-hand link ("View Full Gallery") as requested */}
         </div>
 
-        {/* Slider */}
         <div
           className="relative select-none group"
           onMouseEnter={() => setIsPaused(true)}
@@ -333,15 +321,12 @@ export default function GallerySlider() {
                   style={{ width: `${100 / media.length}%` }}
                 >
                   {m.type === "image" ? (
-                    <div className="relative w-full h-full flex items-center justify-center">
-                      <Image
+                    <div className="relative w-full h-full flex items-center justify-center bg-gray-100">
+                      <img
                         src={m.src}
                         alt={m.title}
-                        fill
-                        // show full media rather than cropping on small screens; on larger screens we still centered
-                        className="object-contain"
-                        sizes="(max-width: 768px) 100vw, 768px"
-                        priority={i === index}
+                        className="max-w-full max-h-full object-contain"
+                        loading={i === index ? "eager" : "lazy"}
                       />
                     </div>
                   ) : (
@@ -351,8 +336,7 @@ export default function GallerySlider() {
                           videoRefs.current[i] = el;
                         }}
                         src={m.src}
-                        // ensure full video is visible on small screens
-                        className="object-contain w-full h-full"
+                        className="max-w-full max-h-full object-contain"
                         playsInline
                         muted
                         loop
@@ -360,11 +344,23 @@ export default function GallerySlider() {
                     </div>
                   )}
 
-                  {/* small type badge (kept top-left) */}
                   <div className="absolute left-4 top-4 z-20">
                     <div className="inline-flex items-center gap-2 bg-black/40 text-white text-[11px] md:text-xs px-2 py-1 rounded-md">
-                      {m.type === "video" ? <Video className="w-4 h-4" /> : <ImgIcon className="w-4 h-4" />}
-                      <span>{m.type === "video" ? "Video" : "Image"}</span>
+                      {m.type === "video" ? (
+                        <>
+                          <Video className="w-4 h-4" />
+                          <span>Video</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth="2"/>
+                            <circle cx="8.5" cy="8.5" r="1.5" strokeWidth="2"/>
+                            <polyline points="21 15 16 10 5 21" strokeWidth="2"/>
+                          </svg>
+                          <span>Image</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -396,7 +392,6 @@ export default function GallerySlider() {
             </div>
           </div>
 
-          {/* small title + description BELOW the media so it never covers the image/video */}
           <div className="mt-4 px-1 md:px-0">
             <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
               {currentItem.title}
@@ -409,7 +404,6 @@ export default function GallerySlider() {
             </p>
           </div>
 
-          {/* Dots */}
           <div className="flex items-center justify-center gap-2 mt-4">
             {media.map((_, i) => (
               <button
@@ -426,7 +420,6 @@ export default function GallerySlider() {
             ))}
           </div>
 
-          {/* Thumbnail slider */}
           <div className="mt-4 relative">
             <button
               aria-label="Scroll thumbnails left"
@@ -439,9 +432,10 @@ export default function GallerySlider() {
 
             <div
               ref={thumbsRef}
-              className="flex gap-3 overflow-x-auto no-scrollbar px-2 md:px-8"
+              className="flex gap-3 overflow-x-auto overflow-y-hidden px-2 md:px-8"
               role="list"
               aria-label="Gallery thumbnails"
+              style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {media.map((m, i) => (
                 <button
@@ -456,16 +450,19 @@ export default function GallerySlider() {
                   aria-label={`Thumbnail ${i + 1} ${m.title}`}
                 >
                   {m.type === "image" ? (
-                    <Image
+                    <img
                       src={m.src}
                       alt={m.title}
-                      fill
-                      className="object-cover rounded-lg"
-                      sizes="110px"
-                      priority={i === index}
+                      className="w-full h-full object-cover rounded-lg"
+                      loading="lazy"
                     />
                   ) : (
-                    <video src={m.src} className="object-cover w-full h-full rounded-lg" muted preload="metadata" />
+                    <video 
+                      src={m.src} 
+                      className="w-full h-full object-cover rounded-lg" 
+                      muted 
+                      preload="metadata"
+                    />
                   )}
 
                   {i !== index && <div className="absolute inset-0 bg-black/30 rounded-lg" />}
