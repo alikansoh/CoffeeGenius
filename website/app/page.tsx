@@ -5,6 +5,7 @@ import  Sections from "./Components/FeautredSections";
 import WholesaleSection from "./Components/WholesaleSection";
 import GoogleReviews from "./Components/GoogleReviews";
 import Cta from "./Components/Cta";
+import MediaGallery from "./Components/MediaGallery";
 export default function Home() {
   return (
     <main>
@@ -14,6 +15,8 @@ export default function Home() {
       <WholesaleSection />
       <GoogleReviews />
       <Cta />
+      <MediaGallery />
+
 
 
     </main>
