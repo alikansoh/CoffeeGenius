@@ -479,6 +479,7 @@ export default function GallerySlider() {
                 <button
                   key={i}
                   data-thumb-index={i}
+                  role="listitem"
                   onClick={() => goTo(i)}
                   disabled={isTransitioning}
                   className={`relative shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${
