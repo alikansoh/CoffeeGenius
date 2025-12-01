@@ -18,7 +18,7 @@ type ResolvedMediaItem = {
   src: string;
   title: string;
   description: string;
-  poster?: string;
+  poster?: string; // can be a URL or a data:image/svg+xml;utf8,... url
 };
 
 type InputMediaItem = {
@@ -32,6 +32,57 @@ type InputMediaItem = {
 const COLORS = {
   primary: "#111827",
 };
+
+/**
+ * Returns a data URL containing an SVG poster that looks good for video thumbnails.
+ * The SVG is simple, scalable, and includes a play-icon and the title text.
+ */
+function svgPosterDataUrl(title: string, width = 1280, height = 720) {
+  const safeTitle = (title || "Video")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const svg = `
+  <svg xmlns='http://www.w3.org/2000/svg' width='${width}' height='${height}' viewBox='0 0 ${width} ${height}'>
+    <defs>
+      <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
+        <stop offset='0%' stop-color='#111827' stop-opacity='1'/>
+        <stop offset='100%' stop-color='#374151' stop-opacity='1'/>
+      </linearGradient>
+      <filter id='f' x='-20%' y='-20%' width='140%' height='140%'>
+        <feDropShadow dx='0' dy='8' stdDeviation='20' flood-color='#000' flood-opacity='0.35'/>
+      </filter>
+    </defs>
+
+    <rect width='100%' height='100%' rx='24' fill='url(#g)' />
+    <g filter='url(#f)'>
+      <circle cx='${width / 2}' cy='${height / 2 - 30}' r='72' fill='rgba(255,255,255,0.06)' />
+      <circle cx='${width / 2}' cy='${height / 2 - 30}' r='56' fill='rgba(255,255,255,0.05)' />
+    </g>
+
+    <!-- Play triangle -->
+    <g transform='translate(${width / 2 - 18}, ${height / 2 - 48})' fill='white' opacity='0.95'>
+      <path d='M0 0 L36 24 L0 48 Z' />
+    </g>
+
+    <!-- Small decorative icon on the top-left -->
+    <g transform='translate(40,40)' fill='rgba(255,255,255,0.06)'>
+      <rect x='0' y='0' rx='6' width='72' height='48' />
+      <path d='M60 10 a12 8 0 0 1 0 16' stroke='rgba(255,255,255,0.08)' stroke-width='3' fill='none' />
+    </g>
+
+    <!-- Title bar -->
+    <g>
+      <rect x='32' y='${height - 72}' rx='8' width='${width - 64}' height='56' fill='rgba(0,0,0,0.28)' />
+      <text x='64' y='${height - 32}' font-family='Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial'
+        font-size='24' fill='white' font-weight='600'>${safeTitle}</text>
+    </g>
+  </svg>
+  `.trim();
+
+  // encode and return a data URL
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
 
 function inferTypeFromSrc(src: string): "image" | "video" | undefined {
   try {
@@ -49,7 +100,7 @@ function inferTypeFromSrc(src: string): "image" | "video" | undefined {
   return undefined;
 }
 
-export default function GallerySlider() {
+export default function MediaGallery() {
   const inputMedia: InputMediaItem[] = useMemo(
     () => [
       {
@@ -57,13 +108,11 @@ export default function GallerySlider() {
         title: "Latte Art Mastery",
         description:
           "Watch our expert baristas create stunning latte art with precision and care.",
-        // poster: "/gallery1-poster.jpg",
       },
       {
         src: "/gallery2.mp4",
         title: "Perfect Pour",
         description: "The art of pouring the perfect espresso shot, every single time.",
-        // poster: "/gallery2-poster.jpg",
       },
       {
         src: "/gallery3.jpg",
@@ -80,14 +129,12 @@ export default function GallerySlider() {
     []
   );
 
+  // Resolve types and ensure a poster always exists for videos (fallback to SVG data URL)
   const media: ResolvedMediaItem[] = useMemo(() => {
     return inputMedia.map((item) => {
       const resolvedType = item.type ?? inferTypeFromSrc(item.src);
       const type = (resolvedType ?? "image") as "image" | "video";
-      const poster =
-        type === "video"
-          ? item.poster ?? item.src.replace(/\.\w+$/, ".jpg")
-          : undefined;
+      const poster = type === "video" ? item.poster ?? svgPosterDataUrl(item.title) : undefined;
       return {
         type,
         src: item.src,
@@ -116,14 +163,14 @@ export default function GallerySlider() {
     setIsTransitioning(true);
     setIndex((i) => (i - 1 + media.length) % media.length);
     setTimeout(() => setIsTransitioning(false), 700);
-  }, [media.length, isTransitioning]);
+  }, [isTransitioning, media.length]);
 
   const next = useCallback(() => {
     if (isTransitioning) return;
     setIsTransitioning(true);
     setIndex((i) => (i + 1) % media.length);
     setTimeout(() => setIsTransitioning(false), 700);
-  }, [media.length, isTransitioning]);
+  }, [isTransitioning, media.length]);
 
   const goTo = (i: number) => {
     if (isTransitioning || i === index) return;
@@ -132,15 +179,48 @@ export default function GallerySlider() {
     setTimeout(() => setIsTransitioning(false), 700);
   };
 
+  // Autoplay behaviour, stable dependency array
   useEffect(() => {
-    if (isPaused || isTransitioning) return;
-    const id = setInterval(() => {
+    if (isPaused || isTransitioning || isDragging) return;
+
+    const current = media[index];
+    if (!current) return;
+
+    let timeoutId: number | undefined;
+    const advance = () => {
       setIsTransitioning(true);
       setIndex((i) => (i + 1) % media.length);
       setTimeout(() => setIsTransitioning(false), 700);
-    }, 5000);
-    return () => clearInterval(id);
-  }, [isPaused, media.length, isTransitioning]);
+    };
+
+    if (current.type === "video") {
+      const v = videoRefs.current[index];
+      if (!v) {
+        // video element not available yet; fallback to timeout
+        timeoutId = window.setTimeout(advance, 5000);
+      } else {
+        try {
+          v.muted = true;
+          v.loop = false; // ensure 'ended' fires
+          const playPromise = v.play();
+          if (playPromise !== undefined) playPromise.catch(() => {});
+        } catch {}
+        const onEnded = () => advance();
+        v.addEventListener("ended", onEnded);
+        return () => {
+          try {
+            v.removeEventListener("ended", onEnded);
+          } catch {}
+        };
+      }
+    } else {
+      timeoutId = window.setTimeout(advance, 5000);
+    }
+
+    return () => {
+      if (typeof timeoutId !== "undefined") clearTimeout(timeoutId);
+    };
+  }, [index, isPaused, isTransitioning, isDragging, media.length]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -152,21 +232,22 @@ export default function GallerySlider() {
   }, [prev, next]);
 
   useEffect(() => {
+    // Ensure only the active video's playback is running; others are paused and reset.
     media.forEach((m, i) => {
       if (m.type !== "video") return;
       const v = videoRefs.current[i];
       if (!v) return;
 
       if (i === index) {
-        v.muted = true;
-        v.loop = true;
-        const playPromise = v.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(() => {});
-        }
-      } else {
-        v.pause();
         try {
+          v.muted = true;
+          v.loop = false; // we rely on 'ended' to advance
+          const playPromise = v.play();
+          if (playPromise !== undefined) playPromise.catch(() => {});
+        } catch {}
+      } else {
+        try {
+          v.pause();
           v.currentTime = 0;
         } catch {}
       }
@@ -216,14 +297,14 @@ export default function GallerySlider() {
   const updateThumbScrollState = useCallback(() => {
     const el = thumbsRef.current;
     if (!el) {
-      setThumbCanScrollLeft((prev) => (prev ? false : prev));
-      setThumbCanScrollRight((prev) => (prev ? false : prev));
+      setThumbCanScrollLeft(false);
+      setThumbCanScrollRight(false);
       return;
     }
     const canLeft = el.scrollLeft > 2;
     const canRight = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
-    setThumbCanScrollLeft((prev) => (prev === canLeft ? prev : canLeft));
-    setThumbCanScrollRight((prev) => (prev === canRight ? prev : canRight));
+    setThumbCanScrollLeft(canLeft);
+    setThumbCanScrollRight(canRight);
   }, []);
 
   const scrollThumbsBy = (direction: "left" | "right") => {
@@ -280,7 +361,6 @@ export default function GallerySlider() {
 
   return (
     <div className="relative w-full bg-gray-50 py-8 px-4 md:py-12">
-      {/* narrower container on large screens */}
       <div className="relative w-full max-w-3xl lg:max-w-2xl mx-auto">
         {/* Header */}
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -299,7 +379,6 @@ export default function GallerySlider() {
               Our Gallery
             </h2>
 
-            {/* accent bar now black */}
             <div className="mb-3">
               <div className="h-1 w-20 rounded-full bg-black shadow-sm" />
             </div>
@@ -358,7 +437,6 @@ export default function GallerySlider() {
                         className="w-full h-full object-contain"
                         playsInline
                         muted
-                        loop
                         poster={m.poster}
                       />
                       {/* center play badge on main slide only when NOT the active playing slide */}
@@ -383,7 +461,7 @@ export default function GallerySlider() {
               ))}
             </div>
 
-            {/* Prev/Next - always visible on small screens, hover-show on md+ */}
+            {/* Prev/Next */}
             <button
               aria-label="Previous slide"
               onClick={prev}
@@ -409,7 +487,7 @@ export default function GallerySlider() {
             </div>
           </div>
 
-          {/* small title + description BELOW the media so it never covers the image/video */}
+          {/* small title + description BELOW the media */}
           <div className="mt-4 px-1 md:px-0">
             <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
               {currentItem.title}
@@ -422,7 +500,7 @@ export default function GallerySlider() {
             </p>
           </div>
 
-          {/* Dots - increased touch target size for accessibility */}
+          {/* Dots */}
           <div className="flex items-center justify-center gap-2 mt-4">
             {media.map((_, i) => {
               const isActive = i === index;
@@ -433,13 +511,9 @@ export default function GallerySlider() {
                   aria-current={isActive ? "true" : undefined}
                   onClick={() => goTo(i)}
                   disabled={isTransitioning}
-                  // Make the interactive target at least 44x44 CSS pixels while keeping the visual indicator compact
                   className={`transition-all duration-300 rounded-full inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 disabled:cursor-not-allowed`}
-                  // Tailwind w-11/h-11 equates to 44px (default spacing scale), ensuring adequate touch target
-                  // keep visual inner element small so layout doesn't change
                   style={{ width: 44, height: 44 }}
                 >
-                  {/* visual indicator inside the larger hit target */}
                   <span
                     className={`block transition-all duration-300 ${
                       isActive
@@ -453,7 +527,7 @@ export default function GallerySlider() {
             })}
           </div>
 
-          {/* Thumbnail slider - HORIZONTAL ONLY */}
+          {/* Thumbnail slider - improved for videos: use poster SVG when no real poster exists */}
           <div className="mt-4 relative">
             <button
               aria-label="Scroll thumbnails left"
@@ -487,42 +561,37 @@ export default function GallerySlider() {
                       ? "ring-2 ring-gray-800 scale-105 shadow-md"
                       : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"
                   }`}
-                  style={{ width: "110px", height: "74px" }}
+                  style={{ width: "140px", height: "90px" }}
                   aria-label={`Thumbnail ${i + 1} ${m.title}`}
                 >
-                  {m.type === "image" ? (
+                  <div className="relative w-full h-full">
+                    {/* Use Next.js Image for all thumbnails (including SVG data URLs).
+                        When the source is a data URL we set unoptimized so Next doesn't try to optimize it.
+                        Using Image improves LCP compared to a naive <img> and satisfies the eslint rule. */}
                     <Image
-                      src={m.src}
+                      src={m.type === "image" ? m.src : (m.poster as string)}
                       alt={m.title}
                       fill
                       className="object-cover rounded-lg"
-                      sizes="110px"
+                      sizes="140px"
                       unoptimized
                     />
-                  ) : (
-                    <>
-                      <video
-                        src={m.src}
-                        poster={m.poster}
-                        className="object-cover w-full h-full rounded-lg"
-                        muted
-                        playsInline
-                        preload="metadata"
-                      />
-                      {/* center play icon for video thumbnails */}
-                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-                        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm border border-white/10 shadow-md">
-                          <Play className="w-4 h-4 text-white" />
-                        </div>
+                  </div>
+
+                  {/* center play icon overlay for video thumbnails */}
+                  {m.type === "video" && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
+                      <div className="flex items-center justify-center w-11 h-11 rounded-full bg-black/45 border border-white/10 shadow-md">
+                        <Play className="w-5 h-5 text-white" />
                       </div>
-                    </>
+                    </div>
                   )}
 
                   {/* subtle dim on non-active thumbs */}
-                  {i !== index && <div className="absolute inset-0 bg-black/20 rounded-lg" />}
+                  {i !== index && <div className="absolute inset-0 bg-black/18 rounded-lg" />}
 
                   <div className="absolute left-2 bottom-2 z-10 text-white text-xs px-1 py-0.5 rounded-md bg-black/40">
-                    {m.title.length > 18 ? `${m.title.slice(0, 16)}…` : m.title}
+                    {m.title.length > 20 ? `${m.title.slice(0, 18)}…` : m.title}
                   </div>
                 </button>
               ))}
