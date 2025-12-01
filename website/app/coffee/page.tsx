@@ -386,7 +386,11 @@ export default function ShopPage() {
         />
 
         {/* Panel */}
-        <aside className="relative z-50 h-full bg-white shadow-2xl overflow-y-auto">
+        <aside
+          className={`relative z-50 h-full bg-white shadow-2xl overflow-y-auto transition-all duration-300 sm:rounded-l-2xl ${
+            filtersOpen ? "border-l-8 border-black" : "border-l-0"
+          }`}
+        >
           {/* Header */}
           <div className="sticky top-0 z-10 bg-white px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between border-b-2 border-neutral-100">
             <div>
