@@ -14,6 +14,9 @@ import useCart from "../store/CartStore";
 
 /**
  * Demo products — replace with API later.
+ *
+ * Note: each product now contains `prices` for size-specific unit pricing.
+ * `price` remains for backward compatibility and is treated as the 250g price.
  */
 const DEMO_PRODUCTS: Product[] = [
   {
@@ -21,7 +24,10 @@ const DEMO_PRODUCTS: Product[] = [
     name: "Signature Espresso Blend",
     origin: "House Blend",
     notes: "Rich chocolate, silky body, long finish",
+    // base/legacy price (250g)
     price: 14.0,
+    // explicit size prices
+    prices: { "250g": 14.0, "1kg": 48.0 },
     img: "/test.webp",
     roastLevel: "dark",
   },
@@ -31,6 +37,7 @@ const DEMO_PRODUCTS: Product[] = [
     origin: "Yirgacheffe, Ethiopia",
     notes: "Bright citrus, floral notes, honey sweetness",
     price: 12.5,
+    prices: { "250g": 12.5, "1kg": 42.0 },
     img: "/test.webp",
     roastLevel: "light",
   },
@@ -40,6 +47,7 @@ const DEMO_PRODUCTS: Product[] = [
     origin: "Huila, Colombia",
     notes: "Caramel sweetness, balanced body, chocolate",
     price: 11.0,
+    prices: { "250g": 11.0, "1kg": 36.0 },
     img: "/test.webp",
     roastLevel: "medium",
   },
@@ -49,6 +57,7 @@ const DEMO_PRODUCTS: Product[] = [
     origin: "Sumatra, Indonesia",
     notes: "Earthy, spicy, full body",
     price: 13.5,
+    prices: { "250g": 13.5, "1kg": 46.0 },
     img: "/test.webp",
     roastLevel: "dark",
   },
@@ -58,6 +67,7 @@ const DEMO_PRODUCTS: Product[] = [
     origin: "Kenya",
     notes: "Bold berry notes, bright acidity, crisp finish",
     price: 13.0,
+    prices: { "250g": 13.0, "1kg": 44.0 },
     img: "/test.webp",
     roastLevel: "medium",
   },
@@ -98,7 +108,8 @@ export default function ShopPage() {
   }, [products]);
 
   const priceBounds = useMemo(() => {
-    const prices = products.map((p) => p.price);
+    // use 250g prices for bounds if available
+    const prices = products.map((p) => p.prices?.["250g"] ?? p.price);
     return { min: Math.min(...prices), max: Math.max(...prices) };
   }, [products]);
 
@@ -130,14 +141,18 @@ export default function ShopPage() {
 
     const min = typeof minPrice === "number" ? minPrice : -Infinity;
     const max = typeof maxPrice === "number" ? maxPrice : Infinity;
-    out = out.filter((p) => p.price >= min && p.price <= max);
+    // compare using 250g price for filtering
+    out = out.filter((p) => {
+      const unit = p.prices?.["250g"] ?? p.price;
+      return unit >= min && unit <= max;
+    });
 
     switch (sort) {
       case "price-asc":
-        out.sort((a, b) => a.price - b.price);
+        out.sort((a, b) => (a.prices?.["250g"] ?? a.price) - (b.prices?.["250g"] ?? b.price));
         break;
       case "price-desc":
-        out.sort((a, b) => b.price - a.price);
+        out.sort((a, b) => (b.prices?.["250g"] ?? b.price) - (a.prices?.["250g"] ?? a.price));
         break;
       case "name-asc":
         out.sort((a, b) => a.name.localeCompare(b.name));
@@ -170,10 +185,30 @@ export default function ShopPage() {
     setSort("featured");
   }
 
-  function handleAdd(p: Product) {
-    addItem({ id: p.id, name: p.name, price: p.price, img: p.img }, 1);
-    setAddedMap((s) => ({ ...s, [p.id]: true }));
-    setTimeout(() => setAddedMap((s) => ({ ...s, [p.id]: false })), 1200);
+  // updated to accept quick-add options and compute size-based pricing
+  async function handleAdd(
+    p: Product,
+    options?: { size: "250g" | "1kg"; grind: string; quantity: number }
+  ) {
+    const size = options?.size ?? "250g";
+    const grind = options?.grind ?? "whole-bean";
+    const quantity = options?.quantity ?? 1;
+
+    // determine unit price from product.prices if available
+    const unitPrice = p.prices?.[size] ?? p.price;
+
+    // create a distinct cart id for the chosen options
+    const cartId = `${p.id}::${size}::${grind}`;
+
+    // name includes size & grind
+    const name = `${p.name} — ${size} — ${grind}`;
+
+    // addItem expects unit price and quantity
+    addItem({ id: cartId, name, price: unitPrice, img: p.img }, quantity);
+
+    // UI feedback
+    setAddedMap((s) => ({ ...s, [cartId]: true }));
+    setTimeout(() => setAddedMap((s) => ({ ...s, [cartId]: false })), 1200);
   }
 
   // lock body scroll while panel open
@@ -295,15 +330,19 @@ export default function ShopPage() {
 
         {/* Products Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
-          {filtered.map((p, i) => (
-            <ProductCard
-              key={p.id}
-              product={p}
-              index={i}
-              onAddToCart={handleAdd}
-              isAdded={addedMap[p.id] || false}
-            />
-          ))}
+          {filtered.map((p, i) => {
+            // mark product as "added" if any cart entry exists for this product id
+            const isProductAdded = Object.keys(addedMap).some((k) => k.startsWith(`${p.id}::`));
+            return (
+              <ProductCard
+                key={p.id}
+                product={p}
+                index={i}
+                onAddToCart={handleAdd}
+                isAdded={isProductAdded}
+              />
+            );
+          })}
         </div>
 
         {/* Empty State */}
@@ -330,11 +369,7 @@ export default function ShopPage() {
         )}
       </div>
 
-      {/* Slide-in Filter Panel
-          Top offset only on small screens (so fixed nav won't be covered). We use Tailwind arbitrary utilities:
-          top-[var(--nav-height,64px)] ensures the panel starts below nav on narrow screens; sm:top-0 removes the offset
-          at sm+ breakpoints so the panel covers the whole viewport (desktop).
-      */}
+      {/* Slide-in Filter Panel (unchanged) */}
       <div
         id="filters-panel"
         className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-(--nav-height,64px) sm:top-0 bottom-0 ${
@@ -382,9 +417,7 @@ export default function ShopPage() {
             </div>
           </div>
 
-          {/* Mobile-friendly Reset (visible only on small screens)
-              This adds a prominent, full-width reset button for easier tapping on mobile.
-          */}
+          {/* Mobile reset & content (unchanged) */}
           <div className="sm:hidden px-4 pb-4">
             <button
               onClick={resetFilters}
@@ -396,7 +429,6 @@ export default function ShopPage() {
             </button>
           </div>
 
-          {/* Filter Content */}
           <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
             {/* Search */}
             <div>
