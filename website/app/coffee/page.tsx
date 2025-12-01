@@ -356,7 +356,7 @@ export default function ShopPage() {
           <div className="sticky top-0 z-10 bg-white px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between border-b-2 border-neutral-100">
             <div>
               <h3 className="text-lg sm:text-xl font-bold text-neutral-900">
-                Filters & Sort
+                Filters and Sort
               </h3>
               <p className="text-sm text-neutral-500 mt-1">
                 Refine your search
@@ -367,6 +367,7 @@ export default function ShopPage() {
               <button
                 onClick={resetFilters}
                 className="text-sm text-neutral-600 px-2 py-1 rounded-md hover:bg-neutral-100 transition cursor-pointer inline-flex items-center gap-2 font-medium"
+                aria-label="Reset filters"
               >
                 <RotateCcw size={16} />
                 <span className="hidden sm:inline">Reset</span>
@@ -379,6 +380,20 @@ export default function ShopPage() {
                 <X size={18} />
               </button>
             </div>
+          </div>
+
+          {/* Mobile-friendly Reset (visible only on small screens)
+              This adds a prominent, full-width reset button for easier tapping on mobile.
+          */}
+          <div className="sm:hidden px-4 pb-4">
+            <button
+              onClick={resetFilters}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-neutral-100 text-neutral-900 font-semibold hover:bg-neutral-200 transition-colors"
+              aria-label="Reset filters"
+            >
+              <RotateCcw size={16} />
+              Reset filters
+            </button>
           </div>
 
           {/* Filter Content */}
