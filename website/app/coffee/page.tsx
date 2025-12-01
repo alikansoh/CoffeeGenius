@@ -188,65 +188,69 @@ export default function ShopPage() {
   }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-neutral-50 pt-24 sm:pt-12 pb-12 lg:py-16">
+    <main
+      /*
+        Apply the top margin only on small screens so the fixed nav doesn't cover content on mobile.
+        Tailwind arbitrary value uses the CSS variable --nav-height with a fallback, and sm:mt-0 removes
+        the margin at small+ breakpoints (>=640px). Update --nav-height in your layout/nav if needed.
+      */
+      className="mt-(--nav-height,64px) sm:mt-0 min-h-screen bg-linear-to-b from-white to-neutral-50 py-10 sm:py-12 lg:py-16"
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-12 lg:mb-16">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="h-0.5 w-16 bg-gradient-to-r from-black/80 to-transparent" />
-            <p className="text-xs font-bold tracking-[0.2em] uppercase text-neutral-500 flex items-center gap-2">
-              <Coffee size={16} className="text-neutral-400" />
+        <div className="mb-8 sm:mb-10 lg:mb-12">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-px w-12 bg-linear-to-r from-black to-transparent" />
+            <p className="text-xs font-semibold tracking-widest uppercase text-neutral-500 flex items-center gap-2">
+              <Coffee size={14} />
               All Coffees
             </p>
           </div>
 
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-neutral-900 mb-6 tracking-tight">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-neutral-900 mb-3">
             Explore Our Roasts
           </h1>
-          <p className="text-neutral-600 text-lg sm:text-xl max-w-3xl leading-relaxed">
+          <p className="text-neutral-600 text-sm sm:text-base max-w-2xl leading-relaxed">
             Curated selection of single origins and blends, freshly roasted to order.
           </p>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="mb-10 flex flex-col sm:flex-row gap-4">
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
           {/* Search - Full width on mobile, flexible on desktop */}
-          <div className="flex-1 relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 group-focus-within:text-black transition-colors" size={20} />
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search coffees, origins, tasting notes..."
-              className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-neutral-200 bg-white outline-none text-base placeholder:text-neutral-400 focus:border-black focus:shadow-lg transition-all"
+              className="w-full pl-10 sm:pl-12 pr-4 py-3 rounded-xl border-2 border-neutral-200 bg-white outline-none text-sm placeholder:text-neutral-400 focus:border-black transition-colors shadow-sm"
             />
           </div>
 
           {/* Filter Button */}
           <button
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center gap-3 rounded-2xl border-2 border-neutral-200 px-6 py-4 bg-white hover:shadow-lg hover:border-black hover:-translate-y-0.5 transition-all cursor-pointer group"
+            className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-neutral-200 px-4 sm:px-5 py-2.5 sm:py-3.5 bg-white shadow-sm hover:shadow-md hover:border-black transition-all cursor-pointer group"
             aria-expanded={filtersOpen}
             aria-controls="filters-panel"
           >
-            <Sliders size={20} className="group-hover:rotate-90 transition-transform duration-300" />
-            <span className="text-sm font-bold">Filters</span>
+            <Sliders size={18} className="group-hover:rotate-90 transition-transform" />
+            <span className="text-sm font-semibold">Filters</span>
             {activeFiltersCount > 0 && (
-              <span className="bg-black text-white text-xs font-bold px-2.5 py-1 rounded-full min-w-[24px] text-center">
+              <span className="bg-black text-white text-xs font-bold px-2 py-0.5 rounded-full">
                 {activeFiltersCount}
               </span>
             )}
-            <ChevronDown size={18} className="group-hover:translate-y-1 transition-transform" />
+            <ChevronDown size={16} className="group-hover:translate-y-0.5 transition-transform" />
           </button>
         </div>
 
         {/* Results Info & Sort */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-8 border-b border-neutral-200">
-          <div className="text-sm text-neutral-600 flex items-center gap-3">
-            <span className="font-bold text-neutral-900 text-2xl">
-              {filtered.length}
-            </span>
-            <span className="text-neutral-500 text-base">
-              {filtered.length === 1 ? "Product" : "Products"}
+        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b-2 border-neutral-100">
+          <div className="text-sm text-neutral-600 flex items-center gap-2 sm:gap-3">
+            <span className="font-semibold text-neutral-900 text-lg">
+              {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
             </span>
             {filtered.length !== products.length && (
               <>
@@ -256,70 +260,64 @@ export default function ShopPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-4">
-            <label className="text-sm text-neutral-600 font-semibold">Sort by</label>
-            <div className="relative">
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as SortOption)}
-                className="rounded-xl border-2 border-neutral-200 pl-4 pr-10 py-2.5 bg-white cursor-pointer text-sm font-semibold hover:border-black hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 appearance-none"
-              >
-                <option value="featured">Featured</option>
-                <option value="price-asc">Price: Low → High</option>
-                <option value="price-desc">Price: High → Low</option>
-                <option value="name-asc">Name: A → Z</option>
-                <option value="newest">Newest</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" size={18} />
-            </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <label className="text-sm text-neutral-600 font-medium">Sort by</label>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as SortOption)}
+              className="rounded-lg border-2 border-neutral-200 px-3 sm:px-4 py-2 bg-white cursor-pointer text-sm font-medium hover:border-black transition-colors shadow-sm"
+            >
+              <option value="featured">Featured</option>
+              <option value="price-asc">Price: Low → High</option>
+              <option value="price-desc">Price: High → Low</option>
+              <option value="name-asc">Name: A → Z</option>
+              <option value="newest">Newest</option>
+            </select>
           </div>
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8 place-items-center">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
           {filtered.map((p, i) => (
-            <div
+            <ProductCard
               key={p.id}
-              /* Remove w-full on mobile so the item can be centered.
-                 Limit width on small screens with max-w-md and center via mx-auto.
-                 On sm+ we remove those constraints so grid columns control sizing. */
-              className="max-w-md mx-auto sm:max-w-none sm:mx-0 border-b border-neutral-200 pb-6 sm:border-b-0 sm:pb-0"
-            >
-              <ProductCard
-                product={p}
-                index={i}
-                onAddToCart={handleAdd}
-                isAdded={addedMap[p.id] || false}
-              />
-            </div>
+              product={p}
+              index={i}
+              onAddToCart={handleAdd}
+              isAdded={addedMap[p.id] || false}
+            />
           ))}
         </div>
 
         {/* Empty State */}
         {filtered.length === 0 && (
-          <div className="mt-16 border-2 border-dashed border-neutral-200 rounded-2xl bg-white p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-neutral-100 mb-4">
-              <Search size={28} className="text-neutral-400" />
+          <div className="mt-12 sm:mt-16 border-2 border-dashed border-neutral-200 rounded-2xl bg-white p-8 sm:p-12 text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-neutral-100 mb-3 sm:mb-4">
+              <Search size={26} className="text-neutral-400" />
             </div>
-            <h3 className="text-xl font-bold text-neutral-900 mb-2">No coffees found</h3>
-            <p className="text-neutral-600 mb-6 max-w-md mx-auto">
+            <h3 className="text-lg sm:text-xl font-bold text-neutral-900 mb-2">No coffees found</h3>
+            <p className="text-neutral-600 mb-4 sm:mb-6 max-w-md mx-auto text-sm sm:text-base">
               No coffees match your current filters. Try adjusting your search or filter criteria.
             </p>
             <button
               onClick={resetFilters}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-black text-white font-semibold rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 bg-black text-white font-semibold rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
             >
-              <RotateCcw size={18} />
+              <RotateCcw size={16} />
               Reset all filters
             </button>
           </div>
         )}
       </div>
 
-      {/* Slide-in Filter Panel */}
+      {/* Slide-in Filter Panel
+          Top offset only on small screens (so fixed nav won't be covered). We use Tailwind arbitrary utilities:
+          top-[var(--nav-height,64px)] ensures the panel starts below nav on narrow screens; sm:top-0 removes the offset
+          at sm+ breakpoints so the panel covers the whole viewport (desktop).
+      */}
       <div
         id="filters-panel"
-        className={`fixed inset-y-0 right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 ${
+        className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-(--nav-height,64px) sm:top-0 bottom-0 ${
           filtersOpen ? "translate-x-0" : "translate-x-full"
         }`}
         aria-hidden={!filtersOpen}
@@ -327,7 +325,7 @@ export default function ShopPage() {
         {/* Backdrop */}
         <div
           onClick={() => setFiltersOpen(false)}
-          className={`fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity ${
+          className={`fixed left-0 right-0 bg-black/50 backdrop-blur-sm transition-opacity top-(--nav-height,64px) sm:top-0 bottom-0 ${
             filtersOpen ? "opacity-100" : "opacity-0 pointer-events-none"
           }`}
         />
@@ -335,52 +333,53 @@ export default function ShopPage() {
         {/* Panel */}
         <aside className="relative z-50 h-full bg-white shadow-2xl overflow-y-auto">
           {/* Header */}
-          <div className="sticky top-0 z-10 bg-white p-6 flex items-center justify-between border-b-2 border-neutral-100">
+          <div className="sticky top-0 z-10 bg-white px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between border-b-2 border-neutral-100">
             <div>
-              <h3 className="text-xl font-bold text-neutral-900">Filters & Sort</h3>
+              <h3 className="text-lg sm:text-xl font-bold text-neutral-900">Filters & Sort</h3>
               <p className="text-sm text-neutral-500 mt-1">Refine your search</p>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={resetFilters}
-                className="text-sm text-neutral-600 px-3 py-2 rounded-lg hover:bg-neutral-100 transition cursor-pointer inline-flex items-center gap-2 font-medium"
+                className="text-sm text-neutral-600 px-2 py-1 rounded-md hover:bg-neutral-100 transition cursor-pointer inline-flex items-center gap-2 font-medium"
               >
                 <RotateCcw size={16} />
-                Reset
+                <span className="hidden sm:inline">Reset</span>
               </button>
               <button
                 onClick={() => setFiltersOpen(false)}
-                className="p-2 rounded-lg hover:bg-neutral-100 transition cursor-pointer"
+                className="p-2 rounded-md hover:bg-neutral-100 transition cursor-pointer"
+                aria-label="Close filters"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
           </div>
 
           {/* Filter Content */}
-          <div className="p-6 space-y-8">
+          <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
             {/* Search */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-3">Search</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">Search</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Name, notes, origin..."
-                  className="w-full pl-10 pr-4 py-3 bg-neutral-50 border-2 border-neutral-200 rounded-lg outline-none text-sm focus:border-black transition-colors"
+                  className="w-full pl-10 pr-3 py-2.5 sm:py-3 bg-neutral-50 border-2 border-neutral-200 rounded-lg outline-none text-sm focus:border-black transition-colors"
                 />
               </div>
             </div>
 
             {/* Sort */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-3">Sort by</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">Sort by</label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="w-full rounded-lg border-2 border-neutral-200 px-4 py-3 bg-white cursor-pointer text-sm hover:border-black transition-colors"
+                className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 bg-white cursor-pointer text-sm hover:border-black transition-colors"
               >
                 <option value="featured">Featured</option>
                 <option value="price-asc">Price: Low → High</option>
@@ -392,15 +391,15 @@ export default function ShopPage() {
 
             {/* Roast Level */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-3">Roast level</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">Roast level</label>
               <div className="flex flex-wrap gap-2">
                 {["light", "medium", "dark"].map((r) => (
                   <button
                     key={r}
                     onClick={() => toggleRoast(r)}
-                    className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all cursor-pointer ${
+                    className={`px-4 sm:px-5 py-2 rounded-lg border-2 text-sm font-semibold capitalize transition-all cursor-pointer ${
                       selectedRoasts.has(r)
-                        ? "bg-black text-white border-black shadow-md"
+                        ? "bg-black text-white border-black shadow-sm"
                         : "bg-white text-neutral-700 border-neutral-200 hover:border-black"
                     }`}
                   >
@@ -412,8 +411,8 @@ export default function ShopPage() {
 
             {/* Price Range */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-3">Price range</label>
-              <div className="flex gap-3">
+              <label className="text-sm font-bold text-neutral-900 block mb-2">Price range</label>
+              <div className="flex gap-2">
                 <div className="flex-1">
                   <label className="text-xs text-neutral-500 block mb-1">Min</label>
                   <input
@@ -445,14 +444,14 @@ export default function ShopPage() {
 
             {/* Origin */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-3">Origin</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">Origin</label>
               <select
                 onChange={(e) => {
                   const v = e.target.value;
                   if (!v) setQuery("");
                   else setQuery(v);
                 }}
-                className="w-full rounded-lg border-2 border-neutral-200 px-4 py-3 cursor-pointer text-sm hover:border-black transition-colors"
+                className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 cursor-pointer text-sm hover:border-black transition-colors"
                 defaultValue=""
               >
                 <option value="">Any origin</option>
@@ -466,10 +465,10 @@ export default function ShopPage() {
           </div>
 
           {/* Footer */}
-          <div className="sticky bottom-0 bg-white border-t-2 border-neutral-100 p-6">
+          <div className="sticky bottom-0 bg-white border-t-2 border-neutral-100 p-4 sm:p-6">
             <button
               onClick={() => setFiltersOpen(false)}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl bg-black text-white font-bold hover:bg-neutral-800 transition-colors shadow-lg cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-black text-white font-bold hover:bg-neutral-800 transition-colors shadow-lg cursor-pointer"
             >
               Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
             </button>

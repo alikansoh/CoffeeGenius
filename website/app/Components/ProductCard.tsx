@@ -41,12 +41,13 @@ export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] })
   const numeric = levelMap[level];
 
   return (
-    <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 transition-all duration-300 ease-in-out rounded-full">
+    <div className="inline-flex items-center gap-2 px-2.5 py-1 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 transition-all duration-300 group-hover:border-amber-300 group-hover:shadow-md rounded-full">
       <div className="flex items-center gap-1">
         {[1, 2, 3].map((i) => (
           <div
             key={i}
-            className=""
+            className="transition-transform duration-200 group-hover:scale-110"
+            style={{ transitionDelay: `${i * 35}ms` }}
           >
             <Image
               src={i <= numeric ? "/bean-filled.svg" : "/bean.svg"}
@@ -68,6 +69,7 @@ export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] })
  * Responsive ProductCard
  * - Uses bean-based RoastLevelIndicator
  * - Reduced visual footprint and paddings on small screens
+ * - Card is centered on small screens (mx-auto) and keeps original alignment on larger screens (sm:mx-0)
  */
 export default function ProductCard({
   product,
@@ -111,7 +113,7 @@ export default function ProductCard({
     <div
       onMouseEnter={() => isLargeScreen && setIsHovered(true)}
       onMouseLeave={() => isLargeScreen && setIsHovered(false)}
-      className="group w-full overflow-hidden bg-white shadow-lg rounded-2xl border border-neutral-100"
+      className="group w-full mx-auto sm:mx-0 overflow-hidden bg-white shadow-lg hover:shadow-2xl transform transition-all duration-500 hover:-translate-y-2 rounded-2xl border border-neutral-100 hover:border-neutral-200"
       style={{ maxWidth: 320 }}
     >
       {/* Image area - more compact on small screens */}
@@ -122,7 +124,7 @@ export default function ProductCard({
             alt={product.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover"
+            className="object-cover transition-transform duration-700 group-hover:scale-110"
             priority={index !== undefined && index < 3}
           />
         ) : (
@@ -130,6 +132,7 @@ export default function ProductCard({
             No image
           </div>
         )}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
         <div className="absolute bottom-3 left-3 bg-black/70 text-white px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm">
           {product.roastLevel?.toUpperCase() || "UNKNOWN"}
         </div>
@@ -150,7 +153,7 @@ export default function ProductCard({
       {/* Body */}
       <div className="relative">
         <div
-          className={`px-3 sm:px-6 pt-3 sm:pt-5 pb-3 sm:pb-5 space-y-2 sm:space-y-4 transition-all duration-300 ease-in-out ${
+          className={`px-3 sm:px-6 pt-3 sm:pt-5 pb-3 sm:pb-5 space-y-2 sm:space-y-4 transition-all duration-300 ${
             isHovered && isLargeScreen ? "opacity-0 absolute inset-0 pointer-events-none" : "opacity-100 relative"
           }`}
         >
@@ -171,14 +174,14 @@ export default function ProductCard({
                 <RoastLevelIndicator level={product.roastLevel} />
               </div>
             )}
-            <p className="text-lg sm:text-xl font-extrabold text-gray-900 bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
+                        <p className="text-lg sm:text-xl font-extrabold text-gray-900 bg-gradient-to-r from-gray-900 to-gray-700 bg-clip-text text-transparent">
               £{product.price.toFixed(2)}
             </p>
           </div>
         </div>
 
         <div
-          className={`px-3 sm:px-6 py-3 sm:py-6 transition-all duration-300 ease-in-out ${
+          className={`px-3 sm:px-6 py-3 sm:py-6 transition-all duration-300 ${
             isHovered && isLargeScreen
               ? "opacity-100 relative"
               : isLargeScreen
@@ -192,7 +195,7 @@ export default function ProductCard({
           <div className="w-full space-y-2 sm:space-y-3">
             <button
               onClick={handleQuickAdd}
-              className={`relative w-full inline-flex items-center justify-center gap-2 px-4 py-3 sm:px-5 sm:py-4 rounded-xl font-bold text-sm sm:text-base transition-all duration-300 ease-in-out overflow-hidden cursor-pointer shadow-lg hover:shadow-xl ${
+              className={`relative w-full inline-flex items-center justify-center gap-2 px-4 py-3 sm:px-5 sm:py-4 rounded-xl font-bold text-sm sm:text-base transition-all duration-300 overflow-hidden cursor-pointer shadow-lg hover:shadow-xl ${
                 isAdded
                   ? "bg-gradient-to-r from-green-500 to-green-600 text-white"
                   : "bg-gradient-to-r from-black to-gray-900 text-white hover:from-gray-800 hover:to-black active:scale-95"
@@ -213,7 +216,7 @@ export default function ProductCard({
             </button>
             <button
               onClick={handleLearnMore}
-              className="w-full bg-transparent border-2 border-black text-black px-4 py-3 sm:px-5 sm:py-4 rounded-xl font-bold text-sm sm:text-base hover:bg-black hover:text-white transition-all duration-300 ease-in-out cursor-pointer shadow-md hover:shadow-lg"
+              className="w-full bg-transparent border-2 border-black text-black px-4 py-3 sm:px-5 sm:py-4 rounded-xl font-bold text-sm sm:text-base hover:bg-black hover:text-white transition-all duration-300 cursor-pointer shadow-md hover:shadow-lg"
             >
               Learn More
             </button>
