@@ -363,7 +363,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
           <div className="hidden lg:flex items-center gap-4">
             <a
-              href="/shop"
+              href="/coffee"
               className="group text-sm font-medium hover:text-neutral-600 transition-colors flex items-center gap-1"
             >
               View All Products
@@ -437,7 +437,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
           <div className="mt-10 flex justify-center">
             <a
-              href="/shop"
+              href="/coffee"
               className="group inline-flex items-center gap-2 px-8 py-4 bg-black text-white font-semibold rounded-full hover:bg-neutral-800 transition-all duration-300 hover:shadow-lg active:scale-95"
             >
               View All Coffee

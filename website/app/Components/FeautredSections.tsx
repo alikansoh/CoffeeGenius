@@ -32,7 +32,7 @@ const sections: FeatureSection[] = [
     ],
     image: "/coffee.jpg",
     ctaText: "Explore Our Coffee",
-    ctaLink: "/shop",
+    ctaLink: "/coffee",
     icon: <Coffee className="w-6 h-6" />,
     imagePosition: "left",
   },

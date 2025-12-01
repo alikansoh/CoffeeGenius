@@ -98,7 +98,7 @@ export default function ProductCard({
 
   const handleLearnMore = (e: React.MouseEvent) => {
     e.stopPropagation();
-    router.push(`/shop/${encodeURIComponent(product.id)}`);
+    router.push(`/coffee/${encodeURIComponent(product.id)}`);
   };
 
   const handleQuickAdd = (e: React.MouseEvent) => {

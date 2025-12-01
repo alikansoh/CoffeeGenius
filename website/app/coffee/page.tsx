@@ -63,7 +63,12 @@ const DEMO_PRODUCTS: Product[] = [
   },
 ];
 
-type SortOption = "featured" | "price-asc" | "price-desc" | "name-asc" | "newest";
+type SortOption =
+  | "featured"
+  | "price-asc"
+  | "price-desc"
+  | "name-asc"
+  | "newest";
 
 export default function ShopPage() {
   const [products] = useState<Product[]>(DEMO_PRODUCTS);
@@ -118,7 +123,9 @@ export default function ShopPage() {
     }
 
     if (selectedRoasts.size > 0) {
-      out = out.filter((p) => (p.roastLevel ? selectedRoasts.has(p.roastLevel) : false));
+      out = out.filter((p) =>
+        p.roastLevel ? selectedRoasts.has(p.roastLevel) : false
+      );
     }
 
     const min = typeof minPrice === "number" ? minPrice : -Infinity;
@@ -211,7 +218,8 @@ export default function ShopPage() {
             Explore Our Roasts
           </h1>
           <p className="text-neutral-600 text-sm sm:text-base max-w-2xl leading-relaxed">
-            Curated selection of single origins and blends, freshly roasted to order.
+            Curated selection of single origins and blends, freshly roasted to
+            order.
           </p>
         </div>
 
@@ -219,12 +227,11 @@ export default function ShopPage() {
         <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
           {/* Search - Full width on mobile, flexible on desktop */}
           <div className="flex-1 relative">
-            <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search coffees, origins, tasting notes..."
-              className="w-full pl-10 sm:pl-12 pr-4 py-3 rounded-xl border-2 border-neutral-200 bg-white outline-none text-sm placeholder:text-neutral-400 focus:border-black transition-colors shadow-sm"
+              className="w-full pl-10 sm:pl-12 pr-4 py-3 rounded-xl border-2 border-neutral-200 bg-white outline-none text-base sm:text-sm placeholder:text-neutral-400 focus:border-black transition-colors shadow-sm"
             />
           </div>
 
@@ -235,14 +242,20 @@ export default function ShopPage() {
             aria-expanded={filtersOpen}
             aria-controls="filters-panel"
           >
-            <Sliders size={18} className="group-hover:rotate-90 transition-transform" />
+            <Sliders
+              size={18}
+              className="group-hover:rotate-90 transition-transform"
+            />
             <span className="text-sm font-semibold">Filters</span>
             {activeFiltersCount > 0 && (
               <span className="bg-black text-white text-xs font-bold px-2 py-0.5 rounded-full">
                 {activeFiltersCount}
               </span>
             )}
-            <ChevronDown size={16} className="group-hover:translate-y-0.5 transition-transform" />
+            <ChevronDown
+              size={16}
+              className="group-hover:translate-y-0.5 transition-transform"
+            />
           </button>
         </div>
 
@@ -255,13 +268,17 @@ export default function ShopPage() {
             {filtered.length !== products.length && (
               <>
                 <span className="text-neutral-300">•</span>
-                <span className="text-neutral-500">of {products.length} total</span>
+                <span className="text-neutral-500">
+                  of {products.length} total
+                </span>
               </>
             )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <label className="text-sm text-neutral-600 font-medium">Sort by</label>
+            <label className="text-sm text-neutral-600 font-medium">
+              Sort by
+            </label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortOption)}
@@ -295,9 +312,12 @@ export default function ShopPage() {
             <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-neutral-100 mb-3 sm:mb-4">
               <Search size={26} className="text-neutral-400" />
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-neutral-900 mb-2">No coffees found</h3>
+            <h3 className="text-lg sm:text-xl font-bold text-neutral-900 mb-2">
+              No coffees found
+            </h3>
             <p className="text-neutral-600 mb-4 sm:mb-6 max-w-md mx-auto text-sm sm:text-base">
-              No coffees match your current filters. Try adjusting your search or filter criteria.
+              No coffees match your current filters. Try adjusting your search
+              or filter criteria.
             </p>
             <button
               onClick={resetFilters}
@@ -335,8 +355,12 @@ export default function ShopPage() {
           {/* Header */}
           <div className="sticky top-0 z-10 bg-white px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between border-b-2 border-neutral-100">
             <div>
-              <h3 className="text-lg sm:text-xl font-bold text-neutral-900">Filters & Sort</h3>
-              <p className="text-sm text-neutral-500 mt-1">Refine your search</p>
+              <h3 className="text-lg sm:text-xl font-bold text-neutral-900">
+                Filters & Sort
+              </h3>
+              <p className="text-sm text-neutral-500 mt-1">
+                Refine your search
+              </p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -361,9 +385,14 @@ export default function ShopPage() {
           <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
             {/* Search */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">Search</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">
+                Search
+              </label>
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" size={18} />
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
+                  size={18}
+                />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -375,7 +404,9 @@ export default function ShopPage() {
 
             {/* Sort */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">Sort by</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">
+                Sort by
+              </label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
@@ -391,7 +422,9 @@ export default function ShopPage() {
 
             {/* Roast Level */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">Roast level</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">
+                Roast level
+              </label>
               <div className="flex flex-wrap gap-2">
                 {["light", "medium", "dark"].map((r) => (
                   <button
@@ -411,24 +444,38 @@ export default function ShopPage() {
 
             {/* Price Range */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">Price range</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">
+                Price range
+              </label>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="text-xs text-neutral-500 block mb-1">Min</label>
+                  <label className="text-xs text-neutral-500 block mb-1">
+                    Min
+                  </label>
                   <input
                     type="number"
                     value={minPrice === "" ? "" : minPrice}
-                    onChange={(e) => setMinPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                    onChange={(e) =>
+                      setMinPrice(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
                     className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 text-sm focus:border-black outline-none transition-colors"
                     placeholder="£0"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs text-neutral-500 block mb-1">Max</label>
+                  <label className="text-xs text-neutral-500 block mb-1">
+                    Max
+                  </label>
                   <input
                     type="number"
                     value={maxPrice === "" ? "" : maxPrice}
-                    onChange={(e) => setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                    onChange={(e) =>
+                      setMaxPrice(
+                        e.target.value === "" ? "" : Number(e.target.value)
+                      )
+                    }
                     className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 text-sm focus:border-black outline-none transition-colors"
                     placeholder="£100"
                   />
@@ -444,7 +491,9 @@ export default function ShopPage() {
 
             {/* Origin */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">Origin</label>
+              <label className="text-sm font-bold text-neutral-900 block mb-2">
+                Origin
+              </label>
               <select
                 onChange={(e) => {
                   const v = e.target.value;
@@ -470,7 +519,8 @@ export default function ShopPage() {
               onClick={() => setFiltersOpen(false)}
               className="w-full inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-black text-white font-bold hover:bg-neutral-800 transition-colors shadow-lg cursor-pointer"
             >
-              Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
+              Show {filtered.length}{" "}
+              {filtered.length === 1 ? "result" : "results"}
             </button>
           </div>
         </aside>
