@@ -188,62 +188,65 @@ export default function ShopPage() {
   }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds]);
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-white to-neutral-50 py-12 lg:py-16">
+    <main className="min-h-screen bg-gradient-to-b from-white to-neutral-50 pt-24 sm:pt-12 pb-12 lg:py-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-10 lg:mb-12">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-px w-12 bg-gradient-to-r from-black to-transparent" />
-            <p className="text-xs font-semibold tracking-widest uppercase text-neutral-500 flex items-center gap-2">
-              <Coffee size={14} />
+        <div className="mb-12 lg:mb-16">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="h-0.5 w-16 bg-gradient-to-r from-black/80 to-transparent" />
+            <p className="text-xs font-bold tracking-[0.2em] uppercase text-neutral-500 flex items-center gap-2">
+              <Coffee size={16} className="text-neutral-400" />
               All Coffees
             </p>
           </div>
 
-          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-neutral-900 mb-4">
+          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-neutral-900 mb-6 tracking-tight">
             Explore Our Roasts
           </h1>
-          <p className="text-neutral-600 text-base sm:text-lg max-w-2xl leading-relaxed">
+          <p className="text-neutral-600 text-lg sm:text-xl max-w-3xl leading-relaxed">
             Curated selection of single origins and blends, freshly roasted to order.
           </p>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="mb-8 flex flex-col sm:flex-row gap-4">
+        <div className="mb-10 flex flex-col sm:flex-row gap-4">
           {/* Search - Full width on mobile, flexible on desktop */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400" size={20} />
+          <div className="flex-1 relative group">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-neutral-400 group-focus-within:text-black transition-colors" size={20} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search coffees, origins, tasting notes..."
-              className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-neutral-200 bg-white outline-none text-sm placeholder:text-neutral-400 focus:border-black transition-colors shadow-sm"
+              className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-neutral-200 bg-white outline-none text-base placeholder:text-neutral-400 focus:border-black focus:shadow-lg transition-all"
             />
           </div>
 
           {/* Filter Button */}
           <button
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-neutral-200 px-5 py-3.5 bg-white shadow-sm hover:shadow-md hover:border-black transition-all cursor-pointer group"
+            className="inline-flex items-center justify-center gap-3 rounded-2xl border-2 border-neutral-200 px-6 py-4 bg-white hover:shadow-lg hover:border-black hover:-translate-y-0.5 transition-all cursor-pointer group"
             aria-expanded={filtersOpen}
             aria-controls="filters-panel"
           >
-            <Sliders size={20} className="group-hover:rotate-90 transition-transform" />
-            <span className="text-sm font-semibold">Filters</span>
+            <Sliders size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+            <span className="text-sm font-bold">Filters</span>
             {activeFiltersCount > 0 && (
-              <span className="bg-black text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              <span className="bg-black text-white text-xs font-bold px-2.5 py-1 rounded-full min-w-[24px] text-center">
                 {activeFiltersCount}
               </span>
             )}
-            <ChevronDown size={18} className="group-hover:translate-y-0.5 transition-transform" />
+            <ChevronDown size={18} className="group-hover:translate-y-1 transition-transform" />
           </button>
         </div>
 
         {/* Results Info & Sort */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b-2 border-neutral-100">
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-8 border-b border-neutral-200">
           <div className="text-sm text-neutral-600 flex items-center gap-3">
-            <span className="font-semibold text-neutral-900 text-lg">
-              {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
+            <span className="font-bold text-neutral-900 text-2xl">
+              {filtered.length}
+            </span>
+            <span className="text-neutral-500 text-base">
+              {filtered.length === 1 ? "Product" : "Products"}
             </span>
             {filtered.length !== products.length && (
               <>
@@ -253,13 +256,13 @@ export default function ShopPage() {
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <label className="text-sm text-neutral-600 font-medium">Sort by</label>
+          <div className="flex items-center gap-4">
+            <label className="text-sm text-neutral-600 font-semibold">Sort by</label>
             <div className="relative">
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="rounded-lg border-2 border-neutral-200 pl-4 pr-10 py-2 bg-white cursor-pointer text-sm font-medium hover:border-black transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 appearance-none"
+                className="rounded-xl border-2 border-neutral-200 pl-4 pr-10 py-2.5 bg-white cursor-pointer text-sm font-semibold hover:border-black hover:shadow-md transition-all focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 appearance-none"
               >
                 <option value="featured">Featured</option>
                 <option value="price-asc">Price: Low → High</option>
@@ -275,13 +278,20 @@ export default function ShopPage() {
         {/* Products Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8 place-items-center">
           {filtered.map((p, i) => (
-            <ProductCard 
-              key={p.id} 
-              product={p} 
-              index={i}
-              onAddToCart={handleAdd}
-              isAdded={addedMap[p.id] || false}
-            />
+            <div
+              key={p.id}
+              /* Remove w-full on mobile so the item can be centered.
+                 Limit width on small screens with max-w-md and center via mx-auto.
+                 On sm+ we remove those constraints so grid columns control sizing. */
+              className="max-w-md mx-auto sm:max-w-none sm:mx-0 border-b border-neutral-200 pb-6 sm:border-b-0 sm:pb-0"
+            >
+              <ProductCard
+                product={p}
+                index={i}
+                onAddToCart={handleAdd}
+                isAdded={addedMap[p.id] || false}
+              />
+            </div>
           ))}
         </div>
 
