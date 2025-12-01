@@ -255,22 +255,25 @@ export default function ShopPage() {
 
           <div className="flex items-center gap-3">
             <label className="text-sm text-neutral-600 font-medium">Sort by</label>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-              className="rounded-lg border-2 border-neutral-200 px-4 py-2 bg-white cursor-pointer text-sm font-medium hover:border-black transition-colors shadow-sm"
-            >
-              <option value="featured">Featured</option>
-              <option value="price-asc">Price: Low → High</option>
-              <option value="price-desc">Price: High → Low</option>
-              <option value="name-asc">Name: A → Z</option>
-              <option value="newest">Newest</option>
-            </select>
+            <div className="relative">
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as SortOption)}
+                className="rounded-lg border-2 border-neutral-200 pl-4 pr-10 py-2 bg-white cursor-pointer text-sm font-medium hover:border-black transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 appearance-none"
+              >
+                <option value="featured">Featured</option>
+                <option value="price-asc">Price: Low → High</option>
+                <option value="price-desc">Price: High → Low</option>
+                <option value="name-asc">Name: A → Z</option>
+                <option value="newest">Newest</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 pointer-events-none" size={18} />
+            </div>
           </div>
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 lg:gap-8 place-items-center">
           {filtered.map((p, i) => (
             <ProductCard 
               key={p.id} 
