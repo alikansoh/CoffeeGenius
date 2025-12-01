@@ -2,7 +2,7 @@
 import Image from "next/image";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, ShoppingCart } from "lucide-react";
 
 export type Product = {
   id: string;
@@ -25,30 +25,23 @@ type QuickAddOptions = {
 };
 
 export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
-  if (!level) {
-    return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-50 border border-gray-200">
-        <span className="text-xs text-gray-400 font-semibold">Unknown</span>
-      </div>
-    );
-  }
+  if (!level) return null;
 
   const levelMap: Record<NonNullable<Product["roastLevel"]>, number> = {
     light: 1,
     medium: 2,
     dark: 3,
   };
-
   const numeric = levelMap[level];
 
   return (
-    <div className="inline-flex items-center gap-2.5 px-3 py-1.5 bg-gradient-to-r from-gray-50 to-gray-100 border border-gray-200 rounded-lg shadow-sm">
+    <div className="inline-flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
       <div className="flex items-center gap-1">
-        {[1, 2, 3].map((i) => (
-          <div key={i}>
+        {[1, 2, 3].map((bean) => (
+          <div key={bean}>
             <Image
-              src={i <= numeric ? "/bean-filled.svg" : "/bean.svg"}
-              alt={i <= numeric ? `${level} bean` : ""}
+              src={bean <= numeric ? "/bean-filled.svg" : "/bean.svg"}
+              alt=""
               width={16}
               height={16}
               className="w-4 h-4"
@@ -56,8 +49,10 @@ export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] })
           </div>
         ))}
       </div>
-      <div className="h-4 w-px bg-gray-300" />
-      <span className="text-xs text-gray-700 uppercase tracking-wider font-bold">{level}</span>
+      <div className="h-3 w-px bg-gray-300" />
+      <span className="text-[10px] text-gray-600 uppercase tracking-wider font-semibold">
+        {level}
+      </span>
     </div>
   );
 }
@@ -76,11 +71,10 @@ export default function ProductCard({
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
-
   const [isFlipped, setIsFlipped] = useState(false);
   const [size, setSize] = useState<QuickAddOptions["size"]>("250g");
   const [grind, setGrind] = useState<QuickAddOptions["grind"]>("whole-bean");
-  const [quantity, setQuantity] = useState<number>(1);
+  const [quantity, setQuantity] = useState(1);
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
 
@@ -109,6 +103,7 @@ export default function ProductCard({
   const submitQuickAdd = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!onAddToCart) return;
+
     setProcessing(true);
     try {
       await Promise.resolve(onAddToCart(product, { size, grind, quantity }));
@@ -124,216 +119,254 @@ export default function ProductCard({
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const displayNotes = noteChips.length > 0 ? noteChips : ["No tasting notes"];
+  const displayNotes = noteChips.length > 0 ? noteChips.slice(0, 3) : [];
 
   const unitPriceForSize = (s: QuickAddOptions["size"]) =>
     (product.prices && product.prices[s]) ?? product.price;
 
   return (
     <div
+      onClick={() => isLargeScreen && setIsHovered(true)}
       onMouseEnter={() => isLargeScreen && setIsHovered(true)}
       onMouseLeave={() => isLargeScreen && setIsHovered(false)}
-      className="group w-full mx-auto sm:mx-0 overflow-visible bg-white shadow-md hover:shadow-2xl transition-all duration-300 rounded-2xl border border-gray-100"
-      style={{ maxWidth: 320, perspective: 1000 }}
+      className="group w-full mx-auto sm:mx-0 bg-white hover:shadow-lg transition-shadow duration-300 rounded-lg border border-gray-200 relative"
+      style={{ maxWidth: 320, perspective: 1000, minHeight: 500 }}
       aria-live="polite"
     >
       <div
+        className="w-full h-full transition-all duration-500"
         style={{
-          transformStyle: "preserve-3d",
-          transition: "transform 400ms ease",
           transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
-          position: "relative",
+          transformStyle: "preserve-3d",
         }}
       >
         {/* FRONT */}
-        <div style={{ backfaceVisibility: "hidden" }} className="relative bg-white rounded-2xl overflow-hidden">
-          <div className="relative w-full overflow-hidden bg-gradient-to-br from-gray-50 to-gray-100 aspect-[4/3] lg:aspect-square rounded-t-2xl">
+        <div
+          className="w-full h-full flex flex-col bg-white rounded-lg"
+          style={{ backfaceVisibility: "hidden" }}
+        >
+          <div className="relative w-full bg-gray-100 rounded-t-lg overflow-hidden aspect-square">
             {product.img ? (
               <Image
                 src={product.img}
                 alt={product.name}
                 fill
-                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                className="object-cover transition-all duration-500 group-hover:scale-110 group-hover:rotate-1"
-                priority={index !== undefined && index < 3}
+                style={{ objectFit: "cover" }}
+                sizes="(max-width: 640px) 100vw, 320px"
+                priority={index !== undefined && index < 4}
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">No image</div>
+              <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
+                No image
+              </div>
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-sm text-gray-800 px-4 py-1.5 rounded-full text-xs font-semibold shadow-lg border border-gray-200/50">
-              {product.roastLevel?.toUpperCase() || "UNKNOWN"}
+          </div>
+
+          <div className="p-4 flex flex-col flex-1">
+            <div className="mb-3">
+              <h3 className="text-lg font-semibold text-gray-900 mb-0.5">
+                {product.name}
+              </h3>
+              {product.origin && (
+                <p className="text-sm text-gray-500">{product.origin}</p>
+              )}
             </div>
-          </div>
 
-          <div className="relative w-full bg-white px-4 py-5 sm:px-6 sm:py-6 rounded-b-2xl">
-            <h3 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight mb-1.5 tracking-tight">{product.name}</h3>
-            {product.origin && <p className="text-xs sm:text-sm text-gray-600 uppercase tracking-wider font-medium">{product.origin}</p>}
-          </div>
-
-          <div className="relative">
-            <div
-              className={`px-3 sm:px-6 pt-3 sm:pt-5 pb-3 sm:pb-5 space-y-2 sm:space-y-4 transition-opacity duration-200 ${
-                isHovered && isLargeScreen ? "opacity-0 absolute inset-0 pointer-events-none" : "opacity-100 relative"
-              }`}
-            >
-              <div className="flex flex-wrap gap-2">
+            {displayNotes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-3">
                 {displayNotes.map((note, idx) => (
-                  <span key={idx} className="inline-flex items-center px-3 py-1.5 rounded-full text-xs font-semibold bg-gradient-to-r from-amber-50 to-orange-50 text-amber-900 border border-amber-200/50 shadow-sm">
+                  <span
+                    key={idx}
+                    className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded"
+                  >
                     {note}
                   </span>
                 ))}
               </div>
+            )}
 
-              <div className="flex items-start justify-between pt-4 border-t border-gray-200">
-                {product.roastLevel && <div className="flex-1"><RoastLevelIndicator level={product.roastLevel} /></div>}
-                <div className="text-right">
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
-                    £{(product.prices?.["250g"] ?? product.price).toFixed(2)}
-                  </p>
-                  <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide">per 250g</p>
+            {product.roastLevel && (
+              <div className="mb-3">
+                <RoastLevelIndicator level={product.roastLevel} />
+              </div>
+            )}
+
+            <div className="mt-auto">
+              <div className="mb-3">
+                <span className="text-xl font-bold text-gray-900">
+                  £{(product.prices?.["250g"] ?? product.price).toFixed(2)}
+                </span>
+                <span className="text-sm text-gray-500 ml-1">/ 250g</span>
+              </div>
+
+              {!isAdded && (
+                <>
+                  {/* Desktop buttons - show on hover */}
+                  <div
+                    className={`hidden lg:block transition-all duration-300 ${
+                      isHovered && isLargeScreen
+                        ? "opacity-100"
+                        : "opacity-0 pointer-events-none"
+                    }`}
+                  >
+                    <div className="flex gap-2">
+                      <button
+                        onClick={openQuickAdd}
+                        className="flex-1 flex cursor-pointer items-center justify-center gap-2 px-3 py-2 bg-gray-900 text-white text-sm font-medium rounded hover:bg-gray-800 transition-colors"
+                        aria-label={`Quick add ${product.name} to cart`}
+                      >
+                        <ShoppingCart size={16} />
+                        <span>Quick Add</span>
+                      </button>
+                      <button
+                        onClick={handleLearnMore}
+                        className="px-3 py-2 cursor-pointer text-gray-600 text-sm font-medium hover:text-gray-900 transition-colors"
+                        aria-label={`Learn more about ${product.name}`}
+                      >
+                        Details
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Mobile buttons - always visible */}
+                  <div className="lg:hidden flex gap-2">
+                    <button
+                      onClick={openQuickAdd}
+                      className="flex-1 flex items-center justify-center gap-2 px-3 py-2 bg-gray-900 text-white text-sm font-medium rounded hover:bg-gray-800 transition-colors"
+                      aria-label={`Quick add ${product.name} to cart`}
+                    >
+                      <ShoppingCart size={16} />
+                      <span>Add to cart</span>
+                    </button>
+                    <button
+                      onClick={handleLearnMore}
+                      className="px-3 py-2 text-gray-600 text-sm font-medium hover:text-gray-900 transition-colors"
+                      aria-label={`Learn more about ${product.name}`}
+                    >
+                      Details
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {isAdded && (
+                <div className="flex items-center justify-center gap-2 text-green-600 py-2">
+                  <Check className="w-4 h-4" />
+                  <span className="font-medium text-sm">Added to cart</span>
                 </div>
-              </div>
-            </div>
-
-            <div
-              className={`px-3 sm:px-6 py-3 sm:py-6 transition-opacity duration-200 ${
-                isHovered && isLargeScreen ? "opacity-100 relative" : isLargeScreen ? "opacity-0 absolute inset-0 pointer-events-none" : "opacity-100 relative border-t border-gray-200"
-              }`}
-            >
-              <p className={`text-gray-700 text-sm font-semibold mb-4 text-center ${isLargeScreen ? "" : "hidden"}`}>Choose your option</p>
-              <div className="w-full space-y-2.5">
-                <button
-                  onClick={openQuickAdd}
-                  className="w-full bg-gradient-to-r from-gray-900 to-gray-800 text-white px-4 cursor-pointer py-3.5 sm:px-5 sm:py-3.5 rounded-xl font-bold text-sm sm:text-base hover:from-gray-800 hover:to-gray-700 transition-all duration-200 shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
-                >
-                  Quick add
-                </button>
-
-                <button
-                  onClick={handleLearnMore}
-                  className="w-full bg-white border-2 border-gray-300 cursor-pointer text-gray-700 px-4 py-3.5 sm:px-5 sm:py-3.5 rounded-xl font-semibold text-sm sm:text-base hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 transform hover:-translate-y-0.5"
-                >
-                  Learn More
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </div>
 
         {/* BACK */}
         <div
-          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)", position: "absolute", inset: 0 }}
-          className="rounded-2xl overflow-hidden shadow-2xl"
-          aria-hidden={!isFlipped}
+          className="absolute inset-0 top-0 left-0 w-full h-full bg-white rounded-lg p-4 flex flex-col"
+          style={{
+            backfaceVisibility: "hidden",
+            transform: "rotateY(180deg)",
+          }}
         >
-          <div className="flex flex-col h-full bg-gradient-to-br from-white to-gray-50">
-            <div className="w-full bg-gradient-to-r from-gray-900 to-gray-800 text-white px-4 py-5 border-b border-gray-700">
-              <div className="max-w-full mx-auto text-center">
-                <div className="text-xs text-gray-300 uppercase tracking-widest mb-2 font-semibold">You&apos;re adding</div>
-                <div className="w-full inline-block bg-transparent">
-                  <div className="px-4 py-3 font-bold text-lg sm:text-xl">{product.name}</div>
-                </div>
+          <div className="mb-4">
+            <p className="text-xs text-gray-500 mb-0.5">Configure</p>
+            <h3 className="text-lg font-semibold text-gray-900">
+              {product.name}
+            </h3>
+          </div>
+
+          <div className="space-y-3 flex-1">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Size
+              </label>
+              <div className="flex gap-2">
+                {(["250g", "1kg"] as QuickAddOptions["size"][]).map((s) => {
+                  const selected = s === size;
+                  return (
+                    <button
+                      key={s}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSize(s);
+                      }}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-all ${
+                        selected
+                          ? "bg-gray-900 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      <div>{s}</div>
+                      <div className="text-xs opacity-75">
+                        £{unitPriceForSize(s).toFixed(2)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="px-4 pb-4 pt-4">
-              <div className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm">
-                <div>
-                  <div className="text-xs font-bold text-gray-700 mb-2.5 uppercase tracking-wide">Size</div>
-                  <div className="flex gap-2">
-                    {(["250g", "1kg"] as QuickAddOptions["size"][]).map((s) => {
-                      const selected = s === size;
-                      return (
-                        <button
-                          key={s}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSize(s);
-                          }}
-                          aria-pressed={selected}
-                          className={`flex-1 flex items-center cursor-pointer justify-between gap-2 px-3 py-3 rounded-lg border-2 transition-all duration-200 text-sm font-semibold transform ${
-                            selected
-                              ? "bg-gradient-to-r from-gray-900 to-gray-800 text-white border-gray-900 shadow-md scale-105"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:border-gray-400"
-                          }`}
-                        >
-                          <div className="text-left">
-                            <div className={`${selected ? "font-bold" : "font-semibold"}`}>{s}</div>
-                            <div className={`text-xs ${selected ? "text-gray-300" : "text-gray-500"}`}>£{unitPriceForSize(s).toFixed(2)}</div>
-                          </div>
-                          <div className="flex items-center">
-                            {selected ? <Check size={18} className="text-white" /> : <span className="text-gray-400"> </span>}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Grind
+              </label>
+              <select
+                value={grind}
+                onChange={(e) => setGrind(e.target.value as QuickAddOptions["grind"])}
+                className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none"
+              >
+                <option value="whole-bean">Whole bean</option>
+                <option value="espresso">Ground for espresso</option>
+                <option value="filter">Ground for filter</option>
+              </select>
+            </div>
 
-                <div className="mt-4">
-                  <div className="text-xs font-bold text-gray-700 mb-2.5 uppercase tracking-wide">Grind</div>
-                  <select
-                    value={grind}
-                    onChange={(e) => setGrind(e.target.value as QuickAddOptions["grind"])}
-                    className="w-full rounded-lg border-2 border-gray-300 px-3 py-3 text-sm font-semibold transition-all duration-200 hover:border-gray-400 focus:border-gray-900 focus:ring-2 focus:ring-gray-900 focus:outline-none bg-white"
-                    aria-label="Choose grind style"
-                  >
-                    <option value="whole-bean">Whole bean</option>
-                    <option value="espresso">Ground — Espresso</option>
-                    <option value="filter">Ground — Filter</option>
-                  </select>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Quantity
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setQuantity((q) => Math.max(1, q - 1));
+                  }}
+                  className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors"
+                >
+                  −
+                </button>
+                <div className="flex-1 text-center font-medium">
+                  {quantity}
                 </div>
-
-                <div className="mt-4">
-                  <div className="text-xs font-bold text-gray-700 mb-2.5 uppercase tracking-wide">Quantity</div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuantity((q) => Math.max(1, q - 1));
-                      }}
-                      className="px-4 py-3 rounded-lg border-2 border-gray-300 font-bold hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 text-lg"
-                      aria-label="Decrease quantity"
-                    >
-                      −
-                    </button>
-                    <div className="flex-1 text-center px-3 py-3 border-2 border-gray-300 rounded-lg text-sm font-bold bg-white">{quantity}</div>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuantity((q) => q + 1);
-                      }}
-                      className="px-4 py-3 rounded-lg border-2 border-gray-300 font-bold hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 text-lg"
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-5 flex items-center gap-2.5">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setIsFlipped(false);
-                    }}
-                    className="flex-1 px-3 py-3 rounded-lg border-2 border-gray-300 bg-white text-sm font-semibold hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    onClick={submitQuickAdd}
-                    disabled={processing}
-                    className="flex-1 px-3 py-3 rounded-lg bg-gradient-to-r from-gray-900 to-gray-800 text-white font-bold hover:from-gray-800 hover:to-gray-700 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
-                    aria-label="Add to cart"
-                  >
-                    {processing ? "Adding…" : "Add to cart"}
-                  </button>
-                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setQuantity((q) => q + 1);
+                  }}
+                  className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors"
+                >
+                  +
+                </button>
               </div>
             </div>
+          </div>
+
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsFlipped(false);
+              }}
+              className="flex-1 px-3 py-2 rounded border border-gray-300 text-sm font-medium hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={submitQuickAdd}
+              disabled={processing}
+              className="flex-1 px-3 py-2 rounded bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              {processing ? "Adding..." : "Add to cart"}
+            </button>
           </div>
         </div>
       </div>

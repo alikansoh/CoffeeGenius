@@ -12,21 +12,13 @@ import {
 } from "lucide-react";
 import useCart from "../store/CartStore";
 
-/**
- * Demo products — replace with API later.
- *
- * Note: each product now contains `prices` for size-specific unit pricing.
- * `price` remains for backward compatibility and is treated as the 250g price.
- */
 const DEMO_PRODUCTS: Product[] = [
   {
     id: "espresso-blend",
     name: "Signature Espresso Blend",
     origin: "House Blend",
     notes: "Rich chocolate, silky body, long finish",
-    // base/legacy price (250g)
     price: 14.0,
-    // explicit size prices
     prices: { "250g": 14.0, "1kg": 48.0 },
     img: "/test.webp",
     roastLevel: "dark",
@@ -80,27 +72,31 @@ type SortOption =
   | "name-asc"
   | "newest";
 
+// Compute initial bounds directly from DEMO_PRODUCTS so we can use them to initialize state
+const initialPriceBounds = (() => {
+  const prices = DEMO_PRODUCTS.map((p) => p.prices?.["250g"] ?? p.price);
+  return { min: Math.min(...prices), max: Math.max(...prices) };
+})();
+
 export default function ShopPage() {
   const [products] = useState<Product[]>(DEMO_PRODUCTS);
   const addItem = useCart((s) => s.addItem);
   const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
 
-  // UI state
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [selectedRoasts, setSelectedRoasts] = useState<Set<string>>(new Set());
-  const [minPrice, setMinPrice] = useState<number | "">("");
-  const [maxPrice, setMaxPrice] = useState<number | "">("");
+  // Initialize min/max from precomputed initialPriceBounds to avoid calling setState synchronously in an effect
+  const [minPrice, setMinPrice] = useState<number | "">(initialPriceBounds.min);
+  const [maxPrice, setMaxPrice] = useState<number | "">(initialPriceBounds.max);
   const [sort, setSort] = useState<SortOption>("featured");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // debounce
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query.trim()), 220);
     return () => clearTimeout(t);
   }, [query]);
 
-  // computed origins and price bounds
   const origins = useMemo(() => {
     const s = new Set<string>();
     for (const p of products) if (p.origin) s.add(p.origin);
@@ -108,18 +104,14 @@ export default function ShopPage() {
   }, [products]);
 
   const priceBounds = useMemo(() => {
-    // use 250g prices for bounds if available
     const prices = products.map((p) => p.prices?.["250g"] ?? p.price);
     return { min: Math.min(...prices), max: Math.max(...prices) };
   }, [products]);
 
-  useEffect(() => {
-    setMinPrice(priceBounds.min);
-    setMaxPrice(priceBounds.max);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceBounds.min, priceBounds.max]);
+  // Note: removed the unconditional effect that set min/max from priceBounds to avoid setState in effect.
+  // If you want price inputs to auto-update when products change at runtime, we can add a guarded update that only
+  // calls setState when the bounds actually differ.
 
-  // filtered + sorted list
   const filtered = useMemo(() => {
     let out = products.slice();
 
@@ -141,7 +133,6 @@ export default function ShopPage() {
 
     const min = typeof minPrice === "number" ? minPrice : -Infinity;
     const max = typeof maxPrice === "number" ? maxPrice : Infinity;
-    // compare using 250g price for filtering
     out = out.filter((p) => {
       const unit = p.prices?.["250g"] ?? p.price;
       return unit >= min && unit <= max;
@@ -185,7 +176,6 @@ export default function ShopPage() {
     setSort("featured");
   }
 
-  // updated to accept quick-add options and compute size-based pricing
   async function handleAdd(
     p: Product,
     options?: { size: "250g" | "1kg"; grind: string; quantity: number }
@@ -194,24 +184,16 @@ export default function ShopPage() {
     const grind = options?.grind ?? "whole-bean";
     const quantity = options?.quantity ?? 1;
 
-    // determine unit price from product.prices if available
     const unitPrice = p.prices?.[size] ?? p.price;
-
-    // create a distinct cart id for the chosen options
     const cartId = `${p.id}::${size}::${grind}`;
-
-    // name includes size & grind
     const name = `${p.name} — ${size} — ${grind}`;
 
-    // addItem expects unit price and quantity
     addItem({ id: cartId, name, price: unitPrice, img: p.img }, quantity);
 
-    // UI feedback
     setAddedMap((s) => ({ ...s, [cartId]: true }));
     setTimeout(() => setAddedMap((s) => ({ ...s, [cartId]: false })), 1200);
   }
 
-  // lock body scroll while panel open
   useEffect(() => {
     if (typeof window === "undefined") return;
     document.body.style.overflow = filtersOpen ? "hidden" : "";
@@ -220,7 +202,6 @@ export default function ShopPage() {
     };
   }, [filtersOpen]);
 
-  // Count active filters
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (debouncedQuery) count++;
@@ -230,108 +211,83 @@ export default function ShopPage() {
   }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds]);
 
   return (
-    <main
-      /*
-        Apply the top margin only on small screens so the fixed nav doesn't cover content on mobile.
-        Tailwind arbitrary value uses the CSS variable --nav-height with a fallback, and sm:mt-0 removes
-        the margin at small+ breakpoints (>=640px). Update --nav-height in your layout/nav if needed.
-      */
-      className="mt-(--nav-height,64px) sm:mt-0 min-h-screen bg-linear-to-b from-white to-neutral-50 py-10 sm:py-12 lg:py-16"
-    >
+    <main className="mt-16 sm:mt-0 min-h-screen bg-white py-8 sm:py-12">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Header */}
-        <div className="mb-8 sm:mb-10 lg:mb-12">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="h-px w-12 bg-linear-to-r from-black to-transparent" />
-            <p className="text-xs font-semibold tracking-widest uppercase text-neutral-500 flex items-center gap-2">
-              <Coffee size={14} />
+        <div className="mb-8">
+          <div className="flex items-center gap-2 mb-3">
+            <Coffee size={16} className="text-gray-600" />
+            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
               All Coffees
             </p>
           </div>
 
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold text-neutral-900 mb-3">
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
             Explore Our Roasts
           </h1>
-          <p className="text-neutral-600 text-sm sm:text-base max-w-2xl leading-relaxed">
-            Curated selection of single origins and blends, freshly roasted to
-            order.
+          <p className="text-gray-600 text-sm max-w-2xl">
+            Curated selection of single origins and blends, freshly roasted to order.
           </p>
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row gap-3 sm:gap-4">
-          {/* Search - Full width on mobile, flexible on desktop */}
+        <div className="mb-6 flex flex-col sm:flex-row gap-3">
           <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search coffees, origins, tasting notes..."
-              className="w-full pl-10 sm:pl-12 pr-4 py-3 rounded-xl border-2 border-neutral-200 bg-white outline-none text-base sm:text-sm placeholder:text-neutral-400 focus:border-black transition-colors shadow-sm"
+              placeholder="Search coffees..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 bg-white outline-none text-sm placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
             />
           </div>
 
-          {/* Filter Button */}
           <button
             onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-neutral-200 px-4 sm:px-5 py-2.5 sm:py-3.5 bg-white shadow-sm hover:shadow-md hover:border-black transition-all cursor-pointer group"
-            aria-expanded={filtersOpen}
-            aria-controls="filters-panel"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 bg-white hover:border-gray-900 transition-colors"
           >
-            <Sliders
-              size={18}
-              className="group-hover:rotate-90 transition-transform"
-            />
-            <span className="text-sm font-semibold">Filters</span>
+            <Sliders size={18} />
+            <span className="text-sm font-medium">Filters</span>
             {activeFiltersCount > 0 && (
-              <span className="bg-black text-white text-xs font-bold px-2 py-0.5 rounded-full">
+              <span className="bg-gray-900 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
                 {activeFiltersCount}
               </span>
             )}
-            <ChevronDown
-              size={16}
-              className="group-hover:translate-y-0.5 transition-transform"
-            />
           </button>
         </div>
 
         {/* Results Info & Sort */}
-        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 pb-4 sm:pb-6 border-b-2 border-neutral-100">
-          <div className="text-sm text-neutral-600 flex items-center gap-2 sm:gap-3">
-            <span className="font-semibold text-neutral-900 text-lg">
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-200">
+          <div className="text-sm text-gray-600">
+            <span className="font-semibold text-gray-900">
               {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
             </span>
             {filtered.length !== products.length && (
-              <>
-                <span className="text-neutral-300">•</span>
-                <span className="text-neutral-500">
-                  of {products.length} total
-                </span>
-              </>
+              <span className="ml-2 text-gray-500">
+                of {products.length} total
+              </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
-            <label className="text-sm text-neutral-600 font-medium">
-              Sort by
-            </label>
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 font-medium">Sort by</label>
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortOption)}
-              className="rounded-lg border-2 border-neutral-200 px-3 sm:px-4 py-2 bg-white cursor-pointer text-sm font-medium hover:border-black transition-colors shadow-sm"
+              className="rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm font-medium hover:border-gray-900 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
             >
               <option value="featured">Featured</option>
-              <option value="price-asc">Price: Low → High</option>
-              <option value="price-desc">Price: High → Low</option>
-              <option value="name-asc">Name: A → Z</option>
+              <option value="price-asc">Price: Low to High</option>
+              <option value="price-desc">Price: High to Low</option>
+              <option value="name-asc">Name: A to Z</option>
               <option value="newest">Newest</option>
             </select>
           </div>
         </div>
 
         {/* Products Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 lg:gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
           {filtered.map((p, i) => {
-            // mark product as "added" if any cart entry exists for this product id
             const isProductAdded = Object.keys(addedMap).some((k) => k.startsWith(`${p.id}::`));
             return (
               <ProductCard
@@ -347,133 +303,94 @@ export default function ShopPage() {
 
         {/* Empty State */}
         {filtered.length === 0 && (
-          <div className="mt-12 sm:mt-16 border-2 border-dashed border-neutral-200 rounded-2xl bg-white p-8 sm:p-12 text-center">
-            <div className="inline-flex items-center justify-center w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-neutral-100 mb-3 sm:mb-4">
-              <Search size={26} className="text-neutral-400" />
+          <div className="mt-12 border border-gray-200 rounded-lg bg-gray-50 p-12 text-center">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white border border-gray-200 mb-4">
+              <Search size={24} className="text-gray-400" />
             </div>
-            <h3 className="text-lg sm:text-xl font-bold text-neutral-900 mb-2">
+            <h3 className="text-xl font-semibold text-gray-900 mb-2">
               No coffees found
             </h3>
-            <p className="text-neutral-600 mb-4 sm:mb-6 max-w-md mx-auto text-sm sm:text-base">
-              No coffees match your current filters. Try adjusting your search
-              or filter criteria.
+            <p className="text-gray-600 mb-6 max-w-md mx-auto text-sm">
+              No coffees match your current filters. Try adjusting your search or filter criteria.
             </p>
             <button
               onClick={resetFilters}
-              className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3 bg-black text-white font-semibold rounded-lg hover:bg-neutral-800 transition-colors cursor-pointer"
-            >
-              <RotateCcw size={16} />
-              Reset all filters
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Slide-in Filter Panel (unchanged) */}
-      <div
-        id="filters-panel"
-        className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-(--nav-height,64px) sm:top-0 bottom-0 ${
-          filtersOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-        aria-hidden={!filtersOpen}
-      >
-        {/* Backdrop */}
-        <div
-          onClick={() => setFiltersOpen(false)}
-          className={`fixed left-0 right-0 bg-black/50 backdrop-blur-sm transition-opacity top-(--nav-height,64px) sm:top-0 bottom-0 ${
-            filtersOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
-        />
-
-        {/* Panel */}
-        <aside
-          className={`relative z-50 h-full bg-white shadow-2xl overflow-y-auto transition-all duration-300 sm:rounded-l-2xl ${
-            filtersOpen ? "border-l-8 border-black" : "border-l-0"
-          }`}
-        >
-          {/* Header */}
-          <div className="sticky top-0 z-10 bg-white px-4 py-4 sm:px-6 sm:py-6 flex items-center justify-between border-b-2 border-neutral-100">
-            <div>
-              <h3 className="text-lg sm:text-xl font-bold text-neutral-900">
-                Filters and Sort
-              </h3>
-              <p className="text-sm text-neutral-500 mt-1">
-                Refine your search
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={resetFilters}
-                className="text-sm text-neutral-600 px-2 py-1 rounded-md hover:bg-neutral-100 transition cursor-pointer inline-flex items-center gap-2 font-medium"
-                aria-label="Reset filters"
-              >
-                <RotateCcw size={16} />
-                <span className="hidden sm:inline">Reset</span>
-              </button>
-              <button
-                onClick={() => setFiltersOpen(false)}
-                className="p-2 rounded-md hover:bg-neutral-100 transition cursor-pointer"
-                aria-label="Close filters"
-              >
-                <X size={18} />
-              </button>
-            </div>
-          </div>
-
-          {/* Mobile reset & content (unchanged) */}
-          <div className="sm:hidden px-4 pb-4">
-            <button
-              onClick={resetFilters}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-neutral-100 text-neutral-900 font-semibold hover:bg-neutral-200 transition-colors"
-              aria-label="Reset filters"
+              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
             >
               <RotateCcw size={16} />
               Reset filters
             </button>
           </div>
+        )}
+      </div>
 
-          <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
+      {/* Filter Panel */}
+      <div
+        className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-16 sm:top-0 bottom-0 ${
+          filtersOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        <div
+          onClick={() => setFiltersOpen(false)}
+          className={`fixed inset-0 bg-black/30 transition-opacity ${
+            filtersOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+          }`}
+        />
+
+        <aside className="relative z-50 h-full bg-white shadow-xl overflow-y-auto">
+          {/* Header */}
+          <div className="sticky top-0 z-10 bg-white px-6 py-4 flex items-center justify-between border-b border-gray-200">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Refine your search</p>
+            </div>
+
+            <button
+              onClick={() => setFiltersOpen(false)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <X size={20} />
+            </button>
+          </div>
+
+          <div className="p-6 space-y-6">
             {/* Search */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">
+              <label className="text-sm font-semibold text-gray-900 block mb-2">
                 Search
               </label>
               <div className="relative">
-                <Search
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400"
-                  size={18}
-                />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Name, notes, origin..."
-                  className="w-full pl-10 pr-3 py-2.5 sm:py-3 bg-neutral-50 border-2 border-neutral-200 rounded-lg outline-none text-sm focus:border-black transition-colors"
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg outline-none text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
                 />
               </div>
             </div>
 
             {/* Sort */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">
+              <label className="text-sm font-semibold text-gray-900 block mb-2">
                 Sort by
               </label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 bg-white cursor-pointer text-sm hover:border-black transition-colors"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
               >
                 <option value="featured">Featured</option>
-                <option value="price-asc">Price: Low → High</option>
-                <option value="price-desc">Price: High → Low</option>
-                <option value="name-asc">Name: A → Z</option>
+                <option value="price-asc">Price: Low to High</option>
+                <option value="price-desc">Price: High to Low</option>
+                <option value="name-asc">Name: A to Z</option>
                 <option value="newest">Newest</option>
               </select>
             </div>
 
             {/* Roast Level */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">
+              <label className="text-sm font-semibold text-gray-900 block mb-2">
                 Roast level
               </label>
               <div className="flex flex-wrap gap-2">
@@ -481,10 +398,10 @@ export default function ShopPage() {
                   <button
                     key={r}
                     onClick={() => toggleRoast(r)}
-                    className={`px-4 sm:px-5 py-2 rounded-lg border-2 text-sm font-semibold capitalize transition-all cursor-pointer ${
+                    className={`px-4 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
                       selectedRoasts.has(r)
-                        ? "bg-black text-white border-black shadow-sm"
-                        : "bg-white text-neutral-700 border-neutral-200 hover:border-black"
+                        ? "bg-gray-900 text-white border-gray-900"
+                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-900"
                     }`}
                   >
                     {r}
@@ -495,54 +412,43 @@ export default function ShopPage() {
 
             {/* Price Range */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">
+              <label className="text-sm font-semibold text-gray-900 block mb-2">
                 Price range
               </label>
               <div className="flex gap-2">
                 <div className="flex-1">
-                  <label className="text-xs text-neutral-500 block mb-1">
-                    Min
-                  </label>
+                  <label className="text-xs text-gray-500 block mb-1">Min</label>
                   <input
                     type="number"
                     value={minPrice === "" ? "" : minPrice}
                     onChange={(e) =>
-                      setMinPrice(
-                        e.target.value === "" ? "" : Number(e.target.value)
-                      )
+                      setMinPrice(e.target.value === "" ? "" : Number(e.target.value))
                     }
-                    className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 text-sm focus:border-black outline-none transition-colors"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
                     placeholder="£0"
                   />
                 </div>
                 <div className="flex-1">
-                  <label className="text-xs text-neutral-500 block mb-1">
-                    Max
-                  </label>
+                  <label className="text-xs text-gray-500 block mb-1">Max</label>
                   <input
                     type="number"
                     value={maxPrice === "" ? "" : maxPrice}
                     onChange={(e) =>
-                      setMaxPrice(
-                        e.target.value === "" ? "" : Number(e.target.value)
-                      )
+                      setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))
                     }
-                    className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 text-sm focus:border-black outline-none transition-colors"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
                     placeholder="£100"
                   />
                 </div>
               </div>
-              <div className="text-xs text-neutral-500 mt-2 flex items-center gap-2">
-                <span>Available range:</span>
-                <span className="font-semibold text-neutral-700">
-                  £{priceBounds.min.toFixed(2)} — £{priceBounds.max.toFixed(2)}
-                </span>
+              <div className="text-xs text-gray-500 mt-2">
+                Range: £{priceBounds.min.toFixed(2)} — £{priceBounds.max.toFixed(2)}
               </div>
             </div>
 
             {/* Origin */}
             <div>
-              <label className="text-sm font-bold text-neutral-900 block mb-2">
+              <label className="text-sm font-semibold text-gray-900 block mb-2">
                 Origin
               </label>
               <select
@@ -551,7 +457,7 @@ export default function ShopPage() {
                   if (!v) setQuery("");
                   else setQuery(v);
                 }}
-                className="w-full rounded-lg border-2 border-neutral-200 px-3 py-2 cursor-pointer text-sm hover:border-black transition-colors"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
                 defaultValue=""
               >
                 <option value="">Any origin</option>
@@ -562,16 +468,24 @@ export default function ShopPage() {
                 ))}
               </select>
             </div>
+
+            {/* Reset Button */}
+            <button
+              onClick={resetFilters}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+            >
+              <RotateCcw size={16} />
+              Reset filters
+            </button>
           </div>
 
           {/* Footer */}
-          <div className="sticky bottom-0 bg-white border-t-2 border-neutral-100 p-4 sm:p-6">
+          <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6">
             <button
               onClick={() => setFiltersOpen(false)}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-black text-white font-bold hover:bg-neutral-800 transition-colors shadow-lg cursor-pointer"
+              className="w-full px-6 py-3 rounded-lg bg-gray-900 text-white font-semibold hover:bg-gray-800 transition-colors"
             >
-              Show {filtered.length}{" "}
-              {filtered.length === 1 ? "result" : "results"}
+              Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
             </button>
           </div>
         </aside>
