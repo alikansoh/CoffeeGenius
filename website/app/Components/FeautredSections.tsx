@@ -1,8 +1,13 @@
 "use client";
+
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { Coffee, GraduationCap, ArrowRight, Check } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import EspressoMachinesIcon from "../../public/EspressoMachinesIcon";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+
+const EspressoMachinesIcon = dynamic(() => import("../../public/EspressoMachinesIcon"), {
+  ssr: false,
+});
 
 type FeatureSection = {
   id: string;
@@ -17,7 +22,7 @@ type FeatureSection = {
   imagePosition: "left" | "right";
 };
 
-const sections: FeatureSection[] = [
+const SECTIONS: FeatureSection[] = [
   {
     id: "coffee",
     title: "Exceptional Coffee",
@@ -33,7 +38,7 @@ const sections: FeatureSection[] = [
     image: "/coffee.jpg",
     ctaText: "Explore Our Coffee",
     ctaLink: "/coffee",
-    icon: <Coffee className="w-6 h-6" />,
+    icon: <Coffee className="w-5 h-5" />,
     imagePosition: "left",
   },
   {
@@ -51,7 +56,7 @@ const sections: FeatureSection[] = [
     image: "/machine.jpg",
     ctaText: "Shop Machines",
     ctaLink: "/machines",
-    icon: <EspressoMachinesIcon className="w-6 h-6" />,
+    icon: <EspressoMachinesIcon className="w-5 h-5" />,
     imagePosition: "right",
   },
   {
@@ -69,120 +74,97 @@ const sections: FeatureSection[] = [
     image: "/classes.jpg",
     ctaText: "Book a Class",
     ctaLink: "/classes",
-    icon: <GraduationCap className="w-6 h-6" />,
+    icon: <GraduationCap className="w-5 h-5" />,
     imagePosition: "left",
   },
 ];
 
-function FeatureCard({ section, index }: { section: FeatureSection; index: number }) {
-  const [isVisible, setIsVisible] = useState(false);
-  const cardRef = useRef(null);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (entry.isIntersecting) {
-          setIsVisible(true);
-        }
-      },
-      { threshold: 0.15 }
-    );
-
-    if (cardRef.current) {
-      observer.observe(cardRef.current);
-    }
-
-    return () => {
-      if (cardRef.current) {
-        observer.unobserve(cardRef.current);
-      }
-    };
-  }, []);
-
+function FeatureCard({
+  section,
+  index,
+  isVisible,
+  setRef,
+}: {
+  section: FeatureSection;
+  index: number;
+  isVisible: boolean;
+  setRef: (id: string) => (el: HTMLElement | null) => void;
+}) {
   const isImageLeft = section.imagePosition === "left";
 
   return (
     <div
-      ref={cardRef}
-      className={`
-        relative mb-8 transition-all duration-1000 transform
-        ${isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12'}
+      ref={setRef(section.id)}
+      className={`relative mb-8 transition-all duration-700 transform will-change-transform
+        ${isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-6"}
       `}
+      aria-labelledby={`${section.id}-title`}
+      role="article"
+      data-section-id={section.id}
     >
       <div
-        className={`
-          flex flex-col lg:flex-row items-center gap-8 lg:gap-10
-          bg-white border border-slate-200 rounded-2xl p-8 lg:p-10
-          hover:border-slate-300 hover:shadow-xl transition-all duration-500
-          ${!isImageLeft ? 'lg:flex-row-reverse' : ''}
-        `}
+        className={`flex flex-col lg:flex-row items-center gap-6 bg-white border rounded-2xl p-6 lg:p-8
+          ${!isImageLeft ? "lg:flex-row-reverse" : ""}
+          border-slate-200/80`}
       >
-        {/* Image Section */}
-        <div className="relative lg:w-[45%] w-full">
-          <div className="relative group overflow-hidden rounded-xl border-2 border-slate-100">
-            <div className="relative h-[450px] w-full">
-              <Image
-                src={section.image}
-                alt={section.title}
-                fill
-                className="object-cover transition-all duration-700 group-hover:scale-105"
-                sizes="(max-width: 1024px) 100vw, 45vw"
-              />
-            </div>
-            <div className="absolute inset-0 bg-gradient-to-br from-slate-900/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+        {/* Image */}
+        <div className="relative lg:w-[45%] w-full overflow-hidden rounded-xl">
+          <div className="relative h-[420px] w-full">
+            <Image
+              src={section.image}
+              alt={section.title}
+              fill
+              className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+              sizes="(max-width: 1024px) 100vw, 45vw"
+              priority={index === 0}
+            />
+            <div className="absolute inset-0 bg-gradient-to-br from-black/6 to-transparent pointer-events-none" />
           </div>
         </div>
 
-        {/* Content Section */}
-        <div className="lg:w-[55%] w-full space-y-5">
-          {/* Icon & Subtitle */}
+        {/* Content */}
+        <div className="lg:w-[55%] w-full space-y-4">
           <div className="flex items-center gap-3">
-            <div className="p-3 bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl text-slate-700 border border-slate-200 transition-all duration-300 hover:shadow-md hover:scale-105">
+            <div className="p-2 bg-slate-50 rounded-xl text-slate-700 border border-slate-100">
               {section.icon}
             </div>
-            <p className="text-slate-500 uppercase tracking-[0.15em] text-xs font-bold">
+            <p className="text-slate-500 uppercase tracking-wider text-xs font-bold">
               {section.subtitle}
             </p>
           </div>
-          
-          {/* Title */}
-          <h3 className="text-3xl lg:text-4xl font-serif text-slate-900 leading-tight font-bold">
+
+          <h3 id={`${section.id}-title`} className="text-2xl lg:text-3xl font-serif text-slate-900 leading-tight">
             {section.title}
           </h3>
-          
-          {/* Decorative Divider */}
+
           <div className="flex items-center gap-2">
-            <div className="h-0.5 w-12 bg-gradient-to-r from-slate-800 to-slate-300 rounded-full"></div>
-            <div className="w-1 h-1 bg-slate-400 rounded-full"></div>
+            <div className="h-0.5 w-12 bg-gradient-to-r from-slate-800 to-slate-300 rounded-full" />
+            <div className="w-1 h-1 bg-slate-400 rounded-full" />
           </div>
-          
-          {/* Description */}
-          <p className="text-slate-600 text-base leading-relaxed">
-            {section.description}
-          </p>
-          
-          {/* Features List */}
-          <div className="bg-slate-50 rounded-xl p-5 border border-slate-100">
-            <ul className="space-y-2.5">
+
+          <p className="text-slate-600 text-base leading-relaxed">{section.description}</p>
+
+          <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
+            <ul className="space-y-2">
               {section.features.map((feature, idx) => (
-                <li key={idx} className="flex items-start gap-3 text-slate-700 group/item">
-                  <div className="p-1 bg-white rounded-full mt-0.5 border border-emerald-100 group-hover/item:border-emerald-200 group-hover/item:shadow-sm transition-all duration-300">
-                    <Check className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                <li key={idx} className="flex items-start gap-3 text-slate-700">
+                  <div className="p-1 bg-white rounded-full border border-emerald-100">
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
                   </div>
                   <span className="text-sm font-medium leading-relaxed">{feature}</span>
                 </li>
               ))}
             </ul>
           </div>
-          
-          {/* CTA Button */}
-          <div className="pt-2">
+
+          <div>
             <a
               href={section.ctaLink}
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all duration-300 hover:bg-slate-800 hover:shadow-xl hover:-translate-y-1 group border-2 border-slate-900 hover:border-slate-800"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 transition-colors"
+              aria-label={section.ctaText}
             >
               {section.ctaText}
-              <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
+              <ArrowRight className="w-4 h-4" />
             </a>
           </div>
         </div>
@@ -192,35 +174,109 @@ function FeatureCard({ section, index }: { section: FeatureSection; index: numbe
 }
 
 export default function FeatureSections() {
+  // memoize sections so they are stable across renders
+  const sections = useMemo(() => SECTIONS, []);
+
+  // store DOM refs by id
+  const refs = useRef<Record<string, HTMLElement | null>>({});
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const observedSet = useRef<WeakSet<HTMLElement>>(new WeakSet());
+
+  // callback ref setter that also manages observer subscribe/unsubscribe
+  const setRef = useCallback(
+    (id: string) => (el: HTMLElement | null) => {
+      const prev = refs.current[id];
+      // unobserve previous element if present
+      if (prev && observerRef.current && observedSet.current.has(prev)) {
+        observerRef.current.unobserve(prev);
+        observedSet.current.delete(prev);
+      }
+
+      refs.current[id] = el ?? null;
+
+      if (el && observerRef.current && !observedSet.current.has(el)) {
+        observerRef.current.observe(el);
+        observedSet.current.add(el);
+      }
+    },
+    []
+  );
+
+  // visible ids for intersection observer state
+  const [visibleIds, setVisibleIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        const updates: Record<string, boolean> = {};
+        entries.forEach((entry) => {
+          const target = entry.target as HTMLElement;
+          const id = target.dataset.sectionId;
+          if (!id) return;
+          if (entry.isIntersecting) updates[id] = true;
+        });
+        if (Object.keys(updates).length) {
+          setVisibleIds((prev) => ({ ...prev, ...updates }));
+        }
+      },
+      {
+        threshold: 0.18,
+        rootMargin: "0px 0px -8% 0px",
+      }
+    );
+
+    // observe already-attached refs (callback refs may have run before effect)
+    Object.values(refs.current).forEach((el) => {
+      if (el && observerRef.current && !observedSet.current.has(el)) {
+        observerRef.current.observe(el);
+        observedSet.current.add(el);
+      }
+    });
+
+    return () => {
+      observerRef.current?.disconnect();
+      observerRef.current = null;
+      observedSet.current = new WeakSet();
+    };
+  }, []);
+
   return (
-    <section className="py-3 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50">
+    <section className="py-8 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50">
       <div className="max-w-7xl mx-auto">
-        {/* Section Header */}
-        <div className="text-center mb-14 space-y-4">
+        <div className="text-center mb-12 space-y-3">
           <div className="inline-block">
-            <p className="text-slate-500 uppercase tracking-[0.2em] text-xs font-bold px-4 py-2 bg-white rounded-full border border-slate-200 shadow-sm">
+            <p className="text-slate-500 uppercase tracking-[0.2em] text-xs font-bold px-3 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
               What We Offer
             </p>
           </div>
-          <h2 className="text-4xl lg:text-5xl font-serif text-slate-900 leading-tight font-bold max-w-4xl mx-auto">
+
+          <h2 className="text-3xl lg:text-4xl font-serif text-slate-900 max-w-3xl mx-auto font-bold">
             Everything You Need for Perfect Coffee
           </h2>
+
           <div className="flex items-center justify-center gap-2 pt-2">
-            <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse"></div>
-            <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-2 h-2 bg-slate-800 rounded-full"></div>
-            <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-            <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse"></div>
+            <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse" />
+            <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: "0.15s" }} />
+            <div className="w-2 h-2 bg-slate-800 rounded-full" />
+            <div className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-pulse" style={{ animationDelay: "0.15s" }} />
+            <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse" />
           </div>
-          <p className="text-slate-600 text-base max-w-2xl mx-auto leading-relaxed">
+
+          <p className="text-slate-600 text-base max-w-2xl mx-auto leading-relaxed pt-2">
             From premium beans to professional equipment and expert training, we provide a complete coffee experience.
           </p>
         </div>
 
-        {/* Feature Cards */}
-        <div className="space-y-8">
+        <div className="space-y-6">
           {sections.map((section, index) => (
-            <FeatureCard key={section.id} section={section} index={index} />
+            <div key={section.id} data-section-id={section.id}>
+              <FeatureCard
+                section={section}
+                index={index}
+                isVisible={!!visibleIds[section.id]}
+                setRef={setRef}
+              />
+            </div>
           ))}
         </div>
       </div>

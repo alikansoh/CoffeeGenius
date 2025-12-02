@@ -152,11 +152,16 @@ export default function MediaGallery() {
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
+  // separate refs for thumbnail videos so we can let them autoplay independently
+  const thumbVideoRefs = useRef<Array<HTMLVideoElement | null>>([]);
 
   // thumbnail refs & state
   const thumbsRef = useRef<HTMLDivElement | null>(null);
   const [thumbCanScrollLeft, setThumbCanScrollLeft] = useState(false);
   const [thumbCanScrollRight, setThumbCanScrollRight] = useState(false);
+
+  // used to avoid running first-play attempts more than necessary
+  const mountedRef = useRef(false);
 
   const prev = useCallback(() => {
     if (isTransitioning) return;
@@ -202,6 +207,7 @@ export default function MediaGallery() {
         try {
           v.muted = true;
           v.loop = false; // ensure 'ended' fires
+          v.playsInline = true;
           const playPromise = v.play();
           if (playPromise !== undefined) playPromise.catch(() => {});
         } catch {}
@@ -220,7 +226,7 @@ export default function MediaGallery() {
     return () => {
       if (typeof timeoutId !== "undefined") clearTimeout(timeoutId);
     };
-  }, [index, isPaused, isTransitioning, isDragging, media.length]);
+  }, [index, isPaused, isTransitioning, isDragging, media.length, media]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -232,7 +238,7 @@ export default function MediaGallery() {
   }, [prev, next]);
 
   useEffect(() => {
-    // Ensure only the active video's playback is running; others are paused and reset.
+    // Ensure only the active video's playback is running in the main slider; others are paused and reset.
     media.forEach((m, i) => {
       if (m.type !== "video") return;
       const v = videoRefs.current[i];
@@ -242,6 +248,7 @@ export default function MediaGallery() {
         try {
           v.muted = true;
           v.loop = false; // we rely on 'ended' to advance
+          v.playsInline = true;
           const playPromise = v.play();
           if (playPromise !== undefined) playPromise.catch(() => {});
         } catch {}
@@ -253,6 +260,41 @@ export default function MediaGallery() {
       }
     });
   }, [index, media]);
+
+  // On mount: try to start the first video (index 0). Retry a few times until the DOM ref is ready.
+  // This ensures the main slide video plays on page load.
+  useEffect(() => {
+    if (mountedRef.current) return;
+    mountedRef.current = true;
+
+    const firstIsVideo = media[0]?.type === "video";
+    if (!firstIsVideo) return;
+
+    let attempts = 0;
+    const maxAttempts = 25; // ~2.5s with 100ms interval
+    const tryPlayFirst = () => {
+      attempts += 1;
+      const v = videoRefs.current[0];
+      if (v) {
+        try {
+          // ensure video is muted (required for autoplay in most browsers)
+          v.muted = true;
+          v.loop = false; // keep consistent with advance behavior
+          v.playsInline = true;
+          try {
+            const p = v.play();
+            if (p !== undefined) p.catch(() => {});
+          } catch {}
+        } catch {}
+        return;
+      }
+      if (attempts < maxAttempts) {
+        setTimeout(tryPlayFirst, 100);
+      }
+    };
+
+    tryPlayFirst();
+  }, [media]);
 
   // touch/swipe
   const touchStartX = useRef<number | null>(null);
@@ -437,7 +479,11 @@ export default function MediaGallery() {
                         className="w-full h-full object-contain"
                         playsInline
                         muted
+                        autoPlay
+                        preload="auto"
                         poster={m.poster}
+                        // ensure react re-mounts on src change so autoplay attempts are retried
+                        key={m.src + "-main"}
                       />
                       {/* center play badge on main slide only when NOT the active playing slide */}
                       {i !== index && (
@@ -527,7 +573,7 @@ export default function MediaGallery() {
             })}
           </div>
 
-          {/* Thumbnail slider - improved for videos: use poster SVG when no real poster exists */}
+          {/* Thumbnail slider - improved for videos: play thumbnails instead of static posters */}
           <div className="mt-4 relative">
             <button
               aria-label="Scroll thumbnails left"
@@ -565,17 +611,34 @@ export default function MediaGallery() {
                   aria-label={`Thumbnail ${i + 1} ${m.title}`}
                 >
                   <div className="relative w-full h-full">
-                    {/* Use Next.js Image for all thumbnails (including SVG data URLs).
-                        When the source is a data URL we set unoptimized so Next doesn't try to optimize it.
-                        Using Image improves LCP compared to a naive <img> and satisfies the eslint rule. */}
-                    <Image
-                      src={m.type === "image" ? m.src : (m.poster as string)}
-                      alt={m.title}
-                      fill
-                      className="object-cover rounded-lg"
-                      sizes="140px"
-                      unoptimized
-                    />
+                    {/* For video thumbnails render a muted, autoplaying, looping <video>.
+                        This makes the thumbnails play directly instead of showing only the poster.
+                        For images we still use Next.js Image. */}
+                    {m.type === "video" ? (
+                      <video
+                        ref={(el) => {
+                          thumbVideoRefs.current[i] = el;
+                        }}
+                        src={m.src}
+                        className="w-full h-full object-cover rounded-lg"
+                        playsInline
+                        muted
+                        autoPlay
+                        loop
+                        preload="metadata"
+                        poster={m.poster}
+                        key={m.src + "-thumb"}
+                      />
+                    ) : (
+                      <Image
+                        src={m.src}
+                        alt={m.title}
+                        fill
+                        className="object-cover rounded-lg"
+                        sizes="140px"
+                        unoptimized
+                      />
+                    )}
                   </div>
 
                   {/* center play icon overlay for video thumbnails */}
