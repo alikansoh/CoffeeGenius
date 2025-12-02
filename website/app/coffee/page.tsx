@@ -7,7 +7,6 @@ import {
   Sliders,
   X,
   RotateCcw,
-  ChevronDown,
   Coffee,
 } from "lucide-react";
 import useCart from "../store/CartStore";
@@ -72,11 +71,68 @@ type SortOption =
   | "name-asc"
   | "newest";
 
-// Compute initial bounds directly from DEMO_PRODUCTS so we can use them to initialize state
 const initialPriceBounds = (() => {
   const prices = DEMO_PRODUCTS.map((p) => p.prices?.["250g"] ?? p.price);
   return { min: Math.min(...prices), max: Math.max(...prices) };
 })();
+
+function useTypewriter(phrases: string[], active: boolean) {
+  const [text, setText] = useState("");
+  const [cursorOn, setCursorOn] = useState(true);
+
+  useEffect(() => {
+    if (!active) {
+      setText("");
+      setCursorOn(true);
+      return;
+    }
+
+    let mounted = true;
+    let phraseIndex = 0;
+    let charIndex = 0;
+    let typing = true;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+    const step = () => {
+      if (!mounted) return;
+      const current = phrases[phraseIndex] ?? "";
+
+      if (typing) {
+        if (charIndex <= current.length) {
+          setText(current.slice(0, charIndex));
+          charIndex++;
+          timeoutId = setTimeout(step, 80);
+        } else {
+          typing = false;
+          timeoutId = setTimeout(step, 2000);
+        }
+      } else {
+        if (charIndex > 0) {
+          charIndex--;
+          setText(current.slice(0, charIndex));
+          timeoutId = setTimeout(step, 40);
+        } else {
+          typing = true;
+          phraseIndex = (phraseIndex + 1) % phrases.length;
+          timeoutId = setTimeout(step, 500);
+        }
+      }
+    };
+
+    step();
+    const cursorId = setInterval(() => {
+      setCursorOn((c) => !c);
+    }, 530);
+
+    return () => {
+      mounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      clearInterval(cursorId);
+    };
+  }, [phrases, active]);
+
+  return text + (cursorOn ? "|" : " ");
+}
 
 export default function ShopPage() {
   const [products] = useState<Product[]>(DEMO_PRODUCTS);
@@ -86,7 +142,6 @@ export default function ShopPage() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [selectedRoasts, setSelectedRoasts] = useState<Set<string>>(new Set());
-  // Initialize min/max from precomputed initialPriceBounds to avoid calling setState synchronously in an effect
   const [minPrice, setMinPrice] = useState<number | "">(initialPriceBounds.min);
   const [maxPrice, setMaxPrice] = useState<number | "">(initialPriceBounds.max);
   const [sort, setSort] = useState<SortOption>("featured");
@@ -108,9 +163,14 @@ export default function ShopPage() {
     return { min: Math.min(...prices), max: Math.max(...prices) };
   }, [products]);
 
-  // Note: removed the unconditional effect that set min/max from priceBounds to avoid setState in effect.
-  // If you want price inputs to auto-update when products change at runtime, we can add a guarded update that only
-  // calls setState when the bounds actually differ.
+  const typewriterPhrases = [
+    "Search coffee...",
+    "Try 'Ethiopia'",
+    "Find your notes...",
+    "Discover origins..."
+  ];
+  const showTypewriter = query === "";
+  const typewriterText = useTypewriter(typewriterPhrases, showTypewriter);
 
   const filtered = useMemo(() => {
     let out = products.slice();
@@ -211,174 +271,90 @@ export default function ShopPage() {
   }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds]);
 
   return (
-    <main className="mt-16 sm:mt-0 min-h-screen bg-white py-8 sm:py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-3">
-            <Coffee size={16} className="text-gray-600" />
-            <p className="text-xs font-medium uppercase tracking-wider text-gray-500">
-              All Coffees
-            </p>
-          </div>
+    <>
+      {/* Add viewport meta to prevent zoom on iOS */}
+      <style jsx global>{`
+        input, select, textarea {
+          font-size: 16px !important;
+        }
+      `}</style>
 
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-900 mb-2">
-            Explore Our Roasts
-          </h1>
-          <p className="text-gray-600 text-sm max-w-2xl">
-            Curated selection of single origins and blends, freshly roasted to order.
-          </p>
-        </div>
-
-        {/* Search & Filter Bar */}
-        <div className="mb-6 flex flex-col sm:flex-row gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search coffees..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-gray-300 bg-white outline-none text-sm placeholder:text-gray-400 focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-            />
-          </div>
-
-          <button
-            onClick={() => setFiltersOpen(true)}
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 bg-white hover:border-gray-900 transition-colors"
-          >
-            <Sliders size={18} />
-            <span className="text-sm font-medium">Filters</span>
-            {activeFiltersCount > 0 && (
-              <span className="bg-gray-900 text-white text-xs font-semibold px-2 py-0.5 rounded-full">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Results Info & Sort */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-200">
-          <div className="text-sm text-gray-600">
-            <span className="font-semibold text-gray-900">
-              {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
-            </span>
-            {filtered.length !== products.length && (
-              <span className="ml-2 text-gray-500">
-                of {products.length} total
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-gray-600 font-medium">Sort by</label>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortOption)}
-              className="rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm font-medium hover:border-gray-900 focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
-            >
-              <option value="featured">Featured</option>
-              <option value="price-asc">Price: Low to High</option>
-              <option value="price-desc">Price: High to Low</option>
-              <option value="name-asc">Name: A to Z</option>
-              <option value="newest">Newest</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Products Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filtered.map((p, i) => {
-            const isProductAdded = Object.keys(addedMap).some((k) => k.startsWith(`${p.id}::`));
-            return (
-              <ProductCard
-                key={p.id}
-                product={p}
-                index={i}
-                onAddToCart={handleAdd}
-                isAdded={isProductAdded}
-              />
-            );
-          })}
-        </div>
-
-        {/* Empty State */}
-        {filtered.length === 0 && (
-          <div className="mt-12 border border-gray-200 rounded-lg bg-gray-50 p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-white border border-gray-200 mb-4">
-              <Search size={24} className="text-gray-400" />
-            </div>
-            <h3 className="text-xl font-semibold text-gray-900 mb-2">
-              No coffees found
-            </h3>
-            <p className="text-gray-600 mb-6 max-w-md mx-auto text-sm">
-              No coffees match your current filters. Try adjusting your search or filter criteria.
-            </p>
-            <button
-              onClick={resetFilters}
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-gray-900 text-white font-medium rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              <RotateCcw size={16} />
-              Reset filters
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Filter Panel */}
-      <div
-        className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-16 sm:top-0 bottom-0 ${
-          filtersOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-      >
-        <div
-          onClick={() => setFiltersOpen(false)}
-          className={`fixed inset-0 bg-black/30 transition-opacity ${
-            filtersOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-          }`}
-        />
-
-        <aside className="relative z-50 h-full bg-white shadow-xl overflow-y-auto">
+      <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Header */}
-          <div className="sticky top-0 z-10 bg-white px-6 py-4 flex items-center justify-between border-b border-gray-200">
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Filters</h3>
-              <p className="text-sm text-gray-500 mt-0.5">Refine your search</p>
+          <div className="mb-10">
+            <div className="flex items-center gap-2 mb-3">
+              <Coffee size={16} className="text-amber-700" />
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+                All Coffees
+              </p>
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3">
+              Explore Our Roasts
+            </h1>
+            <p className="text-gray-600 max-w-2xl leading-relaxed">
+              Curated selection of single origins and blends, freshly roasted to order.
+            </p>
+          </div>
+
+          {/* Search & Filter Bar */}
+          <div className="mb-8 flex flex-col sm:flex-row gap-3">
+            <div className="flex-1 relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={20} />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder=""
+                aria-label="Search coffees"
+                className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-gray-200 bg-white outline-none text-base transition-all focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                style={{ fontSize: '16px' }}
+              />
+
+              {query === "" && (
+                <div
+                  aria-hidden
+                  className="absolute inset-y-0 left-12 right-4 flex items-center text-gray-400 pointer-events-none select-none overflow-hidden"
+                >
+                  <span className="text-base">{typewriterText}</span>
+                </div>
+              )}
             </div>
 
             <button
-              onClick={() => setFiltersOpen(false)}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              onClick={() => setFiltersOpen(true)}
+              className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-gray-200 px-5 py-3.5 bg-white hover:border-gray-900 hover:shadow-md transition-all"
             >
-              <X size={20} />
+              <Sliders size={20} />
+              <span className="text-sm font-semibold">Filters</span>
+              {activeFiltersCount > 0 && (
+                <span className="bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                  {activeFiltersCount}
+                </span>
+              )}
             </button>
           </div>
 
-          <div className="p-6 space-y-6">
-            {/* Search */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
-                Search
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Name, notes, origin..."
-                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg outline-none text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900"
-                />
-              </div>
+          {/* Results Info & Sort */}
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b-2 border-gray-100">
+            <div className="text-sm text-gray-600">
+              <span className="font-bold text-gray-900 text-lg">
+                {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
+              </span>
+              {filtered.length !== products.length && (
+                <span className="ml-2 text-gray-500">
+                  of {products.length} total
+                </span>
+              )}
             </div>
 
-            {/* Sort */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
-                Sort by
-              </label>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-gray-600 font-semibold">Sort by</label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
+                className="rounded-lg border-2 border-gray-200 px-4 py-2 bg-white text-sm font-medium hover:border-gray-900 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                style={{ fontSize: '16px' }}
               >
                 <option value="featured">Featured</option>
                 <option value="price-asc">Price: Low to High</option>
@@ -387,109 +363,229 @@ export default function ShopPage() {
                 <option value="newest">Newest</option>
               </select>
             </div>
+          </div>
 
-            {/* Roast Level */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
-                Roast level
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {["light", "medium", "dark"].map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => toggleRoast(r)}
-                    className={`px-4 py-2 rounded-lg border text-sm font-medium capitalize transition-colors ${
-                      selectedRoasts.has(r)
-                        ? "bg-gray-900 text-white border-gray-900"
-                        : "bg-white text-gray-700 border-gray-300 hover:border-gray-900"
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
-              </div>
-            </div>
+          {/* Products Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {filtered.map((p, i) => {
+              const isProductAdded = Object.keys(addedMap).some((k) => k.startsWith(`${p.id}::`));
+              return (
+                <ProductCard
+                  key={p.id}
+                  product={p}
+                  index={i}
+                  onAddToCart={handleAdd}
+                  isAdded={isProductAdded}
+                />
+              );
+            })}
+          </div>
 
-            {/* Price Range */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
-                Price range
-              </label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-xs text-gray-500 block mb-1">Min</label>
-                  <input
-                    type="number"
-                    value={minPrice === "" ? "" : minPrice}
-                    onChange={(e) =>
-                      setMinPrice(e.target.value === "" ? "" : Number(e.target.value))
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
-                    placeholder="£0"
-                  />
-                </div>
-                <div className="flex-1">
-                  <label className="text-xs text-gray-500 block mb-1">Max</label>
-                  <input
-                    type="number"
-                    value={maxPrice === "" ? "" : maxPrice}
-                    onChange={(e) =>
-                      setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))
-                    }
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
-                    placeholder="£100"
-                  />
-                </div>
+          {/* Empty State */}
+          {filtered.length === 0 && (
+            <div className="mt-16 border-2 border-dashed border-gray-200 rounded-2xl bg-white p-12 text-center">
+              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-50 mb-4">
+                <Search size={32} className="text-gray-400" />
               </div>
-              <div className="text-xs text-gray-500 mt-2">
-                Range: £{priceBounds.min.toFixed(2)} — £{priceBounds.max.toFixed(2)}
-              </div>
-            </div>
-
-            {/* Origin */}
-            <div>
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
-                Origin
-              </label>
-              <select
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (!v) setQuery("");
-                  else setQuery(v);
-                }}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 outline-none"
-                defaultValue=""
+              <h3 className="text-2xl font-bold text-gray-900 mb-3">
+                No coffees found
+              </h3>
+              <p className="text-gray-600 mb-8 max-w-md mx-auto">
+                No coffees match your current filters. Try adjusting your search or filter criteria.
+              </p>
+              <button
+                onClick={resetFilters}
+                className="inline-flex items-center gap-2 px-8 py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors shadow-lg hover:shadow-xl"
               >
-                <option value="">Any origin</option>
-                {origins.map((o) => (
-                  <option value={o} key={o}>
-                    {o}
-                  </option>
-                ))}
-              </select>
+                <RotateCcw size={18} />
+                Reset filters
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Filter Panel */}
+        <div
+          className={`fixed right-0 z-50 w-full sm:max-w-md transform transition-transform duration-300 top-16 sm:top-0 bottom-0 ${
+            filtersOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <div
+            onClick={() => setFiltersOpen(false)}
+            className={`fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity ${
+              filtersOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+            }`}
+          />
+
+          <aside className="relative z-50 h-full bg-white shadow-2xl overflow-y-auto">
+            {/* Header */}
+            <div className="sticky top-0 z-10 bg-white px-6 py-5 flex items-center justify-between border-b-2 border-gray-100">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">Filters</h3>
+                <p className="text-sm text-gray-500 mt-1">Refine your search</p>
+              </div>
+
+              <button
+                onClick={() => setFiltersOpen(false)}
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                aria-label="Close filters"
+              >
+                <X size={22} />
+              </button>
             </div>
 
-            {/* Reset Button */}
-            <button
-              onClick={resetFilters}
-              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-gray-300 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-            >
-              <RotateCcw size={16} />
-              Reset filters
-            </button>
-          </div>
+            <div className="p-6 space-y-6">
+              {/* Search */}
+              <div>
+                <label className="text-sm font-bold text-gray-900 block mb-3">
+                  Search
+                </label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={18} />
+                  <input
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder=""
+                    className="w-full pl-10 pr-3 py-3 border-2 border-gray-200 rounded-lg outline-none text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 transition-all"
+                    style={{ fontSize: '16px' }}
+                  />
 
-          {/* Footer */}
-          <div className="sticky bottom-0 bg-white border-t border-gray-200 p-6">
-            <button
-              onClick={() => setFiltersOpen(false)}
-              className="w-full px-6 py-3 rounded-lg bg-gray-900 text-white font-semibold hover:bg-gray-800 transition-colors"
-            >
-              Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
-            </button>
-          </div>
-        </aside>
-      </div>
-    </main>
+                  {query === "" && (
+                    <div
+                      aria-hidden
+                      className="absolute inset-y-0 left-10 right-3 flex items-center text-sm text-gray-400 pointer-events-none select-none overflow-hidden"
+                    >
+                      <span>{typewriterText}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Sort */}
+              <div>
+                <label className="text-sm font-bold text-gray-900 block mb-3">
+                  Sort by
+                </label>
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as SortOption)}
+                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 bg-white text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                  style={{ fontSize: '16px' }}
+                >
+                  <option value="featured">Featured</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="name-asc">Name: A to Z</option>
+                  <option value="newest">Newest</option>
+                </select>
+              </div>
+
+              {/* Roast Level */}
+              <div>
+                <label className="text-sm font-bold text-gray-900 block mb-3">
+                  Roast level
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  {["light", "medium", "dark"].map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => toggleRoast(r)}
+                      className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
+                        selectedRoasts.has(r)
+                          ? "bg-gray-900 text-white border-gray-900 shadow-md"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
+                      }`}
+                    >
+                      {r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Price Range */}
+              <div>
+                <label className="text-sm font-bold text-gray-900 block mb-3">
+                  Price range
+                </label>
+                <div className="flex gap-3">
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 font-medium block mb-2">Min</label>
+                    <input
+                      type="number"
+                      value={minPrice === "" ? "" : minPrice}
+                      onChange={(e) =>
+                        setMinPrice(e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      className="w-full rounded-lg border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                      placeholder="£0"
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs text-gray-500 font-medium block mb-2">Max</label>
+                    <input
+                      type="number"
+                      value={maxPrice === "" ? "" : maxPrice}
+                      onChange={(e) =>
+                        setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))
+                      }
+                      className="w-full rounded-lg border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                      placeholder="£100"
+                      style={{ fontSize: '16px' }}
+                    />
+                  </div>
+                </div>
+                <div className="text-xs text-gray-500 mt-2 font-medium">
+                  Range: £{priceBounds.min.toFixed(2)} — £{priceBounds.max.toFixed(2)}
+                </div>
+              </div>
+
+              {/* Origin */}
+              <div>
+                <label className="text-sm font-bold text-gray-900 block mb-3">
+                  Origin
+                </label>
+                <select
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!v) setQuery("");
+                    else setQuery(v);
+                  }}
+                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                  defaultValue=""
+                  style={{ fontSize: '16px' }}
+                >
+                  <option value="">Any origin</option>
+                  {origins.map((o) => (
+                    <option value={o} key={o}>
+                      {o}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Reset Button */}
+              <button
+                onClick={resetFilters}
+                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 hover:border-gray-900 transition-all"
+              >
+                <RotateCcw size={18} />
+                Reset filters
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="sticky bottom-0 bg-white border-t-2 border-gray-100 p-6 shadow-lg">
+              <button
+                onClick={() => setFiltersOpen(false)}
+                className="w-full px-6 py-4 rounded-xl bg-gray-900 text-white font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
+              >
+                Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
+              </button>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </>
   );
 }

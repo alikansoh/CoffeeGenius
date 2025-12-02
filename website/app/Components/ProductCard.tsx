@@ -173,11 +173,12 @@ export default function ProductCard({
             </div>
 
             {displayNotes.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {displayNotes.map((note, idx) => (
                   <span
                     key={idx}
-                    className="px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded"
+                    title={note}
+                    className="px-3 py-1 text-sm font-semibold rounded-full bg-amber-50 text-amber-800 border border-amber-300 shadow-sm hover:shadow-md transition-shadow duration-150"
                   >
                     {note}
                   </span>
