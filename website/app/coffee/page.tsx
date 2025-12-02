@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import ProductCard, { Product } from "../Components/ProductCard";
 import {
   Search,
@@ -89,7 +89,6 @@ function useTypewriter(phrases: string[]) {
 
     const currentPhrase = phrases[phraseIndex];
     
-    // Finished typing - pause then start deleting
     if (!isDeleting && text === currentPhrase) {
       const pauseTimeout = setTimeout(() => {
         setIsDeleting(true);
@@ -97,7 +96,6 @@ function useTypewriter(phrases: string[]) {
       return () => clearTimeout(pauseTimeout);
     }
 
-    // Finished deleting - move to next phrase
     if (isDeleting && text === "") {
       const nextTimeout = setTimeout(() => {
         setIsDeleting(false);
@@ -106,7 +104,6 @@ function useTypewriter(phrases: string[]) {
       return () => clearTimeout(nextTimeout);
     }
 
-    // Type or delete next character
     const timeout = setTimeout(() => {
       setText((current) => {
         if (isDeleting) {
@@ -209,22 +206,73 @@ export default function ShopPage() {
     return out;
   }, [products, debouncedQuery, selectedRoasts, minPrice, maxPrice, sort]);
 
-  function toggleRoast(level: string) {
+  const toggleRoast = useCallback((level: string) => {
     setSelectedRoasts((prev) => {
       const s = new Set(prev);
       if (s.has(level)) s.delete(level);
       else s.add(level);
       return s;
     });
-  }
+  }, []);
 
-  function resetFilters() {
+  const removeRoast = useCallback((level: string) => {
+    setSelectedRoasts((prev) => {
+      const s = new Set(prev);
+      s.delete(level);
+      return s;
+    });
+  }, []);
+
+  const resetFilters = useCallback(() => {
     setQuery("");
     setSelectedRoasts(new Set());
     setMinPrice(priceBounds.min);
     setMaxPrice(priceBounds.max);
     setSort("featured");
-  }
+  }, [priceBounds.min, priceBounds.max]);
+
+  const clearPriceFilter = useCallback(() => {
+    setMinPrice(priceBounds.min);
+    setMaxPrice(priceBounds.max);
+  }, [priceBounds.min, priceBounds.max]);
+
+  const clearSearchQuery = useCallback(() => {
+    setQuery("");
+  }, []);
+
+  const isPriceFilterActive = minPrice !== priceBounds.min || maxPrice !== priceBounds.max;
+
+  const activeFilterTags = useMemo(() => {
+    const tags: { type: string; label: string; onRemove: () => void }[] = [];
+
+    if (debouncedQuery) {
+      tags.push({
+        type: "search",
+        label: `Search: "${debouncedQuery}"`,
+        onRemove: clearSearchQuery,
+      });
+    }
+
+    selectedRoasts.forEach((roast) => {
+      tags.push({
+        type: "roast",
+        label: `Roast: ${roast.charAt(0).toUpperCase() + roast.slice(1)}`,
+        onRemove: () => removeRoast(roast),
+      });
+    });
+
+    if (isPriceFilterActive) {
+      const minDisplay = typeof minPrice === "number" ? `£${minPrice.toFixed(2)}` : `£${priceBounds.min.toFixed(2)}`;
+      const maxDisplay = typeof maxPrice === "number" ? `£${maxPrice.toFixed(2)}` : `£${priceBounds.max.toFixed(2)}`;
+      tags.push({
+        type: "price",
+        label: `Price: ${minDisplay} — ${maxDisplay}`,
+        onRemove: clearPriceFilter,
+      });
+    }
+
+    return tags;
+  }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds, isPriceFilterActive, clearSearchQuery, removeRoast, clearPriceFilter]);
 
   async function handleAdd(
     p: Product,
@@ -262,7 +310,6 @@ export default function ShopPage() {
 
   return (
     <>
-      {/* Add viewport meta to prevent zoom on iOS */}
       <style jsx global>{`
         input, select, textarea {
           font-size: 16px !important;
@@ -272,32 +319,34 @@ export default function ShopPage() {
       <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Header */}
-          <div className="mb-10">
-            <div className="flex items-center gap-2 mb-3">
-              <Coffee size={16} className="text-amber-700" />
-              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <div className="mb-12">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="p-2 rounded-lg bg-amber-50">
+                <Coffee size={18} className="text-amber-700" />
+              </div>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
                 All Coffees
               </p>
             </div>
 
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3">
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 tracking-tight">
               Explore Our Roasts
             </h1>
-            <p className="text-gray-600 max-w-2xl leading-relaxed">
+            <p className="text-lg text-gray-600 max-w-2xl leading-relaxed">
               Curated selection of single origins and blends, freshly roasted to order.
             </p>
           </div>
 
           {/* Search & Filter Bar */}
-          <div className="mb-8 flex flex-col sm:flex-row gap-3">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={20} />
+          <div className="mb-8 flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 relative group">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-gray-600 z-10 transition-colors" size={20} />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder=""
                 aria-label="Search coffees"
-                className="w-full pl-12 pr-4 py-3.5 rounded-xl border-2 border-gray-200 bg-white outline-none text-base transition-all focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-200 bg-white outline-none text-base transition-all focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 hover:border-gray-300 shadow-sm"
                 style={{ fontSize: '16px' }}
               />
 
@@ -316,37 +365,73 @@ export default function ShopPage() {
 
             <button
               onClick={() => setFiltersOpen(true)}
-              className="inline-flex items-center justify-center gap-3 rounded-xl border-2 border-gray-200 px-5 py-3.5 bg-white hover:border-gray-900 hover:shadow-md transition-all"
+              className="inline-flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 px-6 py-4 bg-white hover:bg-gray-50 hover:border-gray-900 hover:shadow-lg transition-all shadow-sm relative overflow-hidden group"
             >
-              <Sliders size={20} />
-              <span className="text-sm font-semibold">Filters</span>
+              <Sliders size={20} className="relative z-10" />
+              <span className="text-sm font-bold relative z-10">Filters</span>
               {activeFiltersCount > 0 && (
-                <span className="bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-full">
+                <span className="bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-full relative z-10">
                   {activeFiltersCount}
                 </span>
               )}
             </button>
           </div>
 
+          {/* Active Filter Tags */}
+          {activeFilterTags.length > 0 && (
+            <div className="mb-8 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-bold text-gray-700">Active filters:</span>
+                {activeFilterTags.map((tag, index) => (
+                  <span
+                    key={`${tag.type}-${index}`}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-sm font-semibold text-gray-700 border-2 border-gray-200 hover:border-gray-900 transition-all shadow-sm hover:shadow"
+                  >
+                    {tag.label}
+                    <button
+                      onClick={tag.onRemove}
+                      className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+                      aria-label={`Remove ${tag.label} filter`}
+                    >
+                      <X size={14} className="text-gray-500" />
+                    </button>
+                  </span>
+                ))}
+                {activeFilterTags.length > 1 && (
+                  <button
+                    onClick={resetFilters}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 text-sm font-bold text-red-600 border-2 border-red-200 hover:bg-red-100 hover:border-red-300 transition-all shadow-sm hover:shadow"
+                  >
+                    <RotateCcw size={14} />
+                    Clear all
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Results Info & Sort */}
-          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b-2 border-gray-100">
-            <div className="text-sm text-gray-600">
-              <span className="font-bold text-gray-900 text-lg">
-                {filtered.length} {filtered.length === 1 ? "Product" : "Products"}
+          <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-200">
+            <div className="flex items-baseline gap-2">
+              <span className="font-bold text-gray-900 text-2xl">
+                {filtered.length}
+              </span>
+              <span className="text-gray-600 text-base">
+                {filtered.length === 1 ? "Product" : "Products"}
               </span>
               {filtered.length !== products.length && (
-                <span className="ml-2 text-gray-500">
+                <span className="text-gray-400 text-sm">
                   of {products.length} total
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-3">
-              <label className="text-sm text-gray-600 font-semibold">Sort by</label>
+              <label className="text-sm text-gray-700 font-bold">Sort by</label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="rounded-lg border-2 border-gray-200 px-4 py-2 bg-white text-sm font-medium hover:border-gray-900 focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                className="rounded-xl border-2 border-gray-200 px-4 py-2.5 bg-white text-sm font-semibold hover:border-gray-900 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 outline-none transition-all shadow-sm"
                 style={{ fontSize: '16px' }}
               >
                 <option value="featured">Featured</option>
@@ -376,21 +461,21 @@ export default function ShopPage() {
 
           {/* Empty State */}
           {filtered.length === 0 && (
-            <div className="mt-16 border-2 border-dashed border-gray-200 rounded-2xl bg-white p-12 text-center">
-              <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-50 mb-4">
-                <Search size={32} className="text-gray-400" />
+            <div className="mt-20 border-2 border-dashed border-gray-200 rounded-3xl bg-white p-16 text-center">
+              <div className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gray-50 mb-6">
+                <Search size={40} className="text-gray-400" />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">
+              <h3 className="text-3xl font-bold text-gray-900 mb-4">
                 No coffees found
               </h3>
-              <p className="text-gray-600 mb-8 max-w-md mx-auto">
+              <p className="text-gray-600 text-lg mb-10 max-w-md mx-auto leading-relaxed">
                 No coffees match your current filters. Try adjusting your search or filter criteria.
               </p>
               <button
                 onClick={resetFilters}
-                className="inline-flex items-center gap-2 px-8 py-3 bg-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition-colors shadow-lg hover:shadow-xl"
+                className="inline-flex items-center gap-2 px-8 py-4 bg-gray-900 text-white font-bold rounded-2xl hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
               >
-                <RotateCcw size={18} />
+                <RotateCcw size={20} />
                 Reset filters
               </button>
             </div>
@@ -434,7 +519,7 @@ export default function ShopPage() {
                   Search
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 z-10" size={18} />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 " size={18} />
                   <input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
