@@ -25,7 +25,7 @@ type QuickAddOptions = {
 };
 
 export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
-  if (!level) return null;
+  if (! level) return null;
 
   const levelMap: Record<NonNullable<Product["roastLevel"]>, number> = {
     light: 1,
@@ -83,7 +83,7 @@ export default function ProductCard({
   useEffect(() => {
     const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
     checkScreenSize();
-    window.addEventListener("resize", checkScreenSize);
+    window. addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
@@ -93,7 +93,7 @@ export default function ProductCard({
   };
 
   const openQuickAdd = (e: React.MouseEvent) => {
-    e.stopPropagation();
+    e. stopPropagation();
     setIsFlipped(true);
     setSize("250g");
     setGrind("whole-bean");
@@ -115,22 +115,33 @@ export default function ProductCard({
     }
   };
 
-  const noteChips = (product.notes || "")
+  const noteChips = (product. notes || "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const displayNotes = noteChips.length > 0 ? noteChips.slice(0, 3) : [];
+  const displayNotes = noteChips.length > 0 ? noteChips. slice(0, 3) : [];
 
   const unitPriceForSize = (s: QuickAddOptions["size"]) =>
-    (product.prices && product.prices[s]) ?? product.price;
+    (product.prices && product.prices[s]) ??  product.price;
 
   return (
     <div
       onClick={() => isLargeScreen && setIsHovered(true)}
       onMouseEnter={() => isLargeScreen && setIsHovered(true)}
       onMouseLeave={() => isLargeScreen && setIsHovered(false)}
-      className="group w-full mx-auto sm:mx-0 bg-white hover:shadow-lg transition-shadow duration-300 rounded-lg border border-gray-200 relative"
-      style={{ maxWidth: 320, perspective: 1000, minHeight: 500 }}
+      className="group w-full mx-auto sm:mx-0 bg-white rounded-lg border border-gray-200 relative transition-all duration-300 hover:-translate-y-1"
+      style={{ 
+        maxWidth: 320, 
+        perspective: 1000, 
+        minHeight: 500,
+        boxShadow: '0 4px 6px -1px rgba(120, 53, 15, 0.1), 0 2px 4px -2px rgba(120, 53, 15, 0.1)',
+      }}
+      onMouseOver={(e) => {
+        e.currentTarget.style.boxShadow = '0 20px 25px -5px rgba(120, 53, 15, 0.2), 0 8px 10px -6px rgba(120, 53, 15, 0.15)';
+      }}
+      onMouseOut={(e) => {
+        e.currentTarget.style. boxShadow = '0 4px 6px -1px rgba(120, 53, 15, 0.1), 0 2px 4px -2px rgba(120, 53, 15, 0.1)';
+      }}
       aria-live="polite"
     >
       <div
@@ -146,7 +157,7 @@ export default function ProductCard({
           style={{ backfaceVisibility: "hidden" }}
         >
           <div className="relative w-full bg-gray-100 rounded-t-lg overflow-hidden aspect-square">
-            {product.img ? (
+            {product.img ?  (
               <Image
                 src={product.img}
                 alt={product.name}
@@ -165,7 +176,7 @@ export default function ProductCard({
           <div className="p-4 flex flex-col flex-1">
             <div className="mb-3">
               <h3 className="text-lg font-semibold text-gray-900 mb-0.5">
-                {product.name}
+                {product. name}
               </h3>
               {product.origin && (
                 <p className="text-sm text-gray-500">{product.origin}</p>
@@ -195,18 +206,18 @@ export default function ProductCard({
             <div className="mt-auto">
               <div className="mb-3">
                 <span className="text-xl font-bold text-gray-900">
-                  £{(product.prices?.["250g"] ?? product.price).toFixed(2)}
+                  £{(product.prices?. ["250g"] ?? product.price).toFixed(2)}
                 </span>
                 <span className="text-sm text-gray-500 ml-1">/ 250g</span>
               </div>
 
-              {!isAdded && (
+              {! isAdded && (
                 <>
                   {/* Desktop buttons - show on hover */}
                   <div
                     className={`hidden lg:block transition-all duration-300 ${
                       isHovered && isLargeScreen
-                        ? "opacity-100"
+                        ?  "opacity-100"
                         : "opacity-0 pointer-events-none"
                     }`}
                   >
@@ -292,13 +303,13 @@ export default function ProductCard({
                       }}
                       className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-all ${
                         selected
-                          ? "bg-gray-900 text-white"
+                          ?  "bg-gray-900 text-white"
                           : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                       }`}
                     >
                       <div>{s}</div>
                       <div className="text-xs opacity-75">
-                        £{unitPriceForSize(s).toFixed(2)}
+                        £{unitPriceForSize(s). toFixed(2)}
                       </div>
                     </button>
                   );
@@ -354,7 +365,7 @@ export default function ProductCard({
           <div className="flex gap-2 mt-4">
             <button
               onClick={(e) => {
-                e.stopPropagation();
+                e. stopPropagation();
                 setIsFlipped(false);
               }}
               className="flex-1 px-3 py-2 rounded border border-gray-300 text-sm font-medium hover:bg-gray-50 transition-colors"
@@ -366,7 +377,7 @@ export default function ProductCard({
               disabled={processing}
               className="flex-1 px-3 py-2 rounded bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
             >
-              {processing ? "Adding..." : "Add to cart"}
+              {processing ?  "Adding..." : "Add to cart"}
             </button>
           </div>
         </div>

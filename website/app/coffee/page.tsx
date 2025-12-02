@@ -76,62 +76,51 @@ const initialPriceBounds = (() => {
   return { min: Math.min(...prices), max: Math.max(...prices) };
 })();
 
-function useTypewriter(phrases: string[], active: boolean) {
+function useTypewriter(phrases: string[]) {
   const [text, setText] = useState("");
-  const [cursorOn, setCursorOn] = useState(true);
+  const [phraseIndex, setPhraseIndex] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
-    if (!active) {
-      setText("");
-      setCursorOn(true);
-      return;
+    if (phrases.length === 0) {
+      const timeout = setTimeout(() => setText(""), 0);
+      return () => clearTimeout(timeout);
     }
 
-    let mounted = true;
-    let phraseIndex = 0;
-    let charIndex = 0;
-    let typing = true;
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const currentPhrase = phrases[phraseIndex];
+    
+    // Finished typing - pause then start deleting
+    if (!isDeleting && text === currentPhrase) {
+      const pauseTimeout = setTimeout(() => {
+        setIsDeleting(true);
+      }, 2000);
+      return () => clearTimeout(pauseTimeout);
+    }
 
-    const step = () => {
-      if (!mounted) return;
-      const current = phrases[phraseIndex] ?? "";
+    // Finished deleting - move to next phrase
+    if (isDeleting && text === "") {
+      const nextTimeout = setTimeout(() => {
+        setIsDeleting(false);
+        setPhraseIndex((prev) => (prev + 1) % phrases.length);
+      }, 500);
+      return () => clearTimeout(nextTimeout);
+    }
 
-      if (typing) {
-        if (charIndex <= current.length) {
-          setText(current.slice(0, charIndex));
-          charIndex++;
-          timeoutId = setTimeout(step, 80);
+    // Type or delete next character
+    const timeout = setTimeout(() => {
+      setText((current) => {
+        if (isDeleting) {
+          return currentPhrase.substring(0, current.length - 1);
         } else {
-          typing = false;
-          timeoutId = setTimeout(step, 2000);
+          return currentPhrase.substring(0, current.length + 1);
         }
-      } else {
-        if (charIndex > 0) {
-          charIndex--;
-          setText(current.slice(0, charIndex));
-          timeoutId = setTimeout(step, 40);
-        } else {
-          typing = true;
-          phraseIndex = (phraseIndex + 1) % phrases.length;
-          timeoutId = setTimeout(step, 500);
-        }
-      }
-    };
+      });
+    }, isDeleting ? 50 : 100);
 
-    step();
-    const cursorId = setInterval(() => {
-      setCursorOn((c) => !c);
-    }, 530);
+    return () => clearTimeout(timeout);
+  }, [text, phraseIndex, isDeleting, phrases]);
 
-    return () => {
-      mounted = false;
-      if (timeoutId) clearTimeout(timeoutId);
-      clearInterval(cursorId);
-    };
-  }, [phrases, active]);
-
-  return text + (cursorOn ? "|" : " ");
+  return text;
 }
 
 export default function ShopPage() {
@@ -164,13 +153,14 @@ export default function ShopPage() {
   }, [products]);
 
   const typewriterPhrases = [
-    "Search coffee...",
-    "Try 'Ethiopia'",
-    "Find your notes...",
-    "Discover origins..."
+    "Search by name, notes, or origin...",
+    "Try 'Ethiopia' or 'Colombia'...",
+    "your coffee is waiting...",
+    "Discover new flavors...",
+    "Search tasting notes...",
+    "Find your perfect roast..."
   ];
-  const showTypewriter = query === "";
-  const typewriterText = useTypewriter(typewriterPhrases, showTypewriter);
+  const typewriterText = useTypewriter(query === "" ? typewriterPhrases : []);
 
   const filtered = useMemo(() => {
     let out = products.slice();
@@ -311,12 +301,15 @@ export default function ShopPage() {
                 style={{ fontSize: '16px' }}
               />
 
-              {query === "" && (
+              {query === "" && typewriterText && (
                 <div
                   aria-hidden
-                  className="absolute inset-y-0 left-12 right-4 flex items-center text-gray-400 pointer-events-none select-none overflow-hidden"
+                  className="absolute inset-y-0 left-12 right-4 flex items-center text-gray-400 pointer-events-none select-none"
                 >
-                  <span className="text-base">{typewriterText}</span>
+                  <span className="text-base">
+                    {typewriterText}
+                    <span className="animate-pulse ml-0.5">|</span>
+                  </span>
                 </div>
               )}
             </div>
@@ -450,12 +443,15 @@ export default function ShopPage() {
                     style={{ fontSize: '16px' }}
                   />
 
-                  {query === "" && (
+                  {query === "" && typewriterText && (
                     <div
                       aria-hidden
-                      className="absolute inset-y-0 left-10 right-3 flex items-center text-sm text-gray-400 pointer-events-none select-none overflow-hidden"
+                      className="absolute inset-y-0 left-10 right-3 flex items-center text-sm text-gray-400 pointer-events-none select-none"
                     >
-                      <span>{typewriterText}</span>
+                      <span>
+                        {typewriterText}
+                        <span className="animate-pulse ml-0.5">|</span>
+                      </span>
                     </div>
                   )}
                 </div>
