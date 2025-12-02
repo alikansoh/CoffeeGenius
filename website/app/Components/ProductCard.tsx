@@ -81,11 +81,17 @@ export default function ProductCard({
   const isAdded = isAddedProp || localAdded;
 
   useEffect(() => {
-    const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
+    const checkScreenSize = () => setIsLargeScreen(window. innerWidth >= 1024);
     checkScreenSize();
-    window. addEventListener("resize", checkScreenSize);
-    return () => window.removeEventListener("resize", checkScreenSize);
+    window.addEventListener("resize", checkScreenSize);
+    return () => window. removeEventListener("resize", checkScreenSize);
   }, []);
+
+  const handleCardClick = () => {
+    if (! isFlipped) {
+      router.push(`/coffee/${encodeURIComponent(product.id)}`);
+    }
+  };
 
   const handleLearnMore = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -119,17 +125,17 @@ export default function ProductCard({
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  const displayNotes = noteChips.length > 0 ? noteChips. slice(0, 3) : [];
+  const displayNotes = noteChips.length > 0 ?  noteChips. slice(0, 3) : [];
 
   const unitPriceForSize = (s: QuickAddOptions["size"]) =>
     (product.prices && product.prices[s]) ??  product.price;
 
   return (
     <div
-      onClick={() => isLargeScreen && setIsHovered(true)}
+      onClick={handleCardClick}
       onMouseEnter={() => isLargeScreen && setIsHovered(true)}
       onMouseLeave={() => isLargeScreen && setIsHovered(false)}
-      className="group w-full mx-auto sm:mx-0 bg-white rounded-lg border border-gray-200 relative transition-all duration-300 hover:-translate-y-1"
+      className="group w-full mx-auto sm:mx-0 bg-white rounded-lg border border-gray-200 relative transition-all duration-300 hover:-translate-y-1 cursor-pointer"
       style={{ 
         maxWidth: 320, 
         perspective: 1000, 
@@ -176,7 +182,7 @@ export default function ProductCard({
           <div className="p-4 flex flex-col flex-1">
             <div className="mb-3">
               <h3 className="text-lg font-semibold text-gray-900 mb-0.5">
-                {product. name}
+                {product.name}
               </h3>
               {product.origin && (
                 <p className="text-sm text-gray-500">{product.origin}</p>
@@ -206,7 +212,7 @@ export default function ProductCard({
             <div className="mt-auto">
               <div className="mb-3">
                 <span className="text-xl font-bold text-gray-900">
-                  £{(product.prices?. ["250g"] ?? product.price).toFixed(2)}
+                  £{(product.prices?. ["250g"] ??  product.price).toFixed(2)}
                 </span>
                 <span className="text-sm text-gray-500 ml-1">/ 250g</span>
               </div>
@@ -217,7 +223,7 @@ export default function ProductCard({
                   <div
                     className={`hidden lg:block transition-all duration-300 ${
                       isHovered && isLargeScreen
-                        ?  "opacity-100"
+                        ? "opacity-100"
                         : "opacity-0 pointer-events-none"
                     }`}
                   >
@@ -303,7 +309,7 @@ export default function ProductCard({
                       }}
                       className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-all ${
                         selected
-                          ?  "bg-gray-900 text-white"
+                          ? "bg-gray-900 text-white"
                           : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                       }`}
                     >
