@@ -57,7 +57,7 @@ export default function Navbar() {
 
   // Cart hooks (Zustand)
   const openCart = useCart((s) => s.open);
-  const totalCount = useCart((s) => s.totalCount());
+  const totalCount = useCart((s) => s.getTotalItems());
 
   // New: only user-controlled expanded search. When false nothing (zero height) is rendered.
   const [searchOpen, setSearchOpen] = useState(false);

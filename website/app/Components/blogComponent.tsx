@@ -167,14 +167,12 @@ export default function BlogSection() {
                           {isExpanded ? "Show less" : "Show full"}
                         </button>
 
-                        <Link href={postUrl} className="text-sm text-slate-900 font-semibold inline-flex items-center gap-2">
+                        <Link href={postUrl} className="text-sm text-slate-900 font-semibold inline-flex items-center">
                           Read full post <ArrowRight className="w-4 h-4" />
                         </Link>
                       </div>
 
-                      <Link href="/blog" className="text-sm text-slate-500 hover:text-slate-700">
-                        More posts →
-                      </Link>
+                     
                     </div>
                   </div>
                 </article>

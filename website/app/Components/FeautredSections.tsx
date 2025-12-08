@@ -103,19 +103,21 @@ function FeatureCard({
       data-section-id={section.id}
     >
       <div
-        className={`flex flex-col lg:flex-row items-center gap-6 bg-white border rounded-2xl p-6 lg:p-8
-          ${!isImageLeft ? "lg:flex-row-reverse" : ""}
-          border-slate-200/80`}
+        // Group allows coordinated hover effects between image and content.
+        className={`group flex flex-col md:flex-row items-center gap-6 bg-white border rounded-2xl p-5 md:p-7 lg:p-8
+          ${!isImageLeft ? "md:flex-row-reverse" : ""}
+          border-slate-200/80 shadow-sm md:shadow`}
       >
         {/* Image */}
-        <div className="relative lg:w-[45%] w-full overflow-hidden rounded-xl">
-          <div className="relative h-[420px] w-full">
+        {/* Adjusted widths and heights for tablet (md) screens to be more prominent */}
+        <div className="relative md:w-[48%] lg:w-[45%] w-full overflow-hidden rounded-xl md:rounded-2xl md:-mt-4">
+          <div className="relative h-72 md:h-[460px] lg:h-[420px] w-full transition-transform duration-500 ease-out transform group-hover:scale-105">
             <Image
               src={section.image}
               alt={section.title}
               fill
-              className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-              sizes="(max-width: 1024px) 100vw, 45vw"
+              className="object-cover"
+              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 52vw, 45vw"
               priority={index === 0}
             />
             <div className="absolute inset-0 bg-gradient-to-br from-black/6 to-transparent pointer-events-none" />
@@ -123,17 +125,20 @@ function FeatureCard({
         </div>
 
         {/* Content */}
-        <div className="lg:w-[55%] w-full space-y-4">
+        <div className="md:w-[52%] lg:w-[55%] w-full space-y-4">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-slate-50 rounded-xl text-slate-700 border border-slate-100">
               {section.icon}
             </div>
-            <p className="text-slate-500 uppercase tracking-wider text-xs font-bold">
+            <p className="text-slate-500 uppercase tracking-wider text-xs md:text-sm font-bold">
               {section.subtitle}
             </p>
           </div>
 
-          <h3 id={`${section.id}-title`} className="text-2xl lg:text-3xl font-serif text-slate-900 leading-tight">
+          <h3
+            id={`${section.id}-title`}
+            className="text-2xl md:text-3xl lg:text-4xl font-serif text-slate-900 leading-tight"
+          >
             {section.title}
           </h3>
 
@@ -142,16 +147,17 @@ function FeatureCard({
             <div className="w-1 h-1 bg-slate-400 rounded-full" />
           </div>
 
-          <p className="text-slate-600 text-base leading-relaxed">{section.description}</p>
+          <p className="text-slate-600 text-base md:text-lg leading-relaxed">{section.description}</p>
 
-          <div className="bg-slate-50 rounded-lg p-4 border border-slate-100">
-            <ul className="space-y-2">
+          <div className="bg-slate-50 rounded-lg p-3 md:p-4 border border-slate-100">
+            {/* Make features display in two columns on tablet for better use of space */}
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {section.features.map((feature, idx) => (
                 <li key={idx} className="flex items-start gap-3 text-slate-700">
                   <div className="p-1 bg-white rounded-full border border-emerald-100">
                     <Check className="w-3.5 h-3.5 text-emerald-600" />
                   </div>
-                  <span className="text-sm font-medium leading-relaxed">{feature}</span>
+                  <span className="text-sm md:text-sm font-medium leading-relaxed">{feature}</span>
                 </li>
               ))}
             </ul>
@@ -160,7 +166,7 @@ function FeatureCard({
           <div>
             <a
               href={section.ctaLink}
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-900 text-white text-sm rounded-lg hover:bg-slate-800 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 md:px-5 md:py-3 bg-slate-900 text-white text-sm md:text-sm rounded-lg hover:bg-slate-800 transition-colors"
               aria-label={section.ctaText}
             >
               {section.ctaText}
@@ -241,16 +247,16 @@ export default function FeatureSections() {
   }, []);
 
   return (
-    <section className="py-8 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50">
+    <section className="py-10 md:py-14 px-4 md:px-6 bg-gradient-to-b from-slate-50 via-white to-slate-50">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-12 space-y-3">
           <div className="inline-block">
-            <p className="text-slate-500 uppercase tracking-[0.2em] text-xs font-bold px-3 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
+            <p className="text-slate-500 uppercase tracking-[0.2em] text-xs md:text-sm font-bold px-3 py-1 bg-white rounded-full border border-slate-200 shadow-sm">
               What We Offer
             </p>
           </div>
 
-          <h2 className="text-3xl lg:text-4xl font-serif text-slate-900 max-w-3xl mx-auto font-bold">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-serif text-slate-900 max-w-3xl mx-auto font-bold">
             Everything You Need for Perfect Coffee
           </h2>
 
@@ -262,7 +268,7 @@ export default function FeatureSections() {
             <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse" />
           </div>
 
-          <p className="text-slate-600 text-base max-w-2xl mx-auto leading-relaxed pt-2">
+          <p className="text-slate-600 text-base md:text-lg max-w-2xl mx-auto leading-relaxed pt-2">
             From premium beans to professional equipment and expert training, we provide a complete coffee experience.
           </p>
         </div>

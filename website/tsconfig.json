@@ -29,6 +29,6 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
     "**/*.mts"
-, "app/Components/Navbar.tsx"  ],
+, "app/Components/Navbar.tsx", "lib/dbConnect.js", "app/api/users/[id]/route.ts", "controllers/userController.ts", "app/api/login/route.ts"  ],
   "exclude": ["node_modules"]
 }

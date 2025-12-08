@@ -2,67 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import ProductCard, { Product } from "../Components/ProductCard";
-import {
-  Search,
-  Sliders,
-  X,
-  RotateCcw,
-  Coffee,
-} from "lucide-react";
-import useCart from "../store/CartStore";
-
-const DEMO_PRODUCTS: Product[] = [
-  {
-    id: "espresso-blend",
-    name: "Signature Espresso Blend",
-    origin: "House Blend",
-    notes: "Rich chocolate, silky body, long finish",
-    price: 14.0,
-    prices: { "250g": 14.0, "1kg": 48.0 },
-    img: "/test.webp",
-    roastLevel: "dark",
-  },
-  {
-    id: "ethiopian-light",
-    name: "Ethiopian Light Roast",
-    origin: "Yirgacheffe, Ethiopia",
-    notes: "Bright citrus, floral notes, honey sweetness",
-    price: 12.5,
-    prices: { "250g": 12.5, "1kg": 42.0 },
-    img: "/test.webp",
-    roastLevel: "light",
-  },
-  {
-    id: "colombian-medium",
-    name: "Colombian Medium Roast",
-    origin: "Huila, Colombia",
-    notes: "Caramel sweetness, balanced body, chocolate",
-    price: 11.0,
-    prices: { "250g": 11.0, "1kg": 36.0 },
-    img: "/test.webp",
-    roastLevel: "medium",
-  },
-  {
-    id: "sumatra-dark",
-    name: "Sumatra Dark Roast",
-    origin: "Sumatra, Indonesia",
-    notes: "Earthy, spicy, full body",
-    price: 13.5,
-    prices: { "250g": 13.5, "1kg": 46.0 },
-    img: "/test.webp",
-    roastLevel: "dark",
-  },
-  {
-    id: "kenya-aa",
-    name: "Kenya AA",
-    origin: "Kenya",
-    notes: "Bold berry notes, bright acidity, crisp finish",
-    price: 13.0,
-    prices: { "250g": 13.0, "1kg": 44.0 },
-    img: "/test.webp",
-    roastLevel: "medium",
-  },
-];
+import { Search, Sliders, X, RotateCcw, Coffee } from "lucide-react";
 
 type SortOption =
   | "featured"
@@ -71,10 +11,43 @@ type SortOption =
   | "name-asc"
   | "newest";
 
-const initialPriceBounds = (() => {
-  const prices = DEMO_PRODUCTS.map((p) => p.prices?.["250g"] ?? p.price);
-  return { min: Math.min(...prices), max: Math.max(...prices) };
-})();
+interface Variant {
+  _id: string;
+  coffeeId: string;
+  sku: string;
+  size: string;
+  grind: string;
+  price: number;
+  stock: number;
+  img: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface SizePrice {
+  size: string;
+  price: number;
+  availableGrinds?: string[];
+  totalStock?: number;
+}
+
+interface ApiCoffee {
+  _id: string;
+  slug: string;
+  name: string;
+  origin: string;
+  notes?: string;
+  img: string;
+  roastLevel: "light" | "medium" | "dark";
+  createdAt: string;
+  variantCount: number;
+  minPrice: number;
+  availableGrinds: string[];
+  availableSizes: SizePrice[];
+  totalStock: number;
+  variants: Variant[];
+  bestSeller?: boolean;  // ✅ Added
+}
 
 function useTypewriter(phrases: string[]) {
   const [text, setText] = useState("");
@@ -88,8 +61,8 @@ function useTypewriter(phrases: string[]) {
     }
 
     const currentPhrase = phrases[phraseIndex];
-    
-    if (!isDeleting && text === currentPhrase) {
+
+    if (! isDeleting && text === currentPhrase) {
       const pauseTimeout = setTimeout(() => {
         setIsDeleting(true);
       }, 2000);
@@ -104,15 +77,15 @@ function useTypewriter(phrases: string[]) {
       return () => clearTimeout(nextTimeout);
     }
 
-    const timeout = setTimeout(() => {
-      setText((current) => {
-        if (isDeleting) {
-          return currentPhrase.substring(0, current.length - 1);
-        } else {
+    const timeout = setTimeout(
+      () => {
+        setText((current) => {
+          if (isDeleting) return currentPhrase. substring(0, current.length - 1);
           return currentPhrase.substring(0, current.length + 1);
-        }
-      });
-    }, isDeleting ? 50 : 100);
+        });
+      },
+      isDeleting ? 50 : 100
+    );
 
     return () => clearTimeout(timeout);
   }, [text, phraseIndex, isDeleting, phrases]);
@@ -120,47 +93,144 @@ function useTypewriter(phrases: string[]) {
   return text;
 }
 
-export default function ShopPage() {
-  const [products] = useState<Product[]>(DEMO_PRODUCTS);
-  const addItem = useCart((s) => s.addItem);
-  const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
+export default function ShopPage({ params }: { params: { slug?: string } }) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
   const [selectedRoasts, setSelectedRoasts] = useState<Set<string>>(new Set());
-  const [minPrice, setMinPrice] = useState<number | "">(initialPriceBounds.min);
-  const [maxPrice, setMaxPrice] = useState<number | "">(initialPriceBounds.max);
+  const [minPrice, setMinPrice] = useState<number | "">(0);
+  const [maxPrice, setMaxPrice] = useState<number | "">(0);
   const [sort, setSort] = useState<SortOption>("featured");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
+  const slug = params?. slug;
+
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 220);
+    const fetchProducts = async () => {
+      try {
+        setLoading(true);
+        const url = slug
+          ? `/api/coffee? search=${encodeURIComponent(slug)}`
+          : "/api/coffee";
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Failed to fetch products");
+        const data = await response.json();
+
+        console.log("📦 API Response:", data);
+
+        const transformedProducts: Product[] = data.data.map(
+          (coffee: ApiCoffee) => {
+            console.log(`☕ Coffee: ${coffee.name}`, {
+              hasVariants: !!coffee.variants,
+              variantCount: coffee.variants?. length || 0,
+              bestSeller: coffee.bestSeller,  // ✅ Log bestSeller
+            });
+
+            const prices: Record<string, number> = {};
+            if (coffee.availableSizes && coffee.availableSizes.length > 0) {
+              coffee.availableSizes.forEach((sizeObj: SizePrice) => {
+                prices[sizeObj.size] = sizeObj.price;
+              });
+            } else {
+              prices["250g"] = coffee.minPrice;
+            }
+
+            return {
+              id: coffee._id || coffee.slug,
+              name: coffee.name,
+              slug: coffee.slug,
+              origin: coffee.origin,
+              notes: coffee.notes || "",
+              price: coffee.minPrice,
+              prices,
+              img: coffee.img,
+              roastLevel: coffee.roastLevel,
+              grinds: coffee.availableGrinds,
+              availableSizes: coffee.availableSizes,
+              minPrice: coffee.minPrice,
+              variants: coffee.variants,
+              bestSeller: coffee. bestSeller,  // ✅ Pass bestSeller to ProductCard
+            };
+          }
+        );
+
+        console.log("✅ Transformed products:", transformedProducts);
+        console.log(
+          "🔍 First product variants:",
+          transformedProducts[0]?.variants
+        );
+        console.log(
+          "⭐ First product bestSeller:",
+          transformedProducts[0]?.bestSeller
+        );
+
+        setProducts(transformedProducts);
+
+        if (transformedProducts.length > 0) {
+          const prices = transformedProducts.map((p) => {
+            const firstSize = Object.values(p.prices || {})[0];
+            return firstSize || p.price;
+          });
+          const min = Math.min(
+            ...prices.filter((price): price is number => price !== undefined)
+          );
+          const max = Math.max(
+            ...prices.filter((price): price is number => price !== undefined)
+          );
+          setMinPrice(min);
+          setMaxPrice(max);
+        }
+
+        setError(null);
+      } catch (err) {
+        console.error("Error fetching products:", err);
+        setError("Failed to load products. Please try again later.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProducts();
+  }, [slug]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query. trim()), 220);
     return () => clearTimeout(t);
   }, [query]);
 
   const origins = useMemo(() => {
     const s = new Set<string>();
     for (const p of products) if (p.origin) s.add(p.origin);
-    return Array.from(s).sort();
+    return Array.from(s). sort();
   }, [products]);
 
   const priceBounds = useMemo(() => {
-    const prices = products.map((p) => p.prices?.["250g"] ?? p.price);
-    return { min: Math.min(...prices), max: Math.max(...prices) };
+    if (products.length === 0) return { min: 0, max: 100 };
+    const prices = products.map((p) => {
+      const firstSize = Object. values(p.prices || {})[0];
+      return firstSize || p.price;
+    });
+    return {
+      min: Math.min(...prices. filter((p) => p !== undefined)),
+      max: Math.max(...prices.filter((p) => p !== undefined)),
+    };
   }, [products]);
 
   const typewriterPhrases = [
-    "Search by name, notes, or origin...",
-    "Try 'Ethiopia' or 'Colombia'...",
-    "your coffee is waiting...",
+    "Search by name, notes, or origin.. .",
+    "Try 'Ethiopia' or 'Colombia'.. .",
+    "Your coffee is waiting...",
     "Discover new flavors...",
     "Search tasting notes...",
-    "Find your perfect roast..."
+    "Find your perfect roast...",
   ];
   const typewriterText = useTypewriter(query === "" ? typewriterPhrases : []);
 
   const filtered = useMemo(() => {
-    let out = products.slice();
+    let out = products. slice();
 
     if (debouncedQuery) {
       const q = debouncedQuery.toLowerCase();
@@ -174,24 +244,35 @@ export default function ShopPage() {
 
     if (selectedRoasts.size > 0) {
       out = out.filter((p) =>
-        p.roastLevel ? selectedRoasts.has(p.roastLevel) : false
+        p.roastLevel ?  selectedRoasts.has(p.roastLevel) : false
       );
     }
 
     const min = typeof minPrice === "number" ? minPrice : -Infinity;
-    const max = typeof maxPrice === "number" ? maxPrice : Infinity;
+    const max = typeof maxPrice === "number" ?  maxPrice : Infinity;
     out = out.filter((p) => {
-      const unit = p.prices?.["250g"] ?? p.price;
-      return unit >= min && unit <= max;
+      const firstSize = Object.values(p. prices || {})[0];
+      const unit = firstSize || p.price;
+      return (unit ??  0) >= min && (unit ??  0) <= max;
     });
 
     switch (sort) {
-      case "price-asc":
-        out.sort((a, b) => (a.prices?.["250g"] ?? a.price) - (b.prices?.["250g"] ?? b.price));
+      case "price-asc": {
+        const getFirstPrice = (p: Product) => {
+          const firstSize = Object. values(p.prices || {})[0];
+          return firstSize || p.price;
+        };
+        out. sort((a, b) => (getFirstPrice(a) || 0) - (getFirstPrice(b) || 0));
         break;
-      case "price-desc":
-        out.sort((a, b) => (b.prices?.["250g"] ?? b.price) - (a.prices?.["250g"] ?? a.price));
+      }
+      case "price-desc": {
+        const getFirstPrice = (p: Product) => {
+          const firstSize = Object.values(p.prices || {})[0];
+          return firstSize || p.price;
+        };
+        out. sort((a, b) => (getFirstPrice(b) || 0) - (getFirstPrice(a) || 0));
         break;
+      }
       case "name-asc":
         out.sort((a, b) => a.name.localeCompare(b.name));
         break;
@@ -229,7 +310,7 @@ export default function ShopPage() {
     setMinPrice(priceBounds.min);
     setMaxPrice(priceBounds.max);
     setSort("featured");
-  }, [priceBounds.min, priceBounds.max]);
+  }, [priceBounds. min, priceBounds.max]);
 
   const clearPriceFilter = useCallback(() => {
     setMinPrice(priceBounds.min);
@@ -240,7 +321,9 @@ export default function ShopPage() {
     setQuery("");
   }, []);
 
-  const isPriceFilterActive = minPrice !== priceBounds.min || maxPrice !== priceBounds.max;
+  const isPriceFilterActive =
+    (typeof minPrice === "number" && minPrice !== priceBounds.min) ||
+    (typeof maxPrice === "number" && maxPrice !== priceBounds.max);
 
   const activeFilterTags = useMemo(() => {
     const tags: { type: string; label: string; onRemove: () => void }[] = [];
@@ -254,16 +337,22 @@ export default function ShopPage() {
     }
 
     selectedRoasts.forEach((roast) => {
-      tags.push({
+      tags. push({
         type: "roast",
-        label: `Roast: ${roast.charAt(0).toUpperCase() + roast.slice(1)}`,
+        label: `Roast: ${roast. charAt(0).toUpperCase() + roast.slice(1)}`,
         onRemove: () => removeRoast(roast),
       });
     });
 
     if (isPriceFilterActive) {
-      const minDisplay = typeof minPrice === "number" ? `£${minPrice.toFixed(2)}` : `£${priceBounds.min.toFixed(2)}`;
-      const maxDisplay = typeof maxPrice === "number" ? `£${maxPrice.toFixed(2)}` : `£${priceBounds.max.toFixed(2)}`;
+      const minDisplay =
+        typeof minPrice === "number"
+          ? `£${minPrice.toFixed(2)}`
+          : `£${priceBounds.min.toFixed(2)}`;
+      const maxDisplay =
+        typeof maxPrice === "number"
+          ? `£${maxPrice.toFixed(2)}`
+          : `£${priceBounds.max.toFixed(2)}`;
       tags.push({
         type: "price",
         label: `Price: ${minDisplay} — ${maxDisplay}`,
@@ -272,31 +361,23 @@ export default function ShopPage() {
     }
 
     return tags;
-  }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds, isPriceFilterActive, clearSearchQuery, removeRoast, clearPriceFilter]);
-
-  async function handleAdd(
-    p: Product,
-    options?: { size: "250g" | "1kg"; grind: string; quantity: number }
-  ) {
-    const size = options?.size ?? "250g";
-    const grind = options?.grind ?? "whole-bean";
-    const quantity = options?.quantity ?? 1;
-
-    const unitPrice = p.prices?.[size] ?? p.price;
-    const cartId = `${p.id}::${size}::${grind}`;
-    const name = `${p.name} — ${size} — ${grind}`;
-
-    addItem({ id: cartId, name, price: unitPrice, img: p.img }, quantity);
-
-    setAddedMap((s) => ({ ...s, [cartId]: true }));
-    setTimeout(() => setAddedMap((s) => ({ ...s, [cartId]: false })), 1200);
-  }
+  }, [
+    debouncedQuery,
+    selectedRoasts,
+    minPrice,
+    maxPrice,
+    priceBounds,
+    isPriceFilterActive,
+    clearSearchQuery,
+    removeRoast,
+    clearPriceFilter,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     document.body.style.overflow = filtersOpen ? "hidden" : "";
     return () => {
-      document.body.style.overflow = "";
+      document. body.style.overflow = "";
     };
   }, [filtersOpen]);
 
@@ -304,19 +385,36 @@ export default function ShopPage() {
     let count = 0;
     if (debouncedQuery) count++;
     if (selectedRoasts.size > 0) count += selectedRoasts.size;
-    if (minPrice !== priceBounds.min || maxPrice !== priceBounds.max) count++;
+    if (isPriceFilterActive) count++;
     return count;
-  }, [debouncedQuery, selectedRoasts, minPrice, maxPrice, priceBounds]);
+  }, [debouncedQuery, selectedRoasts, isPriceFilterActive]);
+
+  if (error) {
+    return (
+      <main className="mt-16 md:mt-10 lg:mt-0 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mt-20 border-2 border-dashed border-red-200 rounded-3xl bg-red-50 p-16 text-center">
+            <h3 className="text-3xl font-bold text-red-900 mb-4">
+              Error Loading Products
+            </h3>
+            <p className="text-red-700 text-lg mb-10">{error}</p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <>
       <style jsx global>{`
-        input, select, textarea {
-          font-size: 16px !important;
+        input,
+        select,
+        textarea {
+          font-size: 16px ! important;
         }
       `}</style>
 
-      <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
+      <main className="mt-16 md:mt-10 lg:mt-0 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-12">
@@ -333,21 +431,24 @@ export default function ShopPage() {
               Explore Our Roasts
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl leading-relaxed">
-              Curated selection of single origins and blends, freshly roasted to order.
+              Curated selection of single origins and blends, freshly roasted to
+              order. {" "}
             </p>
           </div>
 
           {/* Search & Filter Bar */}
           <div className="mb-8 flex flex-col sm:flex-row gap-4">
             <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-gray-600 z-10 transition-colors" size={20} />
+              <Search
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-gray-600 z-10 transition-colors"
+                size={20}
+              />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder=""
+                onChange={(e) => setQuery(e. target.value)}
                 aria-label="Search coffees"
-                className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-gray-200 bg-white outline-none text-base transition-all focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 hover:border-gray-300 shadow-sm"
-                style={{ fontSize: '16px' }}
+                className="w-full pl-12 pr-4 py-3 rounded-2xl border-2 border-gray-200 bg-white outline-none text-base font-medium transition-all focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 hover:border-gray-300 shadow-sm"
+                style={{ fontSize: "16px" }}
               />
 
               {query === "" && typewriterText && (
@@ -365,12 +466,14 @@ export default function ShopPage() {
 
             <button
               onClick={() => setFiltersOpen(true)}
-              className="inline-flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 px-6 py-4 bg-white hover:bg-gray-50 hover:border-gray-900 hover:shadow-lg transition-all shadow-sm relative overflow-hidden group"
+              className="inline-flex items-center justify-center gap-3 rounded-2xl border-2 border-gray-200 px-6 py-3 bg-white hover:bg-gray-50 hover:border-gray-900 hover:shadow-lg transition-all shadow-sm relative overflow-hidden group"
             >
               <Sliders size={20} className="relative z-10" />
-              <span className="text-sm font-bold relative z-10">Filters</span>
+              <span className="text-sm font-semibold relative z-10">
+                Filters
+              </span>
               {activeFiltersCount > 0 && (
-                <span className="bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-full relative z-10">
+                <span className="bg-gray-900 text-white text-xs font-bold px-2. 5 py-1 rounded-full relative z-10">
                   {activeFiltersCount}
                 </span>
               )}
@@ -379,13 +482,15 @@ export default function ShopPage() {
 
           {/* Active Filter Tags */}
           {activeFilterTags.length > 0 && (
-            <div className="mb-8 p-4 rounded-2xl bg-gray-50 border border-gray-100">
+            <div className="mb-8 p-4 rounded-xl bg-gray-50 border border-gray-100">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-bold text-gray-700">Active filters:</span>
+                <span className="text-sm font-semibold text-gray-700">
+                  Active filters:
+                </span>
                 {activeFilterTags.map((tag, index) => (
                   <span
                     key={`${tag.type}-${index}`}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white text-sm font-semibold text-gray-700 border-2 border-gray-200 hover:border-gray-900 transition-all shadow-sm hover:shadow"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white text-sm font-medium text-gray-700 border-2 border-gray-200 hover:border-gray-900 transition-all shadow-sm hover:shadow"
                   >
                     {tag.label}
                     <button
@@ -400,7 +505,7 @@ export default function ShopPage() {
                 {activeFilterTags.length > 1 && (
                   <button
                     onClick={resetFilters}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-red-50 text-sm font-bold text-red-600 border-2 border-red-200 hover:bg-red-100 hover:border-red-300 transition-all shadow-sm hover:shadow"
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 text-sm font-semibold text-red-600 border-2 border-red-200 hover:bg-red-100 hover:border-red-300 transition-all shadow-sm hover:shadow"
                   >
                     <RotateCcw size={14} />
                     Clear all
@@ -414,25 +519,28 @@ export default function ShopPage() {
           <div className="mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-200">
             <div className="flex items-baseline gap-2">
               <span className="font-bold text-gray-900 text-2xl">
-                {filtered.length}
+                {loading ? "..." : filtered.length}
               </span>
-              <span className="text-gray-600 text-base">
+              <span className="text-gray-600 text-sm">
                 {filtered.length === 1 ? "Product" : "Products"}
               </span>
-              {filtered.length !== products.length && (
-                <span className="text-gray-400 text-sm">
+              {! loading && filtered.length !== products.length && (
+                <span className="text-gray-400 text-xs">
                   of {products.length} total
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-3">
-              <label className="text-sm text-gray-700 font-bold">Sort by</label>
+              <label className="text-sm text-gray-700 font-semibold">
+                Sort
+              </label>
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as SortOption)}
-                className="rounded-xl border-2 border-gray-200 px-4 py-2.5 bg-white text-sm font-semibold hover:border-gray-900 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 outline-none transition-all shadow-sm"
-                style={{ fontSize: '16px' }}
+                disabled={loading}
+                className="rounded-xl border-2 border-gray-200 px-4 py-3 h-12 bg-white text-base font-semibold hover:border-gray-900 focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 outline-none transition-all shadow-sm disabled:opacity-50"
+                style={{ minWidth: 180 }}
               >
                 <option value="featured">Featured</option>
                 <option value="price-asc">Price: Low to High</option>
@@ -443,24 +551,34 @@ export default function ShopPage() {
             </div>
           </div>
 
-          {/* Products Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filtered.map((p, i) => {
-              const isProductAdded = Object.keys(addedMap).some((k) => k.startsWith(`${p.id}::`));
-              return (
-                <ProductCard
-                  key={p.id}
-                  product={p}
-                  index={i}
-                  onAddToCart={handleAdd}
-                  isAdded={isProductAdded}
+          {/* Loading State */}
+          {loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {Array. from({ length: 8 }). map((_, i) => (
+                <div
+                  key={i}
+                  className="bg-gray-200 rounded-2xl h-96 animate-pulse"
                 />
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+
+          {/* Products Grid */}
+          {! loading && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:justify-items-center lg:justify-items-stretch">
+              {filtered.map((p, i) => (
+                <div
+                  key={p.id}
+                  className="w-full md:max-w-[320px] md:justify-self-center lg:justify-self-auto"
+                >
+                  <ProductCard product={p} index={i} />
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Empty State */}
-          {filtered.length === 0 && (
+          {!loading && filtered.length === 0 && (
             <div className="mt-20 border-2 border-dashed border-gray-200 rounded-3xl bg-white p-16 text-center">
               <div className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-gray-50 mb-6">
                 <Search size={40} className="text-gray-400" />
@@ -469,7 +587,8 @@ export default function ShopPage() {
                 No coffees found
               </h3>
               <p className="text-gray-600 text-lg mb-10 max-w-md mx-auto leading-relaxed">
-                No coffees match your current filters. Try adjusting your search or filter criteria.
+                No coffees match your current filters. Try adjusting your search
+                or filter criteria.
               </p>
               <button
                 onClick={resetFilters}
@@ -496,7 +615,6 @@ export default function ShopPage() {
           />
 
           <aside className="relative z-50 h-full bg-white shadow-2xl overflow-y-auto">
-            {/* Header */}
             <div className="sticky top-0 z-10 bg-white px-6 py-5 flex items-center justify-between border-b-2 border-gray-100">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">Filters</h3>
@@ -519,19 +637,21 @@ export default function ShopPage() {
                   Search
                 </label>
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 " size={18} />
+                  <Search
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                    size={18}
+                  />
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder=""
-                    className="w-full pl-10 pr-3 py-3 border-2 border-gray-200 rounded-lg outline-none text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 transition-all"
-                    style={{ fontSize: '16px' }}
+                    onChange={(e) => setQuery(e.target. value)}
+                    className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 transition-all"
+                    style={{ fontSize: "16px" }}
                   />
 
                   {query === "" && typewriterText && (
                     <div
                       aria-hidden
-                      className="absolute inset-y-0 left-10 right-3 flex items-center text-sm text-gray-400 pointer-events-none select-none"
+                      className="absolute inset-y-0 left-10 right-4 flex items-center text-sm text-gray-400 pointer-events-none select-none"
                     >
                       <span>
                         {typewriterText}
@@ -550,8 +670,8 @@ export default function ShopPage() {
                 <select
                   value={sort}
                   onChange={(e) => setSort(e.target.value as SortOption)}
-                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 bg-white text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
-                  style={{ fontSize: '16px' }}
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 h-12 bg-white text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                  style={{ fontSize: "16px" }}
                 >
                   <option value="featured">Featured</option>
                   <option value="price-asc">Price: Low to High</option>
@@ -571,7 +691,7 @@ export default function ShopPage() {
                     <button
                       key={r}
                       onClick={() => toggleRoast(r)}
-                      className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
+                      className={`px-5 py-2. 5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
                         selectedRoasts.has(r)
                           ? "bg-gray-900 text-white border-gray-900 shadow-md"
                           : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
@@ -590,34 +710,43 @@ export default function ShopPage() {
                 </label>
                 <div className="flex gap-3">
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 font-medium block mb-2">Min</label>
+                    <label className="text-xs text-gray-500 font-medium block mb-2">
+                      Min
+                    </label>
                     <input
                       type="number"
                       value={minPrice === "" ? "" : minPrice}
                       onChange={(e) =>
-                        setMinPrice(e.target.value === "" ? "" : Number(e.target.value))
+                        setMinPrice(
+                          e.target.value === "" ? "" : Number(e. target.value)
+                        )
                       }
-                      className="w-full rounded-lg border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
                       placeholder="£0"
-                      style={{ fontSize: '16px' }}
+                      style={{ fontSize: "16px", height: 48 }}
                     />
                   </div>
                   <div className="flex-1">
-                    <label className="text-xs text-gray-500 font-medium block mb-2">Max</label>
+                    <label className="text-xs text-gray-500 font-medium block mb-2">
+                      Max
+                    </label>
                     <input
                       type="number"
                       value={maxPrice === "" ? "" : maxPrice}
                       onChange={(e) =>
-                        setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))
+                        setMaxPrice(
+                          e. target.value === "" ? "" : Number(e.target.value)
+                        )
                       }
-                      className="w-full rounded-lg border-2 border-gray-200 px-3 py-2.5 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                      className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
                       placeholder="£100"
-                      style={{ fontSize: '16px' }}
+                      style={{ fontSize: "16px", height: 48 }}
                     />
                   </div>
                 </div>
                 <div className="text-xs text-gray-500 mt-2 font-medium">
-                  Range: £{priceBounds.min.toFixed(2)} — £{priceBounds.max.toFixed(2)}
+                  Range: £{priceBounds. min. toFixed(2)} — £
+                  {priceBounds. max.toFixed(2)}
                 </div>
               </div>
 
@@ -629,12 +758,12 @@ export default function ShopPage() {
                 <select
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (!v) setQuery("");
+                    if (! v) setQuery("");
                     else setQuery(v);
                   }}
-                  className="w-full rounded-lg border-2 border-gray-200 px-4 py-3 text-sm focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
+                  className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
                   defaultValue=""
-                  style={{ fontSize: '16px' }}
+                  style={{ fontSize: "16px" }}
                 >
                   <option value="">Any origin</option>
                   {origins.map((o) => (
@@ -655,13 +784,13 @@ export default function ShopPage() {
               </button>
             </div>
 
-            {/* Footer */}
             <div className="sticky bottom-0 bg-white border-t-2 border-gray-100 p-6 shadow-lg">
               <button
                 onClick={() => setFiltersOpen(false)}
-                className="w-full px-6 py-4 rounded-xl bg-gray-900 text-white font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
+                className="w-full px-6 py-3 rounded-lg bg-gray-900 text-white font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
               >
-                Show {filtered.length} {filtered.length === 1 ? "result" : "results"}
+                Show {filtered.length}{" "}
+                {filtered. length === 1 ? "result" : "results"}
               </button>
             </div>
           </aside>

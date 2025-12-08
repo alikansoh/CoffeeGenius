@@ -35,7 +35,7 @@ export default function GoogleReviews(): JSX.Element {
     async function fetchReviews() {
       try {
         setLoading(true);
-        const res = await fetch("pages/api/google-reviews");
+        // const res = await fetch("/api/google-reviews");
         const contentType = String(res.headers.get("content-type") ?? "").toLowerCase();
         const text = await res.text();
 

@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShoppingCart,
@@ -10,28 +11,62 @@ import {
   ChevronRight,
   Coffee,
   ArrowRight,
-  ZoomIn,
-  Play,
+  Star,
 } from "lucide-react";
-import useCart from "../store/CartStore";
+import useCart, { CartItem } from "../store/CartStore";
+
+interface Variant {
+  _id: string;
+  coffeeId: string;
+  sku: string;
+  size: string;
+  grind: string;
+  price: number;
+  stock: number;
+  img: string;
+}
+
+interface SizePrice {
+  size: string;
+  price: number;
+  availableGrinds?: string[];
+  totalStock?: number;
+}
+
+interface ApiCoffee {
+  _id: string;
+  slug: string;
+  name: string;
+  origin: string;
+  notes?: string;
+  img: string;
+  roastLevel?: "light" | "medium" | "dark";
+  minPrice: number;
+  availableGrinds: string[];
+  availableSizes: SizePrice[];
+  variants: Variant[];
+  bestSeller: boolean;
+}
 
 export type Product = {
   id: string;
+  slug: string; // ✅ Added slug as required field
   name: string;
   origin?: string;
   notes?: string;
   price: number;
-  prices?: {
-    "250g"?: number;
-    "1kg"?: number;
-  };
+  prices?: Record<string, number>;
   img?: string;
   roastLevel?: "light" | "medium" | "dark";
+  availableSizes?: SizePrice[];
+  availableGrinds?: string[];
+  variants?: Variant[];
+  bestSeller?: boolean;
 };
 
 type QuickAddOptions = {
-  size: "250g" | "1kg";
-  grind: "whole-bean" | "espresso" | "filter";
+  size: string;
+  grind: string;
   quantity: number;
 };
 
@@ -42,56 +77,8 @@ const COLORS = {
   softBg: "#FAFAFA",
 };
 
-const defaultProducts: Product[] = [
-  {
-    id: "espresso-blend",
-    name: "Signature Espresso Blend",
-    origin: "House Blend",
-    notes: "Rich chocolate, silky body, long finish",
-    price: 14.0,
-    img: "/test.webp",
-    roastLevel: "dark",
-  },
-  {
-    id: "ethiopian-light",
-    name: "Ethiopian Light Roast",
-    origin: "Yirgacheffe, Ethiopia",
-    notes: "Bright citrus, floral notes, honey sweetness",
-    price: 12.5,
-    img: "/test.webp",
-    roastLevel: "light",
-  },
-  {
-    id: "colombian-medium",
-    name: "Colombian Medium Roast",
-    origin: "Huila, Colombia",
-    notes: "Caramel sweetness, balanced body, chocolate",
-    price: 11.0,
-    img: "/test.webp",
-    roastLevel: "medium",
-  },
-  {
-    id: "sumatra-dark",
-    name: "Sumatra Dark Roast",
-    origin: "Sumatra, Indonesia",
-    notes: "Earthy, spicy, full body",
-    price: 13.5,
-    img: "/test.webp",
-    roastLevel: "dark",
-  },
-  {
-    id: "kenya-aa",
-    name: "Kenya AA",
-    origin: "Kenya",
-    notes: "Bold berry notes, bright acidity, crisp finish",
-    price: 13.0,
-    img: "/test.webp",
-    roastLevel: "medium",
-  },
-];
-
 function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
-  if (!level) return null;
+  if (!  level) return null;
 
   const levelMap: Record<NonNullable<Product["roastLevel"]>, number> = {
     light: 1,
@@ -103,7 +90,7 @@ function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
   return (
     <div className="inline-flex items-center gap-2 px-3 py-2 bg-neutral-50 rounded-lg border border-neutral-200">
       <div className="flex items-center gap-1">
-        {[1, 2, 3].map((bean) => (
+        {[1, 2, 3]. map((bean) => (
           <div key={bean}>
             <Image
               src={bean <= numeric ? "/bean-filled.svg" : "/bean.svg"}
@@ -123,14 +110,6 @@ function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
   );
 }
 
-/**
- * ProductCard: ported functionality from the first component you provided.
- * - Card flip to quick-add configuration on the back
- * - Quick-add supports size, grind, quantity
- * - Quick-add calls onAddToCart(product, options)
- * - Local added state & temporary "Added" UI
- * - Navigates to product page when front is clicked (unless flipped)
- */
 function ProductCard({
   product,
   index,
@@ -139,70 +118,135 @@ function ProductCard({
 }: {
   product: Product;
   index: number;
-  onAddToCart?: (product: Product, options?: QuickAddOptions) => void;
+  onAddToCart?: (product: Product, options: QuickAddOptions) => void;
   isAdded?: boolean;
 }) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
-  const [size, setSize] = useState<QuickAddOptions["size"]>("250g");
-  const [grind, setGrind] = useState<QuickAddOptions["grind"]>("whole-bean");
+  const [size, setSize] = useState<string>("");
+  const [grind, setGrind] = useState<string>("");
   const [quantity, setQuantity] = useState(1);
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
 
   const isAdded = isAddedProp || localAdded;
 
+  // Get available sizes
+  const availableSizes = useMemo(() => 
+    product.availableSizes?.map((s) => s.size). sort() || 
+    (product.prices ?  Object.keys(product.prices). sort() : ["250g"]), 
+  [product.availableSizes, product.prices]);
+
+  // Get available grinds for selected size
+  const availableGrindsForSize = useMemo(() => 
+    product.availableSizes?.find((s) => s.size === size)?.availableGrinds || 
+    product.availableGrinds || 
+    ["whole-bean"], 
+  [product.availableSizes, product.availableGrinds, size]);
+
+  // Find selected variant
+  const selectedVariant = product.variants?.find(
+    (v) => v.size === size && v.grind === grind
+  );
+
+  // Initialize size and grind
   useEffect(() => {
-    const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
+    if (availableSizes. length > 0 && ! size) {
+      setSize(availableSizes[0]);
+    }
+  }, [availableSizes, size]);
+
+  useEffect(() => {
+    if (availableGrindsForSize.length > 0 && !grind) {
+      setGrind(availableGrindsForSize[0]);
+    }
+  }, [availableGrindsForSize, grind]);
+
+  useEffect(() => {
+    const checkScreenSize = () => setIsLargeScreen(window. innerWidth >= 1024);
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);
-    return () => window.removeEventListener("resize", checkScreenSize);
+    return () => window. removeEventListener("resize", checkScreenSize);
   }, []);
 
+  // ✅ Use slug for navigation
   const handleCardClick = () => {
-    if (!isFlipped) {
-      router.push(`/coffee/${encodeURIComponent(product.id)}`);
+    if (! isFlipped) {
+      router.push(`/coffee/${encodeURIComponent(product.slug)}`);
     }
-  };
-
-  const handleLearnMore = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    router.push(`/coffee/${encodeURIComponent(product.id)}`);
   };
 
   const openQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsFlipped(true);
-    setSize("250g");
-    setGrind("whole-bean");
     setQuantity(1);
   };
 
   const submitQuickAdd = async (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (!onAddToCart) return;
+    e?. stopPropagation();
+    if (!onAddToCart || ! selectedVariant) return;
 
     setProcessing(true);
     try {
       await Promise.resolve(onAddToCart(product, { size, grind, quantity }));
       setLocalAdded(true);
-      setTimeout(() => setLocalAdded(false), 1200);
-      setIsFlipped(false);
+      setTimeout(() => {
+        setLocalAdded(false);
+        setIsFlipped(false);
+      }, 1200);
     } finally {
       setProcessing(false);
     }
   };
 
-  const noteChips = (product.notes || "")
-    .split(",")
+  const displayNotes = (product.notes || "")
+    . split(",")
     .map((s) => s.trim())
-    .filter(Boolean);
-  const displayNotes = noteChips.length > 0 ? noteChips.slice(0, 3) : [];
+    .filter(Boolean)
+    .slice(0, 3);
 
-  const unitPriceForSize = (s: QuickAddOptions["size"]) =>
-    (product.prices && product.prices[s]) ?? product.price;
+  // Safe price calculation with fallback
+  const unitPriceForSize = (s: string): number => {
+    const sizePrice = product.availableSizes?.find((sz) => sz.size === s)?. price;
+    if (sizePrice !== undefined) return sizePrice;
+    
+    const pricesPrice = product.prices?.[s];
+    if (pricesPrice !== undefined) return pricesPrice;
+    
+    return product.price || 0;
+  };
+
+  // Calculate display price from availableSizes or prices first
+  const displayPrice = useMemo(() => {
+    // Try to get price from availableSizes
+    if (product.availableSizes && product.availableSizes.length > 0) {
+      const prices = product.availableSizes.map(s => s.price). filter(p => p > 0);
+      if (prices.length > 0) {
+        return Math.min(...prices);
+      }
+    }
+    
+    // Try to get price from prices object
+    if (product.prices) {
+      const priceValues = Object.values(product.prices). filter(p => p > 0);
+      if (priceValues. length > 0) {
+        return Math.min(...priceValues);
+      }
+    }
+    
+    // Fallback to product.price
+    return product.price || 0;
+  }, [product.availableSizes, product.prices, product.price]);
+
+  const isOutOfStock = selectedVariant ?  selectedVariant.stock === 0 : false;
+
+  // Don't render if product data is invalid
+  if (! product || !product.id) {
+    console.warn("⚠️ Invalid product data:", product);
+    return null;
+  }
 
   return (
     <article
@@ -215,15 +259,13 @@ function ProductCard({
     >
       <div
         className="group relative rounded-xl overflow-hidden cursor-pointer bg-white flex flex-col h-full transition-all duration-500 border-2 border-neutral-200"
-        style={{
-          perspective: 1000,
-        }}
+        style={{ perspective: 1000 }}
       >
         <div
           className="relative w-full h-full transition-transform duration-500"
           style={{
             transformStyle: "preserve-3d",
-            transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
+            transform: isFlipped ?  "rotateY(180deg)" : "rotateY(0deg)",
             minHeight: 520,
           }}
         >
@@ -233,7 +275,7 @@ function ProductCard({
             style={{ backfaceVisibility: "hidden" }}
           >
             <div className="relative w-full bg-neutral-100 rounded-t-xl overflow-hidden aspect-[6/5]">
-              {product.img ? (
+              {product.img ?  (
                 <Image
                   src={product.img}
                   alt={product.name}
@@ -249,11 +291,15 @@ function ProductCard({
 
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
 
-              <div className="absolute top-3 left-3">
-                <span className="inline-block px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-black text-white rounded-full shadow-lg">
-                  Best Seller
-                </span>
-              </div>
+              {/* Best Seller Badge */}
+              {product.bestSeller && (
+                <div className="absolute top-3 left-3">
+                  <span className="inline-flex items-center gap-1. 5 px-3 py-1. 5 text-[10px] font-bold uppercase tracking-wider bg-amber-900 text-white rounded-full shadow-lg">
+                    <Star size={12} className="fill-white" />
+                    <span>Best Seller</span>
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="p-5 flex flex-col flex-1">
@@ -267,42 +313,48 @@ function ProductCard({
                 {product.name}
               </h3>
 
-              
-
               {product.roastLevel && (
                 <div className="mb-3">
                   <RoastLevelIndicator level={product.roastLevel} />
                 </div>
               )}
 
-              <p className="text-sm text-neutral-500 mb-4 line-clamp-2 flex-1 leading-relaxed">
-                {product.notes}
-              </p>
+              {displayNotes.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-2">
+                    Tasting Notes
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {displayNotes.map((note, idx) => (
+                      <span
+                        key={idx}
+                        className="relative inline-flex items-center px-3 py-1. 5 text-xs font-semibold text-amber-900 rounded-full bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100 border-2 border-amber-200 shadow-sm hover:shadow-md hover:scale-105 transition-all duration-200"
+                      >
+                        <span className="relative z-10">{note}</span>
+                        <div className="absolute inset-0 rounded-full bg-gradient-to-br from-amber-100/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
-              <div className="flex items-center justify-between gap-3 pt-3 border-t-2 border-neutral-100">
+              <div className="flex items-center justify-between gap-3 pt-3 border-t-2 border-neutral-100 mt-auto">
                 <div>
                   <span className="text-xs text-neutral-400">From</span>
                   <div className="text-xl font-bold tracking-tight" style={{ color: COLORS.primary }}>
-                    £{product.price.toFixed(2)}
+                    £{displayPrice. toFixed(2)}
                   </div>
                 </div>
 
-                {!isAdded && (
-                  <div className="flex gap-2 items-center">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openQuickAdd(e);
-                      }}
-                      className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold bg-black text-white hover:bg-neutral-800 transition-all duration-200"
-                      aria-label={`Quick add ${product.name} to cart`}
-                    >
-                      <ShoppingCart size={16} />
-                      <span>Quick Add</span>
-                    </button>
-
-                
-                  </div>
+                {! isAdded && (
+                  <button
+                    onClick={openQuickAdd}
+                    className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold bg-black text-white hover:bg-neutral-800 transition-all duration-200"
+                    aria-label={`Quick add ${product.name} to cart`}
+                  >
+                    <ShoppingCart size={16} />
+                    <span>Quick Add</span>
+                  </button>
                 )}
 
                 {isAdded && (
@@ -330,11 +382,12 @@ function ProductCard({
             </div>
 
             <div className="space-y-3 flex-1">
+              {/* Size Selection */}
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">Size</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1. 5">Size</label>
                 <div className="flex gap-2">
-                  {(["250g", "1kg"] as QuickAddOptions["size"][]).map((s) => {
-                    const selected = s === size;
+                  {availableSizes. map((s) => {
+                    const sizePrice = unitPriceForSize(s);
                     return (
                       <button
                         key={s}
@@ -343,30 +396,48 @@ function ProductCard({
                           setSize(s);
                         }}
                         className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-all ${
-                          selected ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          s === size ?  "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                         }`}
                       >
                         <div>{s}</div>
-                        <div className="text-xs opacity-75">£{unitPriceForSize(s).toFixed(2)}</div>
+                        <div className="text-xs opacity-75">£{sizePrice.toFixed(2)}</div>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
+              {/* Grind Selection */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1.5">Grind</label>
                 <select
                   value={grind}
-                  onChange={(e) => setGrind(e.target.value as QuickAddOptions["grind"])}
+                  onChange={(e) => setGrind(e.target.value)}
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none"
+                  style={{ fontSize: "16px" }}
                 >
-                  <option value="whole-bean">Whole bean</option>
-                  <option value="espresso">Ground for espresso</option>
-                  <option value="filter">Ground for filter</option>
+                  {availableGrindsForSize.map((g) => (
+                    <option key={g} value={g}>
+                      {g. charAt(0).toUpperCase() + g.slice(1). replace("-", " ")}
+                    </option>
+                  ))}
                 </select>
               </div>
 
+              {/* Stock Status */}
+              {selectedVariant && (
+                <div className="text-xs font-semibold">
+                  {isOutOfStock ? (
+                    <span className="text-red-600">Out of stock</span>
+                  ) : selectedVariant.stock < 10 ? (
+                    <span className="text-amber-600">Only {selectedVariant.stock} left</span>
+                  ) : (
+                    <span className="text-green-600">{selectedVariant.stock} in stock</span>
+                  )}
+                </div>
+              )}
+
+              {/* Quantity */}
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1.5">Quantity</label>
                 <div className="flex items-center gap-3">
@@ -375,8 +446,8 @@ function ProductCard({
                       e.stopPropagation();
                       setQuantity((q) => Math.max(1, q - 1));
                     }}
-                    className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors"
-                    aria-label="Decrease quantity"
+                    disabled={isOutOfStock}
+                    className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors disabled:opacity-50"
                   >
                     −
                   </button>
@@ -384,10 +455,10 @@ function ProductCard({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setQuantity((q) => q + 1);
+                      setQuantity((q) => Math.min(q + 1, selectedVariant?. stock || 999));
                     }}
-                    className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors"
-                    aria-label="Increase quantity"
+                    disabled={isOutOfStock}
+                    className="w-8 h-8 rounded border border-gray-300 font-medium hover:bg-gray-100 transition-colors disabled:opacity-50"
                   >
                     +
                   </button>
@@ -407,10 +478,10 @@ function ProductCard({
               </button>
               <button
                 onClick={submitQuickAdd}
-                disabled={processing}
+                disabled={processing || ! selectedVariant || isOutOfStock}
                 className="flex-1 px-3 py-2 rounded bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
-                {processing ? "Adding..." : "Add to cart"}
+                {processing ? "Adding..." : isOutOfStock ? "Out of Stock" : "Add to cart"}
               </button>
             </div>
           </div>
@@ -420,18 +491,66 @@ function ProductCard({
   );
 }
 
-/**
- * BestSellerSlider
- * - Renders a horizontal slider of ProductCard components
- * - Passes a proper onAddToCart handler that integrates with the store and consumes QuickAddOptions
- */
-export default function BestSellerSlider({ products = defaultProducts }: { products?: Product[] }) {
+export default function BestSellerSlider() {
   const addItem = useCart((s) => s.addItem);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
   const [addedMap, setAddedMap] = useState<Record<string, boolean>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // Fetch only best sellers
+  useEffect(() => {
+    const fetchBestSellers = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch("/api/coffee? bestSeller=true&limit=10");
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch best sellers");
+        }
+
+        const data = await response.json();
+
+        const transformedProducts: Product[] = data.data.map((coffee: ApiCoffee) => {
+          const prices: Record<string, number> = {};
+          if (coffee.availableSizes && coffee.availableSizes.length > 0) {
+            coffee.availableSizes.forEach((sizeObj: SizePrice) => {
+              prices[sizeObj.size] = sizeObj.price;
+            });
+          } else {
+            prices["250g"] = coffee.minPrice;
+          }
+
+          return {
+            id: coffee._id || coffee.slug,
+            slug: coffee.slug, // ✅ Added slug
+            name: coffee.name,
+            origin: coffee.origin,
+            notes: coffee.notes || "",
+            price: coffee.minPrice || 0,
+            prices,
+            img: coffee.img,
+            roastLevel: coffee. roastLevel,
+            availableSizes: coffee.availableSizes,
+            availableGrinds: coffee.availableGrinds,
+            variants: coffee.variants,
+            bestSeller: coffee. bestSeller,
+          };
+        });
+
+        setProducts(transformedProducts);
+      } catch (error) {
+        console.error("❌ Error fetching best sellers:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBestSellers();
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -441,13 +560,12 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     return () => clearTimeout(timer);
   }, []);
 
-  // Update scroll button states
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     function updateScrollState() {
-      if (!container) return;
+      if (! container) return;
       const scrollLeft = container.scrollLeft;
       const scrollWidth = container.scrollWidth;
       const clientWidth = container.clientWidth;
@@ -464,7 +582,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
       container.removeEventListener("scroll", updateScrollState);
       window.removeEventListener("resize", updateScrollState);
     };
-  }, []);
+  }, [products]);
 
   function scroll(direction: "left" | "right") {
     const container = containerRef.current;
@@ -477,13 +595,52 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
     });
   }
 
-  // onAddToCart now accepts quick-add options (size, grind, quantity)
-  async function handleAdd(p: Product, options?: QuickAddOptions) {
-    const qty = options?.quantity ?? 1;
-    // You can extend this payload to include size/grind in the cart store if it supports metadata.
-    addItem({ id: p.id, name: p.name, price: p.price, img: p.img }, qty);
+  async function handleAdd(p: Product, options: QuickAddOptions) {
+    const selectedVariant = p.variants?. find(
+      (v) => v.size === options.size && v.grind === options.grind
+    );
+
+    if (!selectedVariant) return;
+
+    const cartItem: Omit<CartItem, "quantity"> = {
+      id: selectedVariant._id,
+      productType: "coffee",
+      productId: p. id,
+      variantId: selectedVariant._id,
+      sku: selectedVariant.sku,
+      name: `${p.name} — ${options.size} — ${options.grind}`,
+      price: selectedVariant.price,
+      img: selectedVariant.img || p.img || "/test. webp",
+      size: selectedVariant.size,
+      grind: selectedVariant.grind,
+      stock: selectedVariant.stock,
+    };
+
+    addItem(cartItem, options. quantity);
     setAddedMap((s) => ({ ...s, [p.id]: true }));
     setTimeout(() => setAddedMap((s) => ({ ...s, [p.id]: false })), 1200);
+  }
+
+  if (loading) {
+    return (
+      <section className="py-16 bg-white">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-4" />
+            <div className="h-12 bg-gray-200 rounded w-64 mb-8" />
+            <div className="flex gap-5 overflow-hidden">
+              {[1, 2, 3, 4]. map((i) => (
+                <div key={i} className="w-64 h-96 bg-gray-200 rounded-xl" />
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (products.length === 0) {
+    return null;
   }
 
   return (
@@ -511,10 +668,13 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
           </div>
 
           <div className="hidden lg:flex items-center gap-4">
-            <a href="/coffee" className="group text-sm font-medium hover:text-neutral-600 transition-colors flex items-center gap-1">
+            <Link 
+              href="/coffee" 
+              className="group text-sm font-medium hover:text-neutral-600 transition-colors flex items-center gap-1"
+            >
               View All Products
               <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -541,7 +701,6 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             ))}
           </div>
 
-          {/* Swipe hint - below slider, only visible on small screens */}
           <div className="lg:hidden">
             <div className="flex justify-center mt-6">
               <p className="text-xs text-neutral-400 font-medium flex items-center gap-2">
@@ -552,14 +711,13 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
             </div>
           </div>
 
-          {/* Navigation buttons - Only visible on large screens, positioned at bottom */}
           <div className="hidden lg:flex items-center justify-center gap-2 mt-6">
             <button
               onClick={() => scroll("left")}
               aria-label="Scroll left"
-              disabled={!mounted || !canScrollLeft}
+              disabled={!mounted || ! canScrollLeft}
               className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
-                !canScrollLeft ? "opacity-30 cursor-not-allowed" : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
+                ! canScrollLeft ?  "opacity-30 cursor-not-allowed" : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
               }`}
             >
               <ChevronLeft size={20} strokeWidth={2} />
@@ -578,10 +736,13 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
           </div>
 
           <div className="mt-10 flex justify-center">
-            <a href="/coffee" className="group inline-flex items-center gap-2 px-8 py-4 bg-black text-white font-semibold rounded-full hover:bg-neutral-800 transition-all duration-300 hover:shadow-lg active:scale-95">
+            <Link 
+              href="/coffee" 
+              className="group inline-flex items-center gap-2 px-8 py-4 bg-black text-white font-semibold rounded-full hover:bg-neutral-800 transition-all duration-300 hover:shadow-lg active:scale-95"
+            >
               View All Coffee
               <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -594,7 +755,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
         @keyframes arrow-left {
           0%, 100% {
             transform: translateX(0);
-            opacity: 0.4;
+            opacity: 0. 4;
           }
           50% {
             transform: translateX(-4px);
@@ -605,7 +766,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
         @keyframes arrow-right {
           0%, 100% {
             transform: translateX(0);
-            opacity: 0.4;
+            opacity: 0. 4;
           }
           50% {
             transform: translateX(4px);
@@ -615,7 +776,7 @@ export default function BestSellerSlider({ products = defaultProducts }: { produ
 
         .animate-arrow-left {
           display: inline-block;
-          animation: arrow-left 1.5s ease-in-out infinite;
+          animation: arrow-left 1. 5s ease-in-out infinite;
         }
 
         .animate-arrow-right {
