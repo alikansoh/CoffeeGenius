@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import {
@@ -15,8 +15,16 @@ import {
   ChevronUp,
   AlertCircle,
   Star,
+  Play,
+  X,
 } from "lucide-react";
 import useCart, { CartItem } from "../../store/CartStore";
+import {
+  getCloudinaryUrl,
+  getCloudinaryVideo,
+  getVideoThumbnail,
+  isVideo,
+} from "@/app/utils/cloudinary";
 
 interface Variant {
   _id: string;
@@ -47,6 +55,7 @@ interface ApiCoffee {
   name: string;
   origin: string;
   img: string;
+  images?: string[];
   notes?: string;
   roastLevel?: "light" | "medium" | "dark";
   process?: string;
@@ -174,7 +183,7 @@ function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant
 
   if (stockStatus === "low_stock") {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
+      <div className="inline-flex items-center gap-2 px-3 py-1. 5 rounded-lg bg-amber-50 border border-amber-200">
         <AlertCircle size={14} className="text-amber-600" />
         <span className="text-xs font-semibold text-amber-600">
           Only {stock} left in stock
@@ -184,7 +193,7 @@ function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant
   }
 
   return (
-    <div className="inline-flex items-center gap-2 px-3 py-1. 5 rounded-lg bg-green-50 border border-green-200">
+    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200">
       <Check size={14} className="text-green-600" />
       <span className="text-xs font-semibold text-green-600">
         {stock} in stock
@@ -210,7 +219,51 @@ export default function ProductDetailPage() {
   const [isAdded, setIsAdded] = useState(false);
   const [activeAccordion, setActiveAccordion] = useState<string | null>("details");
 
+  // Video detection map
+  const [videoMap, setVideoMap] = useState<Record<string, boolean>>({});
+  const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
+
   const productId = params?. id as string;
+
+  // Detect a single publicId - returns true if video, false otherwise
+  const detectSinglePublicId = useCallback(async (publicId: string): Promise<boolean> => {
+    if (!publicId) return false;
+    
+    // First check by extension
+    if (isVideo(publicId)) return true;
+    
+    // Then try HEAD request
+    try {
+      const url = getCloudinaryVideo(publicId);
+      const res = await fetch(url, { method: "HEAD" });
+      const ct = res.headers. get("content-type") || "";
+      return ct.startsWith("video/");
+    } catch {
+      return false;
+    }
+  }, []);
+
+  // Detect all publicIds and return a map
+  const detectAllPublicIds = useCallback(async (publicIds: string[]): Promise<Record<string, boolean>> => {
+    const results: Record<string, boolean> = {};
+    
+    await Promise.all(
+      publicIds.map(async (publicId) => {
+        if (publicId) {
+          results[publicId] = await detectSinglePublicId(publicId);
+        }
+      })
+    );
+    
+    return results;
+  }, [detectSinglePublicId]);
+
+  // Check if a publicId is a video
+  const isVideoId = useCallback((publicId: string) => {
+    if (!publicId) return false;
+    if (videoMap[publicId] !== undefined) return videoMap[publicId];
+    return isVideo(publicId);
+  }, [videoMap]);
 
   useEffect(() => {
     const fetchProduct = async () => {
@@ -218,31 +271,31 @@ export default function ProductDetailPage() {
         setLoading(true);
         const response = await fetch(`/api/coffee/${encodeURIComponent(productId)}`);
 
-        if (!response.ok) {
+        if (!response. ok) {
           throw new Error("Failed to fetch product");
         }
 
-        const data = await response.json();
+        const data = await response. json();
         const apiCoffee: ApiCoffee = data. data;
 
         const prices: Record<string, number> = {};
         const sizeGrindsMap: Record<string, string[]> = {};
 
-        if (apiCoffee.variants && apiCoffee.variants.length > 0) {
+        if (apiCoffee.variants && apiCoffee. variants.length > 0) {
           apiCoffee.variants.forEach((variant: Variant) => {
             if (! prices[variant.size]) {
               prices[variant.size] = variant.price;
             }
-            if (!sizeGrindsMap[variant.size]) {
+            if (!sizeGrindsMap[variant. size]) {
               sizeGrindsMap[variant.size] = [];
             }
-            if (! sizeGrindsMap[variant.size].includes(variant.grind)) {
-              sizeGrindsMap[variant.size]. push(variant.grind);
+            if (! sizeGrindsMap[variant.size].includes(variant. grind)) {
+              sizeGrindsMap[variant.size].push(variant. grind);
             }
           });
         } else if (apiCoffee.availableSizes && apiCoffee.availableSizes.length > 0) {
-          apiCoffee.availableSizes. forEach((sizeObj: SizePrice) => {
-            prices[sizeObj.size] = sizeObj.price;
+          apiCoffee.availableSizes.forEach((sizeObj: SizePrice) => {
+            prices[sizeObj. size] = sizeObj.price;
           });
         } else {
           prices["250g"] = apiCoffee.minPrice;
@@ -256,9 +309,18 @@ export default function ProductDetailPage() {
             availableGrinds: sizeGrindsMap[size] || apiCoffee.availableGrinds || [],
           }));
 
+        // Get all images from API (not just the main img)
+        const allImages: string[] = apiCoffee.images && apiCoffee. images.length > 0 
+          ? apiCoffee.images 
+          : (apiCoffee. img ?  [apiCoffee.img] : []);
+
+        // Detect video types BEFORE setting product state
+        const detectedVideoMap = await detectAllPublicIds(allImages);
+        setVideoMap(detectedVideoMap);
+
         const transformedProduct: ExtendedProduct = {
           id: apiCoffee._id || apiCoffee.slug,
-          slug: apiCoffee.slug,
+          slug: apiCoffee. slug,
           name: apiCoffee.name,
           origin: apiCoffee.origin,
           notes: apiCoffee.notes || "",
@@ -267,16 +329,16 @@ export default function ProductDetailPage() {
           img: apiCoffee.img,
           roastLevel: apiCoffee.roastLevel,
           process: apiCoffee.process,
-          altitude: apiCoffee.altitude,
+          altitude: apiCoffee. altitude,
           harvest: apiCoffee.harvest,
-          cupping_score: apiCoffee.cupping_score,
+          cupping_score: apiCoffee. cupping_score,
           variety: apiCoffee.variety,
-          brewing: apiCoffee.brewing,
-          images: [apiCoffee.img],
+          brewing: apiCoffee. brewing,
+          images: allImages,
           availableGrinds: apiCoffee.availableGrinds,
           availableSizes: availableSizesWithGrinds,
           variants: apiCoffee.variants,
-          inStock: apiCoffee.inStock,
+          inStock: apiCoffee. inStock,
           stockStatus: apiCoffee.stockStatus,
           bestSeller: apiCoffee.bestSeller,
         };
@@ -286,7 +348,7 @@ export default function ProductDetailPage() {
 
         const allResponse = await fetch("/api/coffee");
         if (allResponse.ok) {
-          const allData = await allResponse. json();
+          const allData = await allResponse.json();
           const relatedTransformed: ExtendedProduct[] = allData.data
             .filter((coffee: ApiCoffee) => coffee._id !== apiCoffee._id)
             .slice(0, 4)
@@ -302,16 +364,16 @@ export default function ProductDetailPage() {
 
               return {
                 id: coffee._id || coffee.slug,
-                slug: coffee.slug,
+                slug: coffee. slug,
                 name: coffee.name,
                 origin: coffee.origin,
                 notes: coffee.notes || "",
                 price: coffee.minPrice,
                 prices: relatedPrices,
                 img: coffee.img,
-                roastLevel: coffee. roastLevel,
+                roastLevel: coffee.roastLevel,
                 availableGrinds: coffee.availableGrinds,
-                bestSeller: coffee.bestSeller,
+                bestSeller: coffee. bestSeller,
               };
             });
 
@@ -330,19 +392,42 @@ export default function ProductDetailPage() {
     if (productId) {
       fetchProduct();
     }
-  }, [productId]);
+  }, [productId, detectAllPublicIds]);
 
-  const productImages = useMemo(
-    () => product?.images || [product?.img || "/test.webp"],
-    [product]
-  );
+  // Filter out videos from productImages for the main gallery display
+  // Videos will be shown separately or with play overlay
+  const productImages = useMemo(() => {
+    const allMedia = product?.images || [product?.img || "/test. webp"];
+    return allMedia;
+  }, [product]);
+
+  // Separate images and videos
+  const { imageItems, videoItems } = useMemo(() => {
+    const images: string[] = [];
+    const videos: string[] = [];
+    
+    productImages.forEach((item) => {
+      if (isVideoId(item)) {
+        videos.push(item);
+      } else {
+        images.push(item);
+      }
+    });
+    
+    return { imageItems: images, videoItems: videos };
+  }, [productImages, isVideoId]);
+
+  // All displayable media (images first, then videos)
+  const allDisplayMedia = useMemo(() => {
+    return [...imageItems, ...videoItems];
+  }, [imageItems, videoItems]);
 
   const availableGrindsForSize = useMemo(() => {
     if (!selectedSize || !product) return [];
 
     if (product.availableSizes && product.availableSizes.length > 0) {
-      const sizeData = product.availableSizes. find((s) => s.size === selectedSize);
-      if (sizeData?. availableGrinds && sizeData.availableGrinds.length > 0) {
+      const sizeData = product.availableSizes.find((s) => s. size === selectedSize);
+      if (sizeData?. availableGrinds && sizeData.availableGrinds. length > 0) {
         return sizeData.availableGrinds;
       }
     }
@@ -352,14 +437,14 @@ export default function ProductDetailPage() {
 
   const filteredGrindOptions = useMemo(
     () =>
-      GRIND_OPTIONS.filter((g) =>
+      GRIND_OPTIONS. filter((g) =>
         availableGrindsForSize.includes(g.value as GrindOption)
       ),
     [availableGrindsForSize]
   );
 
   const selectedGrind = useMemo<GrindOption>(() => {
-    if (userSelectedGrind && availableGrindsForSize. includes(userSelectedGrind)) {
+    if (userSelectedGrind && availableGrindsForSize.includes(userSelectedGrind)) {
       return userSelectedGrind;
     }
     return ((availableGrindsForSize[0] as GrindOption) ??  "whole-bean") as GrindOption;
@@ -371,7 +456,7 @@ export default function ProductDetailPage() {
     return product.variants.find(
       (v) => v.size === selectedSize && v.grind === selectedGrind
     );
-  }, [product?.variants, selectedSize, selectedGrind]);
+  }, [product?. variants, selectedSize, selectedGrind]);
 
   useEffect(() => {
     if (selectedSize && availableGrindsForSize.length > 0) {
@@ -382,23 +467,23 @@ export default function ProductDetailPage() {
   }, [selectedSize, availableGrindsForSize, selectedGrind]);
 
   const selectedImageIndex = useMemo(() => {
-    const len = productImages.length || 1;
+    const len = allDisplayMedia.length || 1;
     const idx = userSelectedImageIndex ??  0;
     if (idx < 0) return 0;
     if (idx >= len) return 0;
     return idx;
-  }, [userSelectedImageIndex, productImages]);
+  }, [userSelectedImageIndex, allDisplayMedia]);
 
   const currentPrice = useMemo(() => {
     if (selectedVariant) {
       return selectedVariant.price;
     }
     if (! product) return 0;
-    return product.prices?.[selectedSize] ?? product.price;
+    return product.prices?.[selectedSize] ??  product.price;
   }, [selectedVariant, product, selectedSize]);
 
   const availableStock = useMemo(() => {
-    return selectedVariant?. stock ??  0;
+    return selectedVariant?.stock ??  0;
   }, [selectedVariant]);
 
   const isOutOfStock = selectedVariant ?  availableStock === 0 : false;
@@ -461,16 +546,16 @@ export default function ProductDetailPage() {
     );
   }
 
-  const notesArray = product.notes
+  const notesArray = product. notes
     ?.split(",")
     .map((n) => n.trim())
     .filter(Boolean) ??  [];
   const roastInfo = product.roastLevel
-    ?  ROAST_LEVEL_INFO[product.roastLevel]
+    ?  ROAST_LEVEL_INFO[product. roastLevel]
     : null;
 
   const toggleAccordion = (section: string) => {
-    setActiveAccordion((prev) => (prev === section ?  null : section));
+    setActiveAccordion((prev) => (prev === section ? null : section));
   };
 
   const handleAddToCart = () => {
@@ -499,7 +584,7 @@ export default function ProductDetailPage() {
       img: selectedVariant.img || product.img || "/test.webp",
       size: selectedVariant.size,
       grind: selectedVariant.grind,
-      sku: selectedVariant.sku,
+      sku: selectedVariant. sku,
       stock: selectedVariant.stock,
     };
 
@@ -508,6 +593,10 @@ export default function ProductDetailPage() {
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 2000);
   };
+
+  // Get the current selected media item
+  const currentMediaItem = allDisplayMedia[selectedImageIndex] || product. img || "/test.webp";
+  const isCurrentItemVideo = isVideoId(currentMediaItem);
 
   return (
     <>
@@ -552,7 +641,7 @@ export default function ProductDetailPage() {
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 leading-tight">
-              {product. name}
+              {product.name}
             </h1>
 
             <div className="flex items-baseline gap-2 mb-3">
@@ -577,36 +666,92 @@ export default function ProductDetailPage() {
                   </div>
                 )}
                 
-                <Image
-                  src={productImages[selectedImageIndex] || "/test. webp"}
-                  alt={`${product.name} - Image ${selectedImageIndex + 1}`}
-                  fill
-                  className="object-cover"
-                  priority
-                />
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 sm:gap-3">
-                {productImages.map((img, index) => (
-                  <button
-                    key={index}
-                    onClick={() => setUserSelectedImageIndex(index)}
-                    className={`relative aspect-square rounded-lg sm:rounded-xl overflow-hidden transition-all focus:outline-none focus:ring-2 focus:ring-amber-300 ${
-                      selectedImageIndex === index
-                        ?  "ring-3 sm:ring-4 ring-gray-900 shadow-md sm:shadow-lg"
-                        : "ring-2 ring-gray-200 hover:ring-gray-400"
-                    }`}
-                    aria-label={`View image ${index + 1}`}
-                  >
+                {isCurrentItemVideo ?  (
+                  <>
                     <Image
-                      src={img}
-                      alt={`${product. name} thumbnail ${index + 1}`}
+                      src={getVideoThumbnail(currentMediaItem)}
+                      alt={`${product.name} - Video`}
                       fill
                       className="object-cover"
+                      priority
                     />
-                  </button>
-                ))}
+                    <button
+                      type="button"
+                      onClick={() => setPlayingVideoSrc(getCloudinaryVideo(currentMediaItem))}
+                      className="absolute inset-0 flex items-center justify-center"
+                      aria-label="Play video"
+                    >
+                      <div className="bg-black/40 rounded-full p-4">
+                        <Play size={48} className="text-white" />
+                      </div>
+                    </button>
+                    <div className="absolute top-3 right-3 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-full">
+                      VIDEO
+                    </div>
+                  </>
+                ) : (
+                  <Image
+                    src={getCloudinaryUrl(currentMediaItem, "large")}
+                    alt={`${product.name} - Image ${selectedImageIndex + 1}`}
+                    fill
+                    className="object-cover"
+                    priority
+                  />
+                )}
               </div>
+
+              {allDisplayMedia.length > 1 && (
+                <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                  {allDisplayMedia.map((mediaItem, index) => {
+                    const isMediaVideo = isVideoId(mediaItem);
+                    
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => {
+                          if (isMediaVideo) {
+                            setPlayingVideoSrc(getCloudinaryVideo(mediaItem));
+                          } else {
+                            setUserSelectedImageIndex(index);
+                          }
+                        }}
+                        className={`relative aspect-square rounded-lg sm:rounded-xl overflow-hidden transition-all focus:outline-none focus:ring-2 focus:ring-amber-300 ${
+                          selectedImageIndex === index
+                            ? "ring-3 sm:ring-4 ring-gray-900 shadow-md sm:shadow-lg"
+                            : "ring-2 ring-gray-200 hover:ring-gray-400"
+                        }`}
+                        aria-label={isMediaVideo ? `Play video ${index + 1}` : `View image ${index + 1}`}
+                      >
+                        {isMediaVideo ?  (
+                          <>
+                            <Image
+                              src={getVideoThumbnail(mediaItem)}
+                              alt={`${product.name} video thumbnail ${index + 1}`}
+                              fill
+                              className="object-cover"
+                            />
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="bg-black/40 rounded-full p-1. 5">
+                                <Play size={16} className="text-white" />
+                              </div>
+                            </div>
+                            <div className="absolute bottom-1 left-1 px-1. 5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded">
+                              VIDEO
+                            </div>
+                          </>
+                        ) : (
+                          <Image
+                            src={getCloudinaryUrl(mediaItem, "thumbnail")}
+                            alt={`${product.name} thumbnail ${index + 1}`}
+                            fill
+                            className="object-cover"
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               <div className="space-y-2 sm:space-y-3 pt-2 sm:pt-4">
                 <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
@@ -621,7 +766,7 @@ export default function ProductDetailPage() {
                         Product Details
                       </span>
                     </div>
-                    {activeAccordion === "details" ? (
+                    {activeAccordion === "details" ?  (
                       <ChevronUp size={18} className="text-gray-600" />
                     ) : (
                       <ChevronDown size={18} className="text-gray-600" />
@@ -706,7 +851,7 @@ export default function ProductDetailPage() {
                           Brewing Guide
                         </span>
                       </div>
-                      {activeAccordion === "brewing" ? (
+                      {activeAccordion === "brewing" ?  (
                         <ChevronUp size={18} className="text-gray-600" />
                       ) : (
                         <ChevronDown size={18} className="text-gray-600" />
@@ -715,7 +860,7 @@ export default function ProductDetailPage() {
 
                     {activeAccordion === "brewing" && (
                       <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3 text-xs sm:text-sm text-gray-700">
-                        {brewingEntries.map(([label, guide], i) => (
+                        {brewingEntries. map(([label, guide], i) => (
                           <div
                             key={`${label}-${i}`}
                             className="flex items-start gap-3"
@@ -751,7 +896,7 @@ export default function ProductDetailPage() {
                         Shipping & Returns
                       </span>
                     </div>
-                    {activeAccordion === "shipping" ? (
+                    {activeAccordion === "shipping" ?  (
                       <ChevronUp size={18} className="text-gray-600" />
                     ) : (
                       <ChevronDown size={18} className="text-gray-600" />
@@ -767,7 +912,7 @@ export default function ProductDetailPage() {
                       </div>
                       <div>
                         <strong>Express Delivery:</strong> 1-2 business days
-                        (£5.99)
+                        (£5. 99)
                       </div>
                       <div>
                         <strong>Returns:</strong> 30-day return policy for
@@ -804,7 +949,7 @@ export default function ProductDetailPage() {
 
                 <div className="flex items-baseline gap-3 mb-4">
                   <p className="text-4xl font-bold text-gray-900">
-                    £{currentPrice. toFixed(2)}
+                    £{currentPrice.toFixed(2)}
                   </p>
                   <p className="text-lg text-gray-500">per {selectedSize}</p>
                 </div>
@@ -832,7 +977,7 @@ export default function ProductDetailPage() {
                   Select Size
                 </label>
                 <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                  {availableSizes.map((size) => {
+                  {availableSizes. map((size) => {
                     const price = product.prices?.[size] ??  product.price;
                     return (
                       <button
@@ -877,7 +1022,7 @@ export default function ProductDetailPage() {
                     {filteredGrindOptions.length} available
                   </span>
                 </div>
-                {filteredGrindOptions.length > 0 ? (
+                {filteredGrindOptions.length > 0 ?  (
                   <div className="space-y-2">
                     {filteredGrindOptions.map((grind) => (
                       <button
@@ -982,13 +1127,13 @@ export default function ProductDetailPage() {
                 className={`w-full py-4 sm:py-5 cursor-pointer rounded-xl sm:rounded-2xl font-bold text-base sm:text-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 sm:gap-3 ${
                   isAdded
                     ? "bg-green-600 text-white"
-                    : isOutOfStock || !selectedVariant
-                    ?  "bg-gray-400 text-white cursor-not-allowed"
+                    : isOutOfStock || ! selectedVariant
+                    ? "bg-gray-400 text-white cursor-not-allowed"
                     : "bg-gray-900 text-white hover:bg-gray-800"
                 }`}
                 aria-disabled={
                   isAdded ||
-                  filteredGrindOptions. length === 0 ||
+                  filteredGrindOptions.length === 0 ||
                   !selectedVariant ||
                   isOutOfStock
                 }
@@ -1043,7 +1188,7 @@ export default function ProductDetailPage() {
                     
                     <div className="relative aspect-square">
                       <Image
-                        src={p.img || "/test. webp"}
+                        src={p.img ?  getCloudinaryUrl(p.img, "medium") : "/test.webp"}
                         alt={p.name}
                         fill
                         className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -1057,7 +1202,7 @@ export default function ProductDetailPage() {
                         {p.name}
                       </h3>
                       <p className="text-base sm:text-lg font-bold text-gray-900">
-                        £{(Object.values(p.prices || {})[0] ??  p.price).toFixed(2)}
+                        £{(Object.values(p. prices || {})[0] ??  p.price).toFixed(2)}
                       </p>
                     </div>
                   </button>
@@ -1066,6 +1211,25 @@ export default function ProductDetailPage() {
             </div>
           )}
         </div>
+
+        {/* Video modal player */}
+        {playingVideoSrc && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+            onClick={() => setPlayingVideoSrc(null)}
+          >
+            <div className="relative w-full max-w-4xl aspect-video bg-black" onClick={(e) => e.stopPropagation()}>
+              <video src={playingVideoSrc} controls autoPlay playsInline className="w-full h-full" />
+              <button
+                onClick={() => setPlayingVideoSrc(null)}
+                className="absolute top-2 right-2 p-2 bg-white rounded-full shadow"
+                aria-label="Close video"
+              >
+                <X size={18} />
+              </button>
+            </div>
+          </div>
+        )}
       </main>
     </>
   );

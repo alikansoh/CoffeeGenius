@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Coffee from "@/models/Coffee";
 import dbConnect from "@/lib/dbConnect";
+import { verifyAuthForApi } from "@/lib/auth";
 
 interface SizePrice {
   size: string;
@@ -28,8 +29,8 @@ interface CoffeeAggregateResult {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  img: string;
-  images?: string[];
+  img: string;  // ✅ Cloudinary public ID
+  images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
   notes?: string;
   process?: string;
   altitude?: string;
@@ -53,8 +54,8 @@ interface TransformedCoffee {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  img: string;
-  images?: string[];
+  img: string;  // ✅ Cloudinary public ID
+  images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
   notes?: string;
   process?: string;
   altitude?: string;
@@ -77,14 +78,17 @@ interface TransformedCoffee {
  * GET /api/coffee
  * Get all coffees with variant count, base price, and available sizes with prices and grinds
  * Query params: search, limit, page, bestSeller
+ *
+ * PROTECTED: Requires an authenticated user. 
  */
 export async function GET(request: NextRequest) {
+
   try {
     await dbConnect();
 
-    const searchParams = request.nextUrl.searchParams;
+    const searchParams = request. nextUrl.searchParams;
     const search = searchParams.get("search");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 100);
+    const limit = Math.min(parseInt(searchParams. get("limit") || "100"), 100);
     const page = Math.max(parseInt(searchParams.get("page") || "1"), 1);
     const bestSeller = searchParams.get("bestSeller");
 
@@ -100,16 +104,15 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // ✅ Filter by best seller if requested
+    // Filter by best seller if requested
     if (bestSeller === "true") {
-      matchFilter. bestSeller = true;
+      matchFilter.bestSeller = true;
     }
 
     const skip = (page - 1) * limit;
 
     // Get coffees with aggregation to include variant data
-    const coffees = (await Coffee.aggregate([
-      ...(Object.keys(matchFilter).length > 0 ?  [{ $match: matchFilter }] : []),
+    const coffees = (await Coffee.aggregate([ ...(Object.keys(matchFilter). length > 0 ? [{ $match: matchFilter }] : []),
       {
         $lookup: {
           from: "coffeevariants",
@@ -124,7 +127,7 @@ export async function GET(request: NextRequest) {
           minPrice: {
             $cond: [
               { $gt: [{ $size: "$variants" }, 0] },
-              { $min: "$variants. price" },
+              { $min: "$variants.price" },
               0,
             ],
           },
@@ -137,9 +140,9 @@ export async function GET(request: NextRequest) {
                   initialValue: [],
                   in: {
                     $cond: [
-                      { $in: ["$$this. grind", "$$value"] },
+                      { $in: ["$$this.grind", "$$value"] },
                       "$$value",
-                      { $concatArrays: ["$$value", ["$$this.grind"]] },
+                      { $concatArrays: ["$$value", ["$$this. grind"]] },
                     ],
                   },
                 },
@@ -154,7 +157,7 @@ export async function GET(request: NextRequest) {
               0,
             ],
           },
-          // ✅ Set default value for bestSeller if it doesn't exist
+          // Set default value for bestSeller if it doesn't exist
           bestSeller: {
             $ifNull: ["$bestSeller", false]
           },
@@ -171,7 +174,7 @@ export async function GET(request: NextRequest) {
           origin: 1,
           notes: 1,
           img: 1,
-          images: 1,
+          images: 1,  // ✅ Include images array (Cloudinary public IDs)
           roastLevel: 1,
           process: 1,
           altitude: 1,
@@ -179,7 +182,7 @@ export async function GET(request: NextRequest) {
           cupping_score: 1,
           variety: 1,
           brewing: 1,
-          bestSeller: 1,  // ✅ Now always returns true or false
+          bestSeller: 1,
           variantCount: 1,
           minPrice: 1,
           availableGrinds: 1,
@@ -191,24 +194,16 @@ export async function GET(request: NextRequest) {
       },
     ])) as CoffeeAggregateResult[];
 
-    console.log("✅ API found coffees:", coffees.length);
-    if (coffees.length > 0) {
-      console.log("🔍 First coffee variants count:", coffees[0]?.variants?.length || 0);
-      console.log("📦 First coffee variants:", coffees[0]?.variants);
-      console.log("⭐ First coffee bestSeller:", coffees[0]?.bestSeller);
-    }
-
     // Transform coffees to extract availableSizes with their available grinds
-    const transformedCoffees: TransformedCoffee[] = coffees. map((coffee) => {
-      // Get unique sizes with their minimum prices and available grinds
+    const transformedCoffees: TransformedCoffee[] = coffees.map((coffee) => {
       const sizeMap = new Map<
         string,
         { price: number; grinds: Set<string>; totalStock: number }
       >();
 
-      coffee. variants.forEach((variant: CoffeeVariantData) => {
-        if (!sizeMap.has(variant.size)) {
-          sizeMap.set(variant. size, {
+      coffee.variants.forEach((variant: CoffeeVariantData) => {
+        if (! sizeMap.has(variant. size)) {
+          sizeMap.set(variant.size, {
             price: variant.price,
             grinds: new Set(),
             totalStock: 0,
@@ -219,7 +214,7 @@ export async function GET(request: NextRequest) {
 
         // Set minimum price for this size
         if (variant.price < sizeData.price) {
-          sizeData.price = variant.price;
+          sizeData. price = variant.price;
         }
 
         // Add grind option
@@ -229,11 +224,11 @@ export async function GET(request: NextRequest) {
         sizeData.totalStock += variant.stock;
       });
 
-      const availableSizes: SizePrice[] = Array.from(sizeMap. entries())
+      const availableSizes: SizePrice[] = Array.from(sizeMap.entries())
         .map(([size, data]) => ({
           size,
-          price: data. price,
-          availableGrinds: Array.from(data. grinds).sort(),
+          price: data.price,
+          availableGrinds: Array.from(data.grinds).sort(),
           totalStock: data.totalStock,
         }))
         .sort((a, b) => {
@@ -247,12 +242,12 @@ export async function GET(request: NextRequest) {
 
       return {
         _id: coffee._id,
-        slug: coffee. slug,
-        name: coffee. name,
-        origin: coffee. origin,
+        slug: coffee.slug,
+        name: coffee.name,
+        origin: coffee.origin,
         roastLevel: coffee.roastLevel,
-        img: coffee.img,
-        images: coffee.images,
+        img: coffee.img,  // ✅ Cloudinary public ID
+        images: coffee. images,  // ✅ Array of Cloudinary public IDs (images + videos)
         notes: coffee.notes,
         process: coffee.process,
         altitude: coffee.altitude,
@@ -260,24 +255,22 @@ export async function GET(request: NextRequest) {
         cupping_score: coffee.cupping_score,
         variety: coffee.variety,
         brewing: coffee.brewing,
-        bestSeller: coffee.bestSeller,  // ✅ Always defined (true or false)
+        bestSeller: coffee.bestSeller,
         createdAt: coffee.createdAt,
-        updatedAt: coffee. updatedAt,
+        updatedAt: coffee.updatedAt,
         variantCount: coffee.variantCount,
         minPrice: coffee.minPrice,
         availableGrinds: coffee.availableGrinds,
         availableSizes,
-        totalStock: coffee. totalStock,
+        totalStock: coffee.totalStock,
         variants: coffee.variants,
       };
     });
 
     // Get total count for pagination
     const total = await Coffee.countDocuments(
-      Object.keys(matchFilter).length > 0 ?  matchFilter : {}
+      Object.keys(matchFilter).length > 0 ? matchFilter : {}
     );
-
-    console.log("✅ Returning coffees with variants and bestSeller flag");
 
     return NextResponse.json(
       {
@@ -287,7 +280,7 @@ export async function GET(request: NextRequest) {
           total,
           page,
           limit,
-          pages: Math.ceil(total / limit),
+          pages: Math. ceil(total / limit),
         },
       },
       { status: 200 }
@@ -307,14 +300,17 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/coffee
- * Create new coffee (admin only)
+ * Create new coffee (previously admin-only; now any authenticated user)
+ *
+ * PROTECTED: Requires an authenticated user.
  */
 export async function POST(request: NextRequest) {
+  // require authentication (no admin checks)
+  const auth = await verifyAuthForApi(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
     await dbConnect();
-
-    // TODO: Add authentication check
-    // if (!isAdmin) return NextResponse. json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await request. json();
     const {
@@ -322,8 +318,8 @@ export async function POST(request: NextRequest) {
       name,
       origin,
       notes,
-      img,
-      images,
+      img,  // ✅ Cloudinary public ID for main image/video
+      images,  // ✅ Array of Cloudinary public IDs (images + videos)
       roastLevel,
       process,
       altitude,
@@ -335,8 +331,8 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (! slug || !name) {
-      return NextResponse.json(
+    if (!slug || !name) {
+      return NextResponse. json(
         {
           success: false,
           message: "Slug and name are required",
@@ -346,7 +342,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if slug already exists
-    const existing = await Coffee. findOne({
+    const existing = await Coffee.findOne({
       slug: slug.toLowerCase(),
     });
 
@@ -365,8 +361,8 @@ export async function POST(request: NextRequest) {
       name,
       origin,
       notes,
-      img,
-      images,
+      img,  // ✅ Store Cloudinary public ID
+      images,  // ✅ Store array of Cloudinary public IDs (can include videos)
       roastLevel,
       process,
       altitude,
@@ -374,7 +370,7 @@ export async function POST(request: NextRequest) {
       cupping_score,
       variety,
       brewing,
-      bestSeller: bestSeller || false,  // ✅ Defaults to false
+      bestSeller: bestSeller || false,
     });
 
     await coffee.save();
@@ -388,7 +384,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console. error("Error creating coffee:", error);
+    console.error("Error creating coffee:", error);
     return NextResponse.json(
       {
         success: false,

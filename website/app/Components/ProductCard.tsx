@@ -1,9 +1,11 @@
 "use client";
+
 import Image from "next/image";
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ShoppingCart, Star } from "lucide-react";
 import useCart, { CartItem } from "../store/CartStore";
+import { getCloudinaryUrl, isVideo } from "@/app/utils/cloudinary";
 
 interface Variant {
   _id: string;
@@ -18,13 +20,14 @@ interface Variant {
 
 export type Product = {
   id: string;
-  slug?: string; // ✅ Added slug
+  slug?: string;
   name: string;
   origin?: string;
   notes?: string;
   price?: number;
   prices?: Record<string, number>;
-  img?: string;
+  img?: string; // Cloudinary publicId or full URL
+  images?: string[]; // Cloudinary publicIds for gallery
   roastLevel?: "light" | "medium" | "dark";
   grinds?: string[];
   stock?: number;
@@ -36,7 +39,7 @@ export type Product = {
 };
 
 export function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
-  if (! level) return null;
+  if (!level) return null;
 
   const levelMap: Record<NonNullable<Product["roastLevel"]>, number> = {
     light: 1,
@@ -87,20 +90,42 @@ export default function ProductCard({
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
 
-  // Parse notes - split by comma and trim
+  // Notes
   const notesArray = product.notes
-    ? product.notes
-        .split(",")
-        . map((n) => n.trim())
-        .filter((n) => n. length > 0)
+    ? product.notes.split(",").map((n) => n.trim()).filter((n) => n.length > 0)
     : [];
-
   const displayNotes = notesArray.slice(0, 3);
 
-  // Get available sizes with their grinds
+  // Choose the best card image:
+  // - Prefer first non-video from product.images
+  // - Else use product.img
+  // - Fallback to /test.webp
+  const cardImagePublicIdOrUrl = useMemo(() => {
+    const gallery = Array.isArray(product.images) ? product.images : [];
+    const firstImage = gallery.find((id) => !isVideo(id));
+    return firstImage || product.img || "/test.webp";
+  }, [product.images, product.img]);
+
+  // Normalize the image source: if it's a Cloudinary publicId, build a URL; if it's already a URL or local path, use as-is
+  const cardImageSrc = useMemo(() => {
+    if (!cardImagePublicIdOrUrl) return "/test.webp";
+    // If it looks like an HTTP(S) URL or starts with a slash, use as provided
+    if (
+      typeof cardImagePublicIdOrUrl === "string" &&
+      (cardImagePublicIdOrUrl.startsWith("http://") ||
+        cardImagePublicIdOrUrl.startsWith("https://") ||
+        cardImagePublicIdOrUrl.startsWith("/"))
+    ) {
+      return cardImagePublicIdOrUrl;
+    }
+    // Otherwise treat it as a Cloudinary publicId
+    return getCloudinaryUrl(cardImagePublicIdOrUrl, "medium");
+  }, [cardImagePublicIdOrUrl]);
+
+  // Sizes
   const availableSizes = useMemo(() => {
     return product.availableSizes && product.availableSizes.length > 0
-      ? product. availableSizes
+      ? product.availableSizes
           .map((s) => s.size)
           .sort((a, b) => {
             const sizeOrder: Record<string, number> = {
@@ -122,40 +147,33 @@ export default function ProductCard({
       : ["250g"];
   }, [product.availableSizes, product.prices]);
 
-  // Get available grinds for the selected size
+  // Grinds per size
   const availableGrindsForSize = useMemo(() => {
     if (!size) return [];
 
-    // Find the size object with its specific grinds
     if (product.availableSizes && product.availableSizes.length > 0) {
-      const sizeData = product.availableSizes. find((s) => s.size === size);
-      if (sizeData?. availableGrinds && sizeData.availableGrinds.length > 0) {
+      const sizeData = product.availableSizes.find((s) => s.size === size);
+      if (sizeData?.availableGrinds && sizeData.availableGrinds.length > 0) {
         return sizeData.availableGrinds;
       }
     }
 
-    // Fallback to product-level grinds
-    return product.availableGrinds && product.availableGrinds. length > 0
+    return product.availableGrinds && product.availableGrinds.length > 0
       ? product.availableGrinds
       : product.grinds && product.grinds.length > 0
       ? product.grinds
       : ["whole-bean"];
   }, [size, product.availableSizes, product.availableGrinds, product.grinds]);
 
-  // Find the selected variant
+  // Variant
   const selectedVariant = useMemo(() => {
-    if (!product?. variants || !size || !grind) {
+    if (!product?.variants || !size || !grind) {
       return null;
     }
+    return product.variants.find((v) => v.size === size && v.grind === grind) || null;
+  }, [product?.variants, size, grind]);
 
-    const variant = product.variants.find(
-      (v) => v. size === size && v.grind === grind
-    );
-
-    return variant || null;
-  }, [product?. variants, size, grind]);
-
-  // Format grind name
+  // Grind label
   const formatGrindName = (grindValue: string): string => {
     const grindMap: Record<string, string> = {
       "whole-bean": "Whole bean",
@@ -169,47 +187,43 @@ export default function ProductCard({
       medium: "Medium grind",
       fine: "Fine grind",
     };
-    return (
-      grindMap[grindValue] ||
-      grindValue.charAt(0).toUpperCase() + grindValue.slice(1)
-    );
+    return grindMap[grindValue] || grindValue.charAt(0).toUpperCase() + grindValue.slice(1);
   };
 
-  // Initialize size
+  // Init size
   useEffect(() => {
     if (availableSizes.length > 0 && !size) {
       setSize(availableSizes[0]);
     }
   }, [availableSizes, size]);
 
-  // Update grind when size changes
+  // Init grind for size
   useEffect(() => {
     if (size && availableGrindsForSize.length > 0) {
-      if (! availableGrindsForSize.includes(grind)) {
+      if (!availableGrindsForSize.includes(grind)) {
         setGrind(availableGrindsForSize[0]);
       }
     }
   }, [size, availableGrindsForSize, grind]);
 
   useEffect(() => {
-    const checkScreenSize = () => setIsLargeScreen(window. innerWidth >= 1024);
+    const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);
-    return () => window. removeEventListener("resize", checkScreenSize);
+    return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
-  // ✅ Updated to use slug if available, fallback to id
+  // Navigate using slug if present, else id
   const handleCardClick = () => {
-    if (! isFlipped) {
+    if (!isFlipped) {
       const identifier = product.slug || product.id;
       router.push(`/coffee/${encodeURIComponent(identifier)}`);
     }
   };
 
-  // ✅ Updated to use slug if available, fallback to id
   const handleLearnMore = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const identifier = product.slug || product. id;
+    const identifier = product.slug || product.id;
     router.push(`/coffee/${encodeURIComponent(identifier)}`);
   };
 
@@ -242,9 +256,9 @@ export default function ProductCard({
         sku: selectedVariant.sku,
         name: `${product.name} — ${selectedVariant.size} — ${selectedVariant.grind}`,
         price: selectedVariant.price,
-        img: selectedVariant.img || product.img || "/test. webp",
+        img: selectedVariant.img || product.img || "/test.webp",
         size: selectedVariant.size,
-        grind: selectedVariant. grind,
+        grind: selectedVariant.grind,
         stock: selectedVariant.stock,
       };
 
@@ -266,22 +280,15 @@ export default function ProductCard({
   const unitPriceForSize = (s: string): number => {
     if (product.availableSizes) {
       const sizeData = product.availableSizes.find((sz) => sz.size === s);
-      return sizeData?.price ??  product.minPrice ??  product.price ??  0;
+      return sizeData?.price ?? product.minPrice ?? product.price ?? 0;
     }
-    return (
-      (product.prices && product.prices[s]) ??
-      product.minPrice ??
-      product.price ??
-      0
-    );
+    return (product.prices && product.prices[s]) ?? product.minPrice ?? product.price ?? 0;
   };
 
-  const currentPrice = size
-    ? unitPriceForSize(size)
-    : product. minPrice ??  product.price ?? 0;
+  const currentPrice = size ? unitPriceForSize(size) : product.minPrice ?? product.price ?? 0;
 
-  const availableStock = selectedVariant?.stock ??  0;
-  const isOutOfStock = selectedVariant ?  availableStock === 0 : false;
+  const availableStock = selectedVariant?.stock ?? 0;
+  const isOutOfStock = selectedVariant ? availableStock === 0 : false;
 
   return (
     <div
@@ -297,7 +304,7 @@ export default function ProductCard({
           "0 4px 6px -1px rgba(120, 53, 15, 0.1), 0 2px 4px -2px rgba(120, 53, 15, 0.1)",
       }}
       onMouseOver={(e) => {
-        e. currentTarget.style.boxShadow =
+        e.currentTarget.style.boxShadow =
           "0 20px 25px -5px rgba(120, 53, 15, 0.2), 0 8px 10px -6px rgba(120, 53, 15, 0.15)";
       }}
       onMouseOut={(e) => {
@@ -319,37 +326,27 @@ export default function ProductCard({
           style={{ backfaceVisibility: "hidden" }}
         >
           <div className="relative w-full bg-gray-100 rounded-t-2xl overflow-hidden aspect-square">
-            {/* Best Seller Badge - Image Overlay */}
             {product.bestSeller && (
-              <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1. 5 px-3 py-1.5 rounded-full bg-amber-900 text-white text-xs font-bold shadow-lg">
+              <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-900 text-white text-xs font-bold shadow-lg">
                 <Star size={14} className="fill-white" />
                 <span>Best Seller</span>
               </div>
             )}
 
-            {product.img ?  (
-              <Image
-                src={product.img}
-                alt={product.name}
-                fill
-                style={{ objectFit: "cover" }}
-                sizes="(max-width: 640px) 100vw, 320px"
-                priority={index !== undefined && index < 4}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400 text-sm">
-                No image
-              </div>
-            )}
+            <Image
+              src={cardImageSrc}
+              alt={product.name}
+              fill
+              style={{ objectFit: "cover" }}
+              sizes="(max-width: 640px) 100vw, 320px"
+              priority={index !== undefined && index < 4}
+            />
           </div>
 
           <div className="p-5 flex flex-col flex-1">
-            {/* Product Title and Origin */}
             <div className="mb-3">
               <div className="flex items-center gap-2 mb-1">
-                <h3 className="text-lg font-bold text-gray-900">
-                  {product.name}
-                </h3>
+                <h3 className="text-lg font-bold text-gray-900">{product.name}</h3>
               </div>
               {product.origin && (
                 <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
@@ -358,10 +355,9 @@ export default function ProductCard({
               )}
             </div>
 
-            {/* Tasting Notes */}
             {displayNotes && displayNotes.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
-                {displayNotes. map((note, idx) => (
+                {displayNotes.map((note, idx) => (
                   <span
                     key={idx}
                     title={note}
@@ -373,40 +369,32 @@ export default function ProductCard({
               </div>
             )}
 
-            {/* Roast Level */}
             {product.roastLevel && (
               <div className="mb-4">
                 <RoastLevelIndicator level={product.roastLevel} />
               </div>
             )}
 
-            {/* Price Section */}
             <div className="mt-auto mb-4">
               <div className="flex items-baseline gap-2">
                 <span className="text-2xl font-bold text-gray-900">
                   £{currentPrice.toFixed(2)}
                 </span>
-                <span className="text-xs text-gray-500 font-medium">
-                  {size || "250g"}
-                </span>
+                <span className="text-xs text-gray-500 font-medium">{size || "250g"}</span>
               </div>
             </div>
 
-            {/* Action Buttons */}
-            {! localAdded && (
+            {!localAdded && (
               <>
-                {/* Desktop buttons */}
                 <div
                   className={`hidden lg:block transition-all duration-300 ${
-                    isHovered && isLargeScreen
-                      ? "opacity-100"
-                      : "opacity-0 pointer-events-none"
+                    isHovered && isLargeScreen ? "opacity-100" : "opacity-0 pointer-events-none"
                   }`}
                 >
                   <div className="flex gap-2">
                     <button
                       onClick={openQuickAdd}
-                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2. 5 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
+                      className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
                       aria-label={`Quick add ${product.name} to cart`}
                     >
                       <ShoppingCart size={16} />
@@ -422,12 +410,11 @@ export default function ProductCard({
                   </div>
                 </div>
 
-                {/* Mobile buttons */}
                 <div className="lg:hidden flex gap-2">
                   <button
                     onClick={openQuickAdd}
                     className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-800 transition-colors shadow-sm"
-                    aria-label={`Quick add ${product. name} to cart`}
+                    aria-label={`Quick add ${product.name} to cart`}
                   >
                     <ShoppingCart size={16} />
                     <span>Add to cart</span>
@@ -444,7 +431,7 @@ export default function ProductCard({
             )}
 
             {localAdded && (
-              <div className="flex items-center justify-center gap-2 text-green-600 py-2. 5 font-semibold">
+              <div className="flex items-center justify-center gap-2 text-green-600 py-2.5 font-semibold">
                 <Check className="w-5 h-5" />
                 <span className="text-sm">Added to cart</span>
               </div>
@@ -452,36 +439,28 @@ export default function ProductCard({
           </div>
         </div>
 
-        {/* BACK - Quick Add Form */}
+        {/* BACK */}
         <div
           className="absolute inset-0 top-0 left-0 w-full h-full bg-white rounded-2xl p-5 flex flex-col"
-          style={{
-            backfaceVisibility: "hidden",
-            transform: "rotateY(180deg)",
-          }}
+          style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
         >
           <div className="mb-5">
             <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">
               Configure
             </p>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-bold text-gray-900">
-                {product.name}
-              </h3>
-              {/* Best Seller Badge - Back Side */}
+              <h3 className="text-lg font-bold text-gray-900">{product.name}</h3>
               {product.bestSeller && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold">
                   <Star size={10} className="fill-white" />
                 </span>
               )}
             </div>
-            {product.origin && (
-              <p className="text-xs text-gray-500">{product.origin}</p>
-            )}
+            {product.origin && <p className="text-xs text-gray-500">{product.origin}</p>}
           </div>
 
           <div className="space-y-4 flex-1">
-            {/* Size Selection */}
+            {/* Size */}
             <div>
               <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
                 Size
@@ -494,22 +473,20 @@ export default function ProductCard({
                       e.stopPropagation();
                       setSize(s);
                     }}
-                    className={`flex-1 px-3 py-2. 5 rounded-lg text-sm font-semibold transition-all border-2 ${
+                    className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all border-2 ${
                       size === s
                         ? "bg-gray-900 text-white border-gray-900 shadow-sm"
                         : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
                     }`}
                   >
                     <div className="font-bold">{s}</div>
-                    <div className="text-xs opacity-75 mt-1">
-                      £{unitPriceForSize(s). toFixed(2)}
-                    </div>
+                    <div className="text-xs opacity-75 mt-1">£{unitPriceForSize(s).toFixed(2)}</div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Grind Selection */}
+            {/* Grind */}
             <div>
               <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
                 Brew Method
@@ -540,20 +517,14 @@ export default function ProductCard({
 
             {/* Stock info */}
             <div className="text-xs font-semibold">
-              {! selectedVariant ? (
-                <span className="text-amber-600">
-                  Select options to check availability
-                </span>
+              {!selectedVariant ? (
+                <span className="text-amber-600">Select options to check availability</span>
               ) : isOutOfStock ? (
                 <span className="text-red-600">Out of stock</span>
               ) : availableStock < 10 ? (
-                <span className="text-amber-600">
-                  Only {availableStock} left in stock
-                </span>
+                <span className="text-amber-600">Only {availableStock} left in stock</span>
               ) : (
-                <span className="text-green-600">
-                  {availableStock} in stock
-                </span>
+                <span className="text-green-600">{availableStock} in stock</span>
               )}
             </div>
 
@@ -568,14 +539,12 @@ export default function ProductCard({
                     e.stopPropagation();
                     setQuantity((q) => Math.max(1, q - 1));
                   }}
-                  disabled={isOutOfStock || ! selectedVariant}
+                  disabled={isOutOfStock || !selectedVariant}
                   className="w-9 h-9 rounded-lg border border-gray-300 font-bold text-gray-700 hover:bg-white transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   −
                 </button>
-                <div className="flex-1 text-center font-bold text-lg text-gray-900">
-                  {quantity}
-                </div>
+                <div className="flex-1 text-center font-bold text-lg text-gray-900">{quantity}</div>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -593,7 +562,7 @@ export default function ProductCard({
           <div className="flex gap-3 mt-6">
             <button
               onClick={(e) => {
-                e. stopPropagation();
+                e.stopPropagation();
                 setIsFlipped(false);
               }}
               className="flex-1 px-4 py-2.5 rounded-lg border-2 border-gray-200 text-gray-700 text-sm font-semibold hover:bg-gray-50 hover:border-gray-300 transition-colors"

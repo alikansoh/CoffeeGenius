@@ -12,6 +12,7 @@ import {
   X,
   ArrowLeft,
 } from "lucide-react";
+import { getCloudinaryThumbnail } from "@/app/utils/cloudinary";  // ✅ Import helper
 
 export interface Coffee {
   _id: string;
@@ -19,6 +20,7 @@ export interface Coffee {
   name: string;
   origin: string;
   img?: string;
+  images?: string[];
   roastLevel?: "light" | "medium" | "dark";
 }
 
@@ -60,8 +62,6 @@ function Toast({
 }
 
 interface AdminCoffeeListProps {
-  // If sendCookies is true, fetch requests are sent with credentials: 'include'
-  // so browser will include HttpOnly cookies. Default is true.
   sendCookies?: boolean;
 }
 
@@ -77,21 +77,20 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
     const fetchCoffees = async () => {
       setLoading(true);
       try {
-        const res = await window.fetch("/api/coffee?limit=100", {
+        const res = await window.fetch("/api/coffee? limit=100", {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-          },
-          ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+          },...(sendCookies ?  { credentials: "include" as RequestCredentials } : {}),
         });
 
         if (!res.ok) {
-          const text = await res.text().catch(() => null);
-          throw new Error(`Fetch failed: ${res.status} ${text ?? ""}`);
+          const text = await res.text(). catch(() => null);
+          throw new Error(`Fetch failed: ${res.status} ${text ??  ""}`);
         }
 
         const data = await res.json();
-        setCoffees(data?.data || data?.coffees || data || []);
+        setCoffees(data?. data || data?. coffees || data || []);
       } catch (err) {
         console.error(err);
         setError("Failed to load coffees");
@@ -104,13 +103,13 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
 
   const filtered = coffees.filter(
     (c) =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.name. toLowerCase().includes(search.toLowerCase()) ||
       c.origin.toLowerCase().includes(search.toLowerCase()) ||
       c.slug.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete "${name}"? This action cannot be undone.`)) return;
+    if (! confirm(`Delete "${name}"?  This action cannot be undone.`)) return;
 
     try {
       const res = await window.fetch(`/api/coffee/${encodeURIComponent(id)}`, {
@@ -120,7 +119,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
       });
 
       if (!res.ok) {
-        const text = await res.text().catch(() => null);
+        const text = await res.text(). catch(() => null);
         throw new Error(`Delete failed: ${res.status} ${text ?? ""}`);
       }
 
@@ -136,7 +135,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
     <>
       <style jsx global>{`
         input {
-          font-size: 16px !important;
+          font-size: 16px ! important;
         }
       `}</style>
 
@@ -147,7 +146,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => router.push("/admin")}
+                  onClick={() => router. push("/admin")}
                   className="inline-flex items-center justify-center p-2 sm:p-2.5 rounded-xl hover:bg-gray-100 transition-colors text-gray-900"
                   aria-label="Back to admin"
                 >
@@ -228,9 +227,9 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                         <div className="flex flex-col items-center justify-center gap-3">
                           <CoffeeIcon size={48} className="text-gray-300" />
                           <p className="text-gray-900 font-medium">
-                            {search ? "No coffees match your search" : "No coffees found"}
+                            {search ?  "No coffees match your search" : "No coffees found"}
                           </p>
-                          {!search && (
+                          {! search && (
                             <button
                               onClick={() => router.push("/admin/coffee/create")}
                               className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all font-medium text-sm"
@@ -247,9 +246,9 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                       <tr key={coffee._id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200">
-                            {coffee.img ? (
+                            {coffee.img ?  (
                               <Image
-                                src={coffee.img}
+                                src={getCloudinaryThumbnail(coffee.img, 200)}  
                                 alt={coffee.name}
                                 width={64}
                                 height={64}
@@ -269,7 +268,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                           <div className="text-sm text-gray-600">{coffee.origin}</div>
                         </td>
                         <td className="px-6 py-4">
-                          {coffee.roastLevel ? (
+                          {coffee.roastLevel ?  (
                             <span className="inline-block px-3 py-1 bg-gray-100 text-gray-900 text-xs font-medium rounded-full capitalize">
                               {coffee.roastLevel}
                             </span>
@@ -290,7 +289,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(coffee._id, coffee.name)}
+                              onClick={() => handleDelete(coffee._id, coffee. name)}
                               className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl border-2 border-red-200 hover:bg-red-100 transition-all font-medium"
                             >
                               <Trash2 size={14} />
@@ -343,7 +342,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200 flex-shrink-0">
                       {coffee.img ? (
                         <Image
-                          src={coffee.img}
+                          src={getCloudinaryThumbnail(coffee.img, 200)} 
                           alt={coffee.name}
                           width={80}
                           height={80}
@@ -388,10 +387,10 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
           </div>
 
           {/* Stats */}
-          {!loading && coffees.length > 0 && (
+          {! loading && coffees.length > 0 && (
             <div className="mt-6 p-4 bg-white border-2 border-gray-200 rounded-xl">
               <div className="text-sm text-gray-600">
-                Showing <span className="font-bold text-gray-900">{filtered.length}</span> of{" "}
+                Showing <span className="font-bold text-gray-900">{filtered. length}</span> of{" "}
                 <span className="font-bold text-gray-900">{coffees.length}</span> coffees
               </div>
             </div>
