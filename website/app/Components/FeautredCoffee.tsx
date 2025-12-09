@@ -21,7 +21,7 @@ interface Variant {
   coffeeId: string;
   sku: string;
   size: string;
-  grind: string;
+  grind:  string;
   price: number;
   stock: number;
   img: string;
@@ -30,7 +30,7 @@ interface Variant {
 interface SizePrice {
   size: string;
   price: number;
-  availableGrinds?: string[];
+  availableGrinds?:  string[];
   totalStock?: number;
 }
 
@@ -39,12 +39,12 @@ interface ApiCoffee {
   slug: string;
   name: string;
   origin: string;
-  notes?: string;
+  notes?:  string;
   img: string;
   images?: string[];
-  roastLevel?: "light" | "medium" | "dark";
-  minPrice: number;
-  availableGrinds: string[];
+  roastLevel?:  "light" | "medium" | "dark";
+  minPrice:  number;
+  availableGrinds:  string[];
   availableSizes: SizePrice[];
   variants: Variant[];
   bestSeller: boolean;
@@ -53,34 +53,34 @@ interface ApiCoffee {
 export type Product = {
   id: string;
   slug: string;
-  name: string;
-  origin?: string;
+  name:  string;
+  origin?:  string;
   notes?: string;
   price: number;
   prices?: Record<string, number>;
-  img?: string;
+  img?:  string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
-  availableSizes?: SizePrice[];
+  availableSizes?:  SizePrice[];
   availableGrinds?: string[];
-  variants?: Variant[];
+  variants?:  Variant[];
   bestSeller?: boolean;
 };
 
 type QuickAddOptions = {
   size: string;
-  grind: string;
+  grind:  string;
   quantity: number;
 };
 
 const COLORS = {
-  primary: "#111827",
+  primary:  "#111827",
 };
 
 function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
-  if (!level) return null;
+  if (! level) return null;
 
-  const levelMap: Record<NonNullable<Product["roastLevel"]>, number> = {
+  const levelMap:  Record<NonNullable<Product["roastLevel"]>, number> = {
     light: 1,
     medium: 2,
     dark: 3,
@@ -90,7 +90,7 @@ function RoastLevelIndicator({ level }: { level: Product["roastLevel"] }) {
   return (
     <div className="inline-flex items-center gap-2 px-3 py-2 bg-neutral-50 rounded-lg border border-neutral-200">
       <div className="flex items-center gap-1">
-        {[1, 2, 3].map((bean) => (
+        {[1, 2, 3]. map((bean) => (
           <Image
             key={bean}
             src={bean <= numeric ? "/bean-filled.svg" : "/bean.svg"}
@@ -113,11 +113,11 @@ function ProductCard({
   product,
   index,
   onAddToCart,
-  isAdded: isAddedProp,
+  isAdded:  isAddedProp,
 }: {
   product: Product;
   index: number;
-  onAddToCart?: (product: Product, options: QuickAddOptions) => void;
+  onAddToCart?:  (product: Product, options: QuickAddOptions) => void;
   isAdded?: boolean;
 }) {
   const router = useRouter();
@@ -136,9 +136,9 @@ function ProductCard({
     const primary =
       Array.isArray(product.images) && product.images.length > 0
         ? product.images[0]
-        : product.img;
+        : product. img;
 
-    if (!primary) return "/test.webp";
+    if (! primary) return "/test.webp";
 
     if (
       primary.startsWith("http://") ||
@@ -160,8 +160,7 @@ function ProductCard({
   const availableGrindsForSize = useMemo(
     () =>
       product.availableSizes?.find((s) => s.size === size)?.availableGrinds ||
-      product.availableGrinds ||
-      ["whole-bean"],
+      product.availableGrinds || ["whole-bean"],
     [product.availableSizes, product.availableGrinds, size]
   );
 
@@ -170,19 +169,19 @@ function ProductCard({
   );
 
   useEffect(() => {
-    if (availableSizes.length > 0 && !size) {
+    if (availableSizes. length > 0 && ! size) {
       setSize(availableSizes[0]);
     }
   }, [availableSizes, size]);
 
   useEffect(() => {
-    if (availableGrindsForSize.length > 0 && !grind) {
+    if (availableGrindsForSize. length > 0 && !grind) {
       setGrind(availableGrindsForSize[0]);
     }
   }, [availableGrindsForSize, grind]);
 
   useEffect(() => {
-    const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
+    const checkScreenSize = () => setIsLargeScreen(window. innerWidth >= 1024);
     checkScreenSize();
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
@@ -200,9 +199,9 @@ function ProductCard({
     setQuantity(1);
   };
 
-  const submitQuickAdd = async (e?: React.MouseEvent) => {
+  const submitQuickAdd = async (e?:  React.MouseEvent) => {
     e?.stopPropagation();
-    if (!onAddToCart || !selectedVariant) return;
+    if (!onAddToCart || ! selectedVariant) return;
 
     if (selectedVariant.stock <= 0) {
       return;
@@ -228,7 +227,9 @@ function ProductCard({
     .slice(0, 3);
 
   const unitPriceForSize = (s: string): number => {
-    const sizePrice = product.availableSizes?.find((sz) => sz.size === s)?.price;
+    const sizePrice = product.availableSizes?.find(
+      (sz) => sz.size === s
+    )?.price;
     if (sizePrice !== undefined) return sizePrice;
 
     const pricesPrice = product.prices?.[s];
@@ -239,19 +240,21 @@ function ProductCard({
 
   const displayPrice = useMemo(() => {
     if (product.availableSizes && product.availableSizes.length > 0) {
-      const prices = product.availableSizes.map((s) => s.price).filter((p) => p > 0);
+      const prices = product.availableSizes
+        .map((s) => s.price)
+        .filter((p) => p > 0);
       if (prices.length > 0) return Math.min(...prices);
     }
     if (product.prices) {
       const priceValues = Object.values(product.prices).filter((p) => p > 0);
-      if (priceValues.length > 0) return Math.min(...priceValues);
+      if (priceValues. length > 0) return Math.min(...priceValues);
     }
     return product.price || 0;
-  }, [product.availableSizes, product.prices, product.price]);
+  }, [product.availableSizes, product. prices, product.price]);
 
-  const isOutOfStock = selectedVariant ? selectedVariant.stock === 0 : false;
+  const isOutOfStock = selectedVariant ?  selectedVariant.stock === 0 : false;
 
-  if (!product || !product.id) {
+  if (! product || !product.id) {
     console.warn("Invalid product data:", product);
     return null;
   }
@@ -273,8 +276,8 @@ function ProductCard({
           className="relative w-full h-full transition-transform duration-500"
           style={{
             transformStyle: "preserve-3d",
-            transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)",
-            minHeight: 520,
+            transform: isFlipped ?  "rotateY(180deg)" : "rotateY(0deg)",
+            minHeight: 600,
           }}
         >
           {/* FRONT */}
@@ -282,13 +285,14 @@ function ProductCard({
             className="absolute inset-0 w-full h-full bg-white rounded-xl flex flex-col"
             style={{ backfaceVisibility: "hidden" }}
           >
-            <div className="relative w-full bg-neutral-100 rounded-t-xl overflow-hidden aspect-[6/5]">
+            {/* ENHANCED IMAGE CONTAINER - Changed from aspect-3/4 to fixed height */}
+            <div className="relative w-full bg-neutral-100 rounded-t-xl overflow-hidden h-[400px]">
               <Image
                 src={cardImageSrc}
                 alt={product.name}
                 fill
-                sizes="(max-width: 640px) 82vw, (max-width: 768px) 46vw, (max-width: 1024px) 32vw, (max-width: 1280px) 24vw, 22vw"
-                className="object-cover transition-opacity duration-300"
+                sizes="(max-width: 640px) 82vw, (max-width:  768px) 46vw, (max-width: 1024px) 32vw, (max-width: 1280px) 24vw, 22vw"
+                className="object-cover transition-transform duration-500 group-hover:scale-105"
                 priority={index < 4}
               />
 
@@ -311,7 +315,10 @@ function ProductCard({
                 </p>
               )}
 
-              <h3 className="text-base font-bold mb-2 leading-snug" style={{ color: COLORS.primary }}>
+              <h3
+                className="text-base font-bold mb-2 leading-snug"
+                style={{ color: COLORS.primary }}
+              >
                 {product.name}
               </h3>
 
@@ -342,12 +349,15 @@ function ProductCard({
               <div className="flex items-center justify-between gap-3 pt-3 border-t-2 border-neutral-100 mt-auto">
                 <div>
                   <span className="text-xs text-neutral-400">From</span>
-                  <div className="text-xl font-bold tracking-tight" style={{ color: COLORS.primary }}>
-                    £{displayPrice.toFixed(2)}
+                  <div
+                    className="text-xl font-bold tracking-tight"
+                    style={{ color:  COLORS.primary }}
+                  >
+                    £{displayPrice. toFixed(2)}
                   </div>
                 </div>
 
-                {!isAdded && (
+                {! isAdded && (
                   <button
                     onClick={openQuickAdd}
                     className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold bg-black text-white hover:bg-neutral-800 transition-all duration-200"
@@ -371,19 +381,26 @@ function ProductCard({
           {/* BACK (Quick Add) */}
           <div
             className="absolute inset-0 w-full h-full bg-white rounded-xl p-4 flex flex-col"
-            style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
+            style={{
+              backfaceVisibility:  "hidden",
+              transform: "rotateY(180deg)",
+            }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-4">
               <p className="text-xs text-gray-500 mb-0.5">Quick add</p>
-              <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+              <h3 className="text-lg font-semibold text-gray-900">
+                {product.name}
+              </h3>
             </div>
 
             <div className="space-y-3 flex-1">
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">Size</label>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Size
+                </label>
                 <div className="flex gap-2">
-                  {availableSizes.map((s) => {
+                  {availableSizes. map((s) => {
                     const sizePrice = unitPriceForSize(s);
                     return (
                       <button
@@ -393,11 +410,15 @@ function ProductCard({
                           setSize(s);
                         }}
                         className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-all border ${
-                          s === size ? "bg-gray-900 text-white border-gray-900" : "bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200"
+                          s === size
+                            ? "bg-gray-900 text-white border-gray-900"
+                            : "bg-gray-100 text-gray-800 border-gray-300 hover:bg-gray-200"
                         }`}
                       >
                         <div>{s}</div>
-                        <div className="text-xs opacity-75">£{sizePrice.toFixed(2)}</div>
+                        <div className="text-xs opacity-75">
+                          £{sizePrice.toFixed(2)}
+                        </div>
                       </button>
                     );
                   })}
@@ -405,9 +426,11 @@ function ProductCard({
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">Brew method</label>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Brew method
+                </label>
                 <select
-                  value={grind || ""} // ensure a non-null/undefined value
+                  value={grind || ""}
                   onChange={(e) => setGrind(e.target.value)}
                   className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-gray-900 focus:ring-1 focus:ring-gray-900 focus:outline-none bg-white"
                   style={{ fontSize: "16px" }}
@@ -416,12 +439,13 @@ function ProductCard({
                     .filter((g): g is string => Boolean(g))
                     .map((g) => (
                       <option key={g} value={g}>
-                        {g.charAt(0).toUpperCase() + g.slice(1).replace("-", " ")}
+                        {g. charAt(0).toUpperCase() +
+                          g.slice(1).replace("-", " ")}
                       </option>
                     ))}
 
-                  {/* Fallback when no grinds are available */}
-                  {(!availableGrindsForSize || availableGrindsForSize.length === 0) && (
+                  {(! availableGrindsForSize ||
+                    availableGrindsForSize.length === 0) && (
                     <option value="" disabled>
                       No grind options available
                     </option>
@@ -431,37 +455,47 @@ function ProductCard({
 
               {selectedVariant && (
                 <div className="text-sm font-semibold">
-                  {isOutOfStock ? (
+                  {isOutOfStock ?  (
                     <span className="text-red-600">Out of stock</span>
                   ) : selectedVariant.stock < 10 ? (
-                    <span className="text-amber-600">Only {selectedVariant.stock} left</span>
+                    <span className="text-amber-600">
+                      Only {selectedVariant.stock} left
+                    </span>
                   ) : (
-                    <span className="text-green-600">{selectedVariant.stock} in stock</span>
+                    <span className="text-green-600">
+                      {selectedVariant.stock} in stock
+                    </span>
                   )}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-semibold text-gray-900 mb-2">Quantity</label>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Quantity
+                </label>
                 <div className="flex items-center gap-3">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       setQuantity((q) => Math.max(1, q - 1));
                     }}
-                    disabled={isOutOfStock || !selectedVariant}
-                    className="w-9 h-9 rounded border border-gray-300 font-bold text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isOutOfStock || ! selectedVariant}
+                    className="w-9 h-9 rounded border border-gray-300 font-bold text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled: cursor-not-allowed"
                   >
                     −
                   </button>
-                  <div className="flex-1 text-center font-bold text-lg text-gray-900">{quantity}</div>
+                  <div className="flex-1 text-center font-bold text-lg text-gray-900">
+                    {quantity}
+                  </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      setQuantity((q) => Math.min(q + 1, selectedVariant?.stock || 999));
+                      setQuantity((q) =>
+                        Math.min(q + 1, selectedVariant?. stock || 999)
+                      );
                     }}
                     disabled={isOutOfStock || !selectedVariant}
-                    className="w-9 h-9 rounded border border-gray-300 font-bold text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-9 h-9 rounded border border-gray-300 font-bold text-gray-700 hover: bg-gray-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     +
                   </button>
@@ -472,7 +506,7 @@ function ProductCard({
             <div className="flex gap-2 mt-4">
               <button
                 onClick={(e) => {
-                  e.stopPropagation();
+                  e. stopPropagation();
                   setIsFlipped(false);
                 }}
                 className="flex-1 px-3 py-2 rounded border border-gray-300 text-sm font-semibold hover:bg-gray-50 transition-colors"
@@ -481,14 +515,18 @@ function ProductCard({
               </button>
               <button
                 onClick={submitQuickAdd}
-                disabled={processing || !selectedVariant || isOutOfStock}
+                disabled={processing || ! selectedVariant || isOutOfStock}
                 className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-colors ${
                   processing || !selectedVariant || isOutOfStock
                     ? "bg-gray-300 text-gray-700 cursor-not-allowed"
-                    : "bg-gray-900 text-white hover:bg-gray-800"
+                    : "bg-gray-900 text-white hover: bg-gray-800"
                 }`}
               >
-                {processing ? "Adding..." : isOutOfStock ? "Out of stock" : "Add to cart"}
+                {processing
+                  ? "Adding..."
+                  : isOutOfStock
+                  ? "Out of stock"
+                  : "Add to cart"}
               </button>
             </div>
           </div>
@@ -512,7 +550,7 @@ export default function BestSellerSlider() {
     const fetchBestSellers = async () => {
       try {
         setLoading(true);
-        const response = await fetch("/api/coffee?bestSeller=true&limit=10");
+        const response = await fetch("/api/coffee? bestSeller=true&limit=10");
 
         if (!response.ok) {
           throw new Error("Failed to fetch best sellers");
@@ -520,33 +558,38 @@ export default function BestSellerSlider() {
 
         const data = await response.json();
 
-        const transformedProducts: Product[] = data.data.map((coffee: ApiCoffee) => {
-          const prices: Record<string, number> = {};
-          if (coffee.availableSizes && coffee.availableSizes.length > 0) {
-            coffee.availableSizes.forEach((sizeObj: SizePrice) => {
-              prices[sizeObj.size] = sizeObj.price;
-            });
-          } else {
-            prices["250g"] = coffee.minPrice;
-          }
+        const transformedProducts:  Product[] = data.data.map(
+          (coffee: ApiCoffee) => {
+            const prices:  Record<string, number> = {};
+            if (coffee.availableSizes && coffee.availableSizes.length > 0) {
+              coffee.availableSizes.forEach((sizeObj:  SizePrice) => {
+                prices[sizeObj.size] = sizeObj.price;
+              });
+            } else {
+              prices["250g"] = coffee.minPrice;
+            }
 
-          return {
-            id: coffee._id || coffee.slug,
-            slug: coffee.slug,
-            name: coffee.name,
-            origin: coffee.origin,
-            notes: coffee.notes || "",
-            price: coffee.minPrice || 0,
-            prices,
-            img: coffee.img,
-            images: coffee.images && coffee.images.length > 0 ? coffee.images : [coffee.img],
-            roastLevel: coffee.roastLevel,
-            availableSizes: coffee.availableSizes,
-            availableGrinds: coffee.availableGrinds,
-            variants: coffee.variants,
-            bestSeller: coffee.bestSeller,
-          };
-        });
+            return {
+              id: coffee._id || coffee.slug,
+              slug: coffee.slug,
+              name: coffee.name,
+              origin: coffee.origin,
+              notes: coffee.notes || "",
+              price: coffee.minPrice || 0,
+              prices,
+              img: coffee.img,
+              images: 
+                coffee.images && coffee.images.length > 0
+                  ? coffee.images
+                  : [coffee.img],
+              roastLevel: coffee.roastLevel,
+              availableSizes: coffee.availableSizes,
+              availableGrinds: coffee.availableGrinds,
+              variants: coffee.variants,
+              bestSeller: coffee. bestSeller,
+            };
+          }
+        );
 
         setProducts(transformedProducts);
       } catch (error) {
@@ -567,7 +610,7 @@ export default function BestSellerSlider() {
   useEffect(() => {
     const updateScrollState = () => {
       const container = containerRef.current;
-      if (!container) return; // FIX: protect against null
+      if (!container) return;
 
       const { scrollLeft, scrollWidth, clientWidth } = container;
       setCanScrollLeft(scrollLeft > 10);
@@ -577,7 +620,9 @@ export default function BestSellerSlider() {
     updateScrollState();
 
     const containerEl = containerRef.current;
-    containerEl?.addEventListener("scroll", updateScrollState, { passive: true });
+    containerEl?.addEventListener("scroll", updateScrollState, {
+      passive: true,
+    });
     window.addEventListener("resize", updateScrollState);
 
     return () => {
@@ -588,7 +633,7 @@ export default function BestSellerSlider() {
 
   function scroll(direction: "left" | "right") {
     const container = containerRef.current;
-    if (!container) return; // FIX: protect against null
+    if (!container) return;
     const scrollAmount = container.clientWidth * 0.8;
     container.scrollBy({
       left: direction === "left" ? -scrollAmount : scrollAmount,
@@ -596,29 +641,29 @@ export default function BestSellerSlider() {
     });
   }
 
-  function handleAdd(p: Product, options: QuickAddOptions) {
-    const selectedVariant = p.variants?.find(
+  function handleAdd(p: Product, options:  QuickAddOptions) {
+    const selectedVariant = p.variants?. find(
       (v) => v.size === options.size && v.grind === options.grind
     );
 
-    if (!selectedVariant) return;
+    if (! selectedVariant) return;
     if (selectedVariant.stock <= 0) return;
 
-    const cartItem: Omit<CartItem, "quantity"> = {
+    const cartItem:  Omit<CartItem, "quantity"> = {
       id: selectedVariant._id,
       productType: "coffee",
       productId: p.id,
       variantId: selectedVariant._id,
       sku: selectedVariant.sku,
       name: `${p.name} — ${options.size} — ${options.grind}`,
-      price: selectedVariant.price,
-      img: selectedVariant.img || p.img || "/test.webp",
+      price: selectedVariant. price,
+      img: selectedVariant.img || p.img || "/test. webp",
       size: selectedVariant.size,
       grind: selectedVariant.grind,
       stock: selectedVariant.stock,
     };
 
-    addItem(cartItem, options.quantity);
+    addItem(cartItem, options. quantity);
     setAddedMap((s) => ({ ...s, [p.id]: true }));
     setTimeout(() => setAddedMap((s) => ({ ...s, [p.id]: false })), 1200);
   }
@@ -631,7 +676,7 @@ export default function BestSellerSlider() {
             <div className="h-8 bg-gray-200 rounded w-48 mb-4" />
             <div className="h-12 bg-gray-200 rounded w-64 mb-8" />
             <div className="flex gap-5 overflow-hidden">
-              {[1, 2, 3, 4].map((i) => (
+              {[1, 2, 3, 4]. map((i) => (
                 <div key={i} className="w-64 h-96 bg-gray-200 rounded-xl" />
               ))}
             </div>
@@ -646,7 +691,10 @@ export default function BestSellerSlider() {
   }
 
   return (
-    <section aria-labelledby="bestseller-heading" className="py-16 bg-white overflow-hidden">
+    <section
+      aria-labelledby="bestseller-heading"
+      className="py-16 bg-white overflow-hidden"
+    >
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="flex-1">
@@ -660,12 +708,13 @@ export default function BestSellerSlider() {
             <h2
               id="bestseller-heading"
               className="text-4xl md:text-5xl font-bold tracking-tight mb-3"
-              style={{ color: COLORS.primary }}
+              style={{ color:  COLORS.primary }}
             >
               Best Sellers
             </h2>
             <p className="text-neutral-500 max-w-md text-sm md:text-base leading-relaxed">
-              Discover our most loved roasts — handpicked by thousands of coffee enthusiasts and freshly roasted to order.
+              Discover our most loved roasts — handpicked by thousands of coffee
+              enthusiasts and freshly roasted to order.
             </p>
           </div>
 
@@ -675,7 +724,10 @@ export default function BestSellerSlider() {
               className="group text-sm font-medium hover:text-neutral-600 transition-colors flex items-center gap-1"
             >
               View All Products
-              <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
+              <ArrowRight
+                size={14}
+                className="transition-transform group-hover:translate-x-1"
+              />
             </Link>
           </div>
         </div>
@@ -687,7 +739,7 @@ export default function BestSellerSlider() {
             role="list"
             aria-label="Best seller products"
             style={{
-              WebkitOverflowScrolling: "touch",
+              WebkitOverflowScrolling:  "touch",
               scrollbarWidth: "none",
               msOverflowStyle: "none",
             }}
@@ -698,7 +750,7 @@ export default function BestSellerSlider() {
                 product={p}
                 index={i}
                 onAddToCart={handleAdd}
-                isAdded={addedMap[p.id] || false}
+                isAdded={addedMap[p. id] || false}
               />
             ))}
           </div>
@@ -717,9 +769,11 @@ export default function BestSellerSlider() {
             <button
               onClick={() => scroll("left")}
               aria-label="Scroll left"
-              disabled={!mounted || !canScrollLeft}
+              disabled={!mounted || ! canScrollLeft}
               className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
-                !canScrollLeft ? "opacity-30 cursor-not-allowed" : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
+                ! canScrollLeft
+                  ? "opacity-30 cursor-not-allowed"
+                  : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
               }`}
             >
               <ChevronLeft size={20} strokeWidth={2} />
@@ -730,7 +784,9 @@ export default function BestSellerSlider() {
               aria-label="Scroll right"
               disabled={!mounted || !canScrollRight}
               className={`p-3 rounded-full border-2 border-black transition-all duration-300 ${
-                !canScrollRight ? "opacity-30 cursor-not-allowed" : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
+                !canScrollRight
+                  ? "opacity-30 cursor-not-allowed"
+                  : "hover:bg-black hover:text-white hover:scale-110 active:scale-95"
               }`}
             >
               <ChevronRight size={20} strokeWidth={2} />
@@ -743,21 +799,25 @@ export default function BestSellerSlider() {
               className="group inline-flex items-center gap-2 px-8 py-4 bg-black text-white font-semibold rounded-full hover:bg-neutral-800 transition-all duration-300 hover:shadow-lg active:scale-95"
             >
               View All Coffee
-              <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+              <ArrowRight
+                size={18}
+                className="transition-transform group-hover:translate-x-1"
+              />
             </Link>
           </div>
         </div>
       </div>
 
       <style jsx>{`
-        .scrollbar-hide::-webkit-scrollbar {
+        .scrollbar-hide: :-webkit-scrollbar {
           display: none;
         }
 
         @keyframes arrow-left {
-          0%, 100% {
+          0%,
+          100% {
             transform: translateX(0);
-            opacity: 0.4;
+            opacity: 0. 4;
           }
           50% {
             transform: translateX(-4px);
@@ -766,19 +826,20 @@ export default function BestSellerSlider() {
         }
 
         @keyframes arrow-right {
-          0%, 100% {
+          0%,
+          100% {
             transform: translateX(0);
             opacity: 0.4;
           }
           50% {
-            transform: translateX(4px);
+            transform:  translateX(4px);
             opacity: 1;
           }
         }
 
         .animate-arrow-left {
           display: inline-block;
-          animation: arrow-left 1.5s ease-in-out infinite;
+          animation: arrow-left 1. 5s ease-in-out infinite;
         }
 
         .animate-arrow-right {

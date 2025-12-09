@@ -110,7 +110,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
   // ✅ Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
-      pendingFiles. forEach(pf => URL.revokeObjectURL(pf. preview));
+      pendingFiles.forEach(pf => URL.revokeObjectURL(pf.preview));
     };
   }, [pendingFiles]);
 
@@ -133,7 +133,9 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     const { name, value } = e.target;
 
     if (name === "cupping_score") {
-      const n = value === "" ? "" : Math.min(100, Math.max(0, parseInt(value || "0")));
+      // Allow decimals, clamp between 0 and 100, and treat empty string as "no value"
+      const parsed = parseFloat(value);
+      const n = value === "" || Number.isNaN(parsed) ? "" : Math.min(100, Math.max(0, parsed));
       setField("cupping_score", n);
       setErrors((s) => ({ ...s, cupping_score: "" }));
       return;
@@ -141,7 +143,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
 
     if (name === "slug") {
       setAutoSlugEnabled(false);
-      setField("slug", value. toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, ""));
+      setField("slug", value.toLowerCase().replace(/\s+/g, "-").replace(/[^\w-]/g, ""));
       setErrors((s) => ({ ...s, slug: "" }));
       return;
     }
@@ -163,7 +165,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     setNoteInput("");
   };
 
-  const removeNote = (n: string) => setFormData((p) => ({ ... p, notes: p.notes. filter((x) => x !== n) }));
+  const removeNote = (n: string) => setFormData((p) => ({ ... p, notes: p.notes.filter((x) => x !== n) }));
 
   // ✅ Helper to check if file is video
   const isVideoFile = (file: File): boolean => {
@@ -227,7 +229,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     if (publicId) {
       setFormData((p) => ({
         ...p,
-        images: [...p.images, publicId. trim()],
+        images: [...p.images, publicId.trim()],
         img: p.img || publicId.trim(),
       }));
     }
@@ -238,9 +240,15 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     if (!formData.name.trim()) next.name = "Coffee name is required";
     if (!formData.slug.trim()) next.slug = "Slug is required";
     else if (!validateSlug(formData.slug)) next.slug = "Slug can only contain lowercase letters, numbers, - and _";
-    if (!formData.origin.trim()) next. origin = "Origin is required";
-    if (formData.cupping_score !== "" && (formData.cupping_score < 0 || formData.cupping_score > 100))
-      next.cupping_score = "Cupping score must be between 0 and 100";
+    if (!formData.origin.trim()) next.origin = "Origin is required";
+
+    if (formData.cupping_score !== "") {
+      const score = Number(formData.cupping_score);
+      if (Number.isNaN(score) || score < 0 || score > 100) {
+        next.cupping_score = "Cupping score must be between 0 and 100";
+      }
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -251,7 +259,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
 
     const formDataUpload = new FormData();
     pendingFiles.forEach(pf => {
-      formDataUpload. append('files', pf.file);
+      formDataUpload.append('files', pf.file);
     });
     formDataUpload.append('folder', 'coffee-shop');
 
@@ -270,7 +278,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
       throw new Error('Upload failed');
     }
 
-    return data. files. map((f: { publicId: string }) => f.publicId);
+    return data.files.map((f: { publicId: string }) => f.publicId);
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -323,11 +331,11 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         slug: formData.slug,
         name: formData.name,
         origin: formData.origin,
-        notes: formData.notes. join(", "),
+        notes: formData.notes.join(", "),
         img: mainImagePublicId,  // ✅ Guaranteed to be an image
         images: allImages,
         roastLevel: formData.roastLevel || undefined,
-        process: formData. process || undefined,
+        process: formData.process || undefined,
         altitude: formData.altitude || undefined,
         harvest: formData.harvest || undefined,
         cupping_score: formData.cupping_score === "" ? undefined : formData.cupping_score,
@@ -343,13 +351,13 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
       });
 
-      const body = await res.json(). catch(() => ({}));
+      const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?. message || `Failed to create coffee (${res.status})`);
 
       setToast({ type: "success", message: "Coffee created successfully!" });
       
       // Cleanup blob URLs
-      pendingFiles.forEach(pf => URL. revokeObjectURL(pf.preview));
+      pendingFiles.forEach(pf => URL.revokeObjectURL(pf.preview));
       
       setTimeout(() => router.push("/admin/coffee"), 1200);
     } catch (err) {
@@ -423,7 +431,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                       errors.name ? "border-red-400" : "border-gray-300"
                     }`}
                   />
-                  {errors.name && <p className="text-xs text-red-600 mt-1">{errors. name}</p>}
+                  {errors.name && <p className="text-xs text-red-600 mt-1">{errors.name}</p>}
                 </div>
 
                 <div>
@@ -437,7 +445,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                       onChange={handleInputChange}
                       placeholder="signature-espresso-blend"
                       className={`flex-1 px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
-                        errors. slug ? "border-red-400" : "border-gray-300"
+                        errors.slug ? "border-red-400" : "border-gray-300"
                       }`}
                     />
                     <button
@@ -471,7 +479,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                     onChange={handleInputChange}
                     placeholder="e.g., Yirgacheffe, Ethiopia"
                     className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
-                      errors. origin ? "border-red-400" : "border-gray-300"
+                      errors.origin ? "border-red-400" : "border-gray-300"
                     }`}
                   />
                   {errors.origin && <p className="text-xs text-red-600 mt-1">{errors.origin}</p>}
@@ -511,7 +519,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
               <div className="flex gap-2 mb-3">
                 <input
                   value={noteInput}
-                  onChange={(e) => setNoteInput(e. target.value)}
+                  onChange={(e) => setNoteInput(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter" || e.key === ",") {
                       e.preventDefault();
@@ -535,7 +543,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   {formData.notes.map((note) => (
                     <span
                       key={note}
-                      className="inline-flex items-center gap-2 px-3 py-1. 5 rounded-full bg-gray-100 border-2 border-gray-200 text-gray-900 text-sm font-medium"
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gray-100 border-2 border-gray-200 text-gray-900 text-sm font-medium"
                     >
                       {note}
                       <button
@@ -549,7 +557,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   ))}
                 </div>
               )}
-              <p className="text-xs text-gray-500 mt-2">Press Enter or comma to add.   Maximum 12 tags.</p>
+              <p className="text-xs text-gray-500 mt-2">Press Enter or comma to add. Maximum 12 tags.</p>
             </section>
 
             {/* Roast & Details */}
@@ -562,11 +570,11 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   <div className="grid grid-cols-3 gap-3">
                     {ROAST_LEVELS.map((roast) => (
                       <button
-                        key={roast. value}
+                        key={roast.value}
                         type="button"
-                        onClick={() => setField("roastLevel", roast. value)}
+                        onClick={() => setField("roastLevel", roast.value)}
                         className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                          formData.roastLevel === roast. value ?  "border-gray-900 bg-gray-900 text-white" : "border-gray-300 hover:border-gray-900 text-gray-700"
+                          formData.roastLevel === roast.value ?  "border-gray-900 bg-gray-900 text-white" : "border-gray-300 hover:border-gray-900 text-gray-700"
                         }`}
                       >
                         {roast.label}
@@ -584,7 +592,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">Process</label>
-                    <input name="process" value={formData. process} onChange={handleInputChange} placeholder="Washed, Natural, Honey" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                    <input name="process" value={formData.process} onChange={handleInputChange} placeholder="Washed, Natural, Honey" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">Variety</label>
@@ -592,7 +600,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">Altitude</label>
-                    <input name="altitude" value={formData. altitude} onChange={handleInputChange} placeholder="1,500 - 2,000m" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
+                    <input name="altitude" value={formData.altitude} onChange={handleInputChange} placeholder="1,500 - 2,000m" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
                   </div>
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">Harvest Season</label>
@@ -600,7 +608,17 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-bold text-gray-900 mb-2">Cupping Score (0-100)</label>
-                    <input name="cupping_score" type="number" min="0" max="100" value={formData.cupping_score ??  ""} onChange={handleInputChange} placeholder="85" className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${errors.cupping_score ? "border-red-400" : "border-gray-300"}`} />
+                    <input
+                      name="cupping_score"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={formData.cupping_score ?? ""}
+                      onChange={handleInputChange}
+                      placeholder="85.5"
+                      className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${errors.cupping_score ? "border-red-400" : "border-gray-300"}`}
+                    />
                     {errors.cupping_score && <p className="text-xs text-red-600 mt-1">{errors.cupping_score}</p>}
                   </div>
                 </div>
@@ -631,7 +649,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                 {mainImageIndex >= 0 && pendingFiles[mainImageIndex] ?  (
                   <div className="relative w-full aspect-square rounded-xl overflow-hidden ring-2 ring-gray-300">
                     <Image 
-                      src={pendingFiles[mainImageIndex]. preview} 
+                      src={pendingFiles[mainImageIndex].preview} 
                       alt="Main image preview" 
                       fill 
                       className="object-cover" 
@@ -706,7 +724,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                             </div>
                           ) : (
                             <Image 
-                              src={pf. preview} 
+                              src={pf.preview} 
                               alt={`Preview ${i + 1}`} 
                               fill 
                               className="object-cover" 

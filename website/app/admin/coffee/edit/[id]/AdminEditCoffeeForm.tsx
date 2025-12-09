@@ -308,7 +308,9 @@ export default function AdminEditCoffeePage() {
     const { name, value } = e.target;
 
     if (name === "cupping_score") {
-      const n = value === "" ? "" : Math.min(100, Math.max(0, parseInt(value || "0", 10)));
+      // Accept decimals: parseFloat, allow empty string, clamp between 0 and 100
+      const parsed = parseFloat(value);
+      const n = value === "" || Number.isNaN(parsed) ? "" : Math.min(100, Math.max(0, parsed));
       setField("cupping_score", n);
       setErrors((s) => ({ ...s, cupping_score: "" }));
       return;
@@ -814,9 +816,10 @@ export default function AdminEditCoffeePage() {
                       type="number"
                       min={0}
                       max={100}
-                      value={formData.cupping_score as number}
+                      step={0.1}
+                      value={formData.cupping_score === "" ? "" : formData.cupping_score}
                       onChange={handleInputChange}
-                      placeholder="85"
+                      placeholder="85.5"
                       className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
                         errors.cupping_score ? "border-red-400" : "border-gray-300"
                       }`}
