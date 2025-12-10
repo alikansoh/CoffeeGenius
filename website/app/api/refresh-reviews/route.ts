@@ -1,6 +1,6 @@
-import { NextResponse } from "next/server";
-import dbConnect from "@/lib/dbConnect";
-import Place from "@/models/review";
+import { NextResponse } from 'next/server';
+import dbConnect from '@/lib/dbConnect';
+import Place from '@/models/review';
 
 type PlacesResponse = {
   status?: string;
@@ -22,17 +22,24 @@ type PlacesResponse = {
   error_message?: string;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  // CHECK Authorization Header
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Return 401 if authorization fails
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   await dbConnect();
   const apiKey = process.env.GOOGLE_PLACES_API_KEY;
   const placeId = process.env.GOOGLE_PLACE_ID;
 
   if (!apiKey || !placeId) {
-    return NextResponse.json({ error: "Server misconfigured: missing GOOGLE_PLACES_API_KEY or GOOGLE_PLACE_ID" }, { status: 500 });
+    return NextResponse.json({ error: 'Server misconfigured: missing GOOGLE_PLACES_API_KEY or GOOGLE_PLACE_ID' }, { status: 500 });
   }
 
   try {
-    const fields = encodeURIComponent("name,rating,user_ratings_total,reviews,url");
+    const fields = encodeURIComponent('name,rating,user_ratings_total,reviews,url');
     const fetchUrl = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(
       placeId
     )}&fields=${fields}&key=${encodeURIComponent(apiKey)}`;
@@ -40,8 +47,8 @@ export async function GET() {
     const googleResponse = await fetch(fetchUrl);
     const data = (await googleResponse.json()) as PlacesResponse;
 
-    if (data.status !== "OK") {
-      throw new Error(data.error_message || "Unknown error");
+    if (data.status !== 'OK') {
+      throw new Error(data.error_message || 'Unknown error');
     }
 
     const now = new Date();
@@ -51,7 +58,7 @@ export async function GET() {
       rating: data.result?.rating,
       user_ratings_total: data.result?.user_ratings_total,
       reviews: data.result?.reviews?.map((review) => ({
-        id: `${review.time}_${(review.author_name || "").slice(0, 50)}`, // Unique identifier
+        id: `${review.time}_${(review.author_name || '').slice(0, 50)}`, // Unique identifier
         author_name: review.author_name,
         author_url: review.author_url,
         rating: review.rating,
@@ -64,13 +71,13 @@ export async function GET() {
       cached_until: new Date(now.getTime() + 12 * 60 * 60 * 1000), // 12 hours later
     });
 
-    // Replace existing cached document
+    // Replace the old cached document in MongoDB
     await Place.deleteMany({});
     await placeData.save();
 
-    return NextResponse.json({ success: true, message: "Reviews successfully fetched and cached." }, { status: 200 });
+    return NextResponse.json({ success: true, message: 'Reviews successfully fetched and cached.' }, { status: 200 });
   } catch (err) {
-    console.error("Failed to refresh reviews:", err);
-    return NextResponse.json({ error: (err as Error).message || "Unknown error" }, { status: 500 });
+    console.error('Failed to refresh reviews:', err);
+    return NextResponse.json({ error: (err as Error).message || 'Unknown error' }, { status: 500 });
   }
 }
