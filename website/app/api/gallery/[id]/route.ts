@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/dbConnect";
 import GalleryItem from "@/models/GalleryItem";
 import mongoose from "mongoose";
@@ -8,9 +8,9 @@ function isValidObjectId(id?: string) {
   return !!id && mongoose.Types.ObjectId.isValid(id);
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
-  const { id } =  params;
+  const { id } = await context.params; // Resolve the promise
   if (!isValidObjectId(id)) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
@@ -24,9 +24,9 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
-  const { id } = await params;
+  const { id } = await context.params; // Resolve the promise
   if (!isValidObjectId(id)) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
@@ -54,14 +54,9 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-/**
- * DELETE: removes DB record and also attempts to delete from Cloudinary.
- * - It will attempt to delete the publicId; even if Cloudinary deletion fails, we still remove DB entry
- *   or respond appropriately depending on your preference. Here we attempt both and report what happened.
- */
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
-  const { id } = await params;
+  const { id } = await context.params; // Resolve the promise
   if (!isValidObjectId(id)) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
@@ -69,7 +64,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
     const item = await GalleryItem.findById(id).lean();
     if (!item) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
 
-    // attempt Cloudinary deletion if we have a publicId
+    // Attempt Cloudinary deletion if we have a publicId
     try {
       initCloudinary();
       const resourceType = ["image", "video", "auto"].includes(item.resourceType || "")
@@ -78,7 +73,7 @@ export async function DELETE(_req: Request, { params }: { params: { id: string }
       await destroyPublicId(item.publicId, resourceType);
     } catch (cloudErr) {
       console.warn("Cloudinary delete failed (continuing to remove DB record):", cloudErr);
-      // continue to delete DB entry anyway
+      // Continue to delete DB entry anyway
     }
 
     const deleted = await GalleryItem.findByIdAndDelete(id).lean();
