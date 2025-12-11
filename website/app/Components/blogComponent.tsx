@@ -54,6 +54,15 @@ export default function BlogSection() {
     setExpandedId((prev) => (prev === id ? null : id || null));
   };
 
+  const getDescription = (post: BlogPost, isExpanded: boolean) => {
+    const content = post.content || post.description || post.excerpt || "";
+    if (isExpanded) {
+      return content; // Show full content when expanded
+    } else {
+      return content.length > 140 ? `${content.slice(0, 140)}...` : content; // Truncate to 140 when collapsed
+    }
+  };
+
   return (
     <section id="blog" className="py-14 px-4 lg:px-0 bg-gradient-to-b from-slate-50 via-white to-slate-50">
       <div className="max-w-6xl mx-auto">
@@ -135,11 +144,7 @@ export default function BlogSection() {
                   )}
 
                   <p className="text-sm text-slate-600 mb-4 flex-1">
-                    {isExpanded
-                      ? post.content || post.excerpt || post.description
-                      : post.excerpt ||
-                        post.description ||
-                        (post.content ? `${post.content.slice(0, 140)}...` : "")}
+                    {getDescription(post, isExpanded)}
                   </p>
 
                   <div className="flex items-center justify-between gap-2 mt-auto">
