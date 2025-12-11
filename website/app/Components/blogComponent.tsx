@@ -5,7 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type BlogPost = {
-  id: string;
+  _id: string;
   title: string;
   slug?: string;
   url?: string;
@@ -14,44 +14,14 @@ type BlogPost = {
   content?: string;
   image?: string;
   tags?: string[];
+  description?: string;
 };
 
-const samplePosts: BlogPost[] = [
-  {
-    id: "sample-1",
-    title: "Roast Profiles: Finding the Sweet Spot",
-    slug: "roast-profiles-finding-the-sweet-spot",
-    date: "2025-09-10",
-    excerpt:
-      "Explore how roasting affects flavor and how to choose a roast profile that highlights tasting notes you love.",
-    content:
-      "Explore how roasting affects flavor and how to choose a roast profile that highlights tasting notes you love. In this post we deep-dive into time-temperature curves and sample cuppings to help you pick the roast profile that suits your palate. You'll also find practical tips for home roasters and what to look for when buying beans.",
-    image: "/post1.jpg",
-    tags: ["Roasting"],
-  },
-  {
-    id: "sample-2",
-    title: "Dialing in Espresso: Step-by-step",
-    slug: "dialing-in-espresso-step-by-step",
-    date: "2025-08-21",
-    excerpt: "A practical guide to dialing espresso — yield, grind, time and how to taste for balance.",
-    content:
-      "A practical guide to dialing espresso — yield, grind, time and how to taste for balance. We'll walk through adjustments, recipes and troubleshooting tips to get consistently great shots at home.",
-    image: "/post2.jpg",
-    tags: ["Espresso"],
-  },
-  {
-    id: "sample-3",
-    title: "Milk Texture for Latte Art",
-    slug: "milk-texture-for-latte-art",
-    date: "2025-07-12",
-    excerpt: "Master microfoam techniques and milk-handling tips for silky lattes and clean pours.",
-    content:
-      "Master microfoam techniques and milk-handling tips for silky lattes and clean pours. We cover positioning, steam wand technique, and how to practice patterns with minimal milk waste.",
-    image: "/post3.jpg",
-    tags: ["Milk"],
-  },
-];
+const getCloudinaryUrl = (publicId?: string) => {
+  const cloudName = "drjpzgjn7";
+  if (!publicId) return undefined;
+  return `https://res.cloudinary.com/${cloudName}/image/upload/w_1000,c_limit,q_auto:good,f_auto,dpr_auto/${publicId}`;
+};
 
 export default function BlogSection() {
   const [posts, setPosts] = useState<BlogPost[] | null>(null);
@@ -66,10 +36,10 @@ export default function BlogSection() {
         const res = await fetch("/api/posts?limit=3");
         if (!res.ok) throw new Error("Network response was not ok");
         const json = await res.json();
-        const data = Array.isArray(json) ? json : json.posts || json.data || [];
-        if (mounted) setPosts((data as BlogPost[]).slice(0, 3));
+        const data = Array.isArray(json) ? json : json.data || json.posts || [];
+        if (mounted) setPosts(data.slice(0, 3));
       } catch (err) {
-        if (mounted) setPosts(samplePosts);
+        setPosts([]);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -85,99 +55,113 @@ export default function BlogSection() {
   };
 
   return (
-    <section id="blog" className="py-12 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50">
-      <div className="max-w-7xl mx-auto">
+    <section id="blog" className="py-14 px-4 lg:px-0 bg-gradient-to-b from-slate-50 via-white to-slate-50">
+      <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-8 gap-6">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-12 gap-6">
           <div>
-            <p className="text-slate-500 uppercase tracking-[0.2em] text-xs font-bold px-4 py-2 bg-white rounded-full border border-slate-200 shadow-sm inline-block">
+            <p className="text-slate-500 uppercase tracking-[0.25em] text-xs font-semibold px-4 py-2 bg-white rounded-full border border-slate-200 shadow-sm inline-block">
               Latest from the Blog
             </p>
-            <h3 className="mt-4 text-3xl lg:text-4xl font-serif text-slate-900 leading-tight font-bold max-w-2xl">
+            <h3 className="mt-5 text-3xl lg:text-4xl font-serif text-slate-900 leading-tight font-bold max-w-2xl">
               Stories and Guides to Elevate Your Coffee Ritual
             </h3>
-            <p className="text-slate-600 mt-3 max-w-xl">
+            <p className="text-slate-600 mt-3 max-w-lg">
               Practical guides, behind-the-scenes stories, and tips from our roasters and baristas.
             </p>
           </div>
-
-          <div className="flex items-center gap-3">
-            <Link
-              href="/blog"
-              className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all duration-300 hover:bg-slate-800 hover:shadow-lg border-2 border-slate-900 hover:border-slate-800"
-            >
-              View all blogs
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
+          <Link
+            href="/blog"
+            className="inline-flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all hover:bg-slate-800 hover:shadow-lg border-2 border-slate-900 hover:border-slate-800"
+          >
+            View all blogs
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
 
-        {/* Posts Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {loading ? (
             <>
-              <div className="h-56 bg-linear-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
-              <div className="h-56 bg-linear-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
-              <div className="h-56 bg-linear-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
+              <div className="h-[330px] bg-gradient-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
+              <div className="h-[330px] bg-gradient-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
+              <div className="h-[330px] bg-gradient-to-br from-slate-100 to-white rounded-2xl animate-pulse" />
             </>
-          )}
+          ) : (posts || []).map((post) => {
+            const postUrl = post.url || (post.slug ? `/blog/${post.slug}` : `/blog/${post._id}`);
+            const isExpanded = expandedId === post._id;
+            const imageUrl = post.image ? getCloudinaryUrl(post.image) : undefined;
+            return (
+              <article
+                key={post._id}
+                className={`group h-full flex flex-col overflow-hidden rounded-2xl border border-slate-200 transition-all duration-300 shadow-xs
+                bg-white hover:shadow-xl hover:border-slate-300`}
+              >
+                <div className="relative w-full aspect-[16/9] overflow-hidden">
+                  {imageUrl ? (
+                    <Image
+                      src={imageUrl}
+                      alt={post.title}
+                      fill
+                      className="object-cover object-center transition-transform duration-500 group-hover:scale-105"
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      priority={true}
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-slate-100 to-white" />
+                  )}
+                  <div className="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-all duration-300" />
+                </div>
 
-          {!loading &&
-            (posts || []).map((post) => {
-              const postUrl = post.url || (post.slug ? `/blog/${post.slug}` : "/blog");
-              const isExpanded = expandedId === post.id;
-              return (
-                <article
-                  key={post.id}
-                  className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300"
-                >
-                  <div className="relative h-44 w-full overflow-hidden">
-                    {post.image ? (
-                      <Image
-                        src={post.image}
-                        alt={post.title}
-                        fill
-                        className="object-cover transition-transform duration-500"
-                      />
-                    ) : (
-                      <div className="h-44 w-full bg-gradient-to-br from-slate-100 to-white" />
+                <div className="flex-1 flex flex-col px-6 pt-4 pb-6">
+                  <div className="flex items-center gap-5 mb-1">
+                    {post.date && (
+                      <div className="text-xs text-slate-500">{new Date(post.date).toLocaleDateString()}</div>
                     )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/30 to-transparent" />
                   </div>
 
-                  <div className="p-5 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-xs text-slate-500">{post.date || ""}</div>
-                      <div className="text-xs text-slate-400 uppercase tracking-wider font-semibold">
-                        {(post.tags || []).slice(0, 1).join(", ") || "Blog"}
-                      </div>
-                    </div>
+                  <h4 className="text-lg font-bold text-slate-900 mb-2">{post.title}</h4>
 
-                    <h4 className="text-lg font-semibold text-slate-900">{post.title}</h4>
-                    <p className="text-sm text-slate-600 leading-relaxed">
-                      {isExpanded ? post.content || post.excerpt : post.excerpt || (post.content ? `${post.content.slice(0, 140)}...` : "")}
-                    </p>
-
-                    <div className="flex items-center justify-between pt-2">
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => toggleExpand(post.id)}
-                          className="text-sm text-slate-700 bg-slate-50 px-3 py-1 rounded-lg border border-slate-100 hover:bg-slate-100 transition"
+                  {post.tags && post.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {post.tags.map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-xs text-slate-700 font-medium ring-1 ring-slate-200"
                         >
-                          {isExpanded ? "Show less" : "Show full"}
-                        </button>
-
-                        <Link href={postUrl} className="text-sm text-slate-900 font-semibold inline-flex items-center">
-                          Read full post <ArrowRight className="w-4 h-4" />
-                        </Link>
-                      </div>
-
-                     
+                          {tag}
+                        </span>
+                      ))}
                     </div>
+                  )}
+
+                  <p className="text-sm text-slate-600 mb-4 flex-1">
+                    {isExpanded
+                      ? post.content || post.excerpt || post.description
+                      : post.excerpt ||
+                        post.description ||
+                        (post.content ? `${post.content.slice(0, 140)}...` : "")}
+                  </p>
+
+                  <div className="flex items-center justify-between gap-2 mt-auto">
+                    <button
+                      onClick={() => toggleExpand(post._id)}
+                      className="text-xs text-slate-700 bg-slate-50 px-3 py-1 rounded-xl border border-slate-200 hover:bg-slate-200 transition"
+                    >
+                      {isExpanded ? "Show less" : "Show full"}
+                    </button>
+
+                    <Link
+                      href={postUrl}
+                      className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white text-xs rounded-xl hover:bg-slate-800 transition border border-slate-900 hover:border-slate-800"
+                      aria-label={`Read full post: ${post.title}`}
+                    >
+                      Read full post <ArrowRight className="w-4 h-4" />
+                    </Link>
                   </div>
-                </article>
-              );
-            })}
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>

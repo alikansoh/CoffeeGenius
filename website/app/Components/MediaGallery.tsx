@@ -21,11 +21,11 @@ type ResolvedMediaItem = {
   poster?: string; // can be a URL or a data:image/svg+xml;utf8,... url
 };
 
-type InputMediaItem = {
+export type InputMediaItem = {
   type?: "image" | "video";
   src: string;
   title: string;
-  description: string;
+  description?: string;
   poster?: string;
 };
 
@@ -35,7 +35,6 @@ const COLORS = {
 
 /**
  * Returns a data URL containing an SVG poster that looks good for video thumbnails.
- * The SVG is simple, scalable, and includes a play-icon and the title text.
  */
 function svgPosterDataUrl(title: string, width = 1280, height = 720) {
   const safeTitle = (title || "Video")
@@ -80,7 +79,6 @@ function svgPosterDataUrl(title: string, width = 1280, height = 720) {
   </svg>
   `.trim();
 
-  // encode and return a data URL
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
@@ -100,50 +98,110 @@ function inferTypeFromSrc(src: string): "image" | "video" | undefined {
   return undefined;
 }
 
-export default function MediaGallery() {
-  const inputMedia: InputMediaItem[] = useMemo(
-    () => [
-      {
-        src: "/gallery1.mp4",
-        title: "Latte Art Mastery",
-        description:
-          "Watch our expert baristas create stunning latte art with precision and care.",
-      },
-      {
-        src: "/gallery2.mp4",
-        title: "Perfect Pour",
-        description: "The art of pouring the perfect espresso shot, every single time.",
-      },
-      {
-        src: "/gallery3.jpg",
-        title: "Fresh Roasted Beans",
-        description:
-          "Carefully selected and roasted to perfection for the ultimate coffee experience.",
-      },
-      {
-        src: "/gallery4.jpg",
-        title: "Artisan Brewing",
-        description: "State-of-the-art equipment meets traditional craftsmanship.",
-      },
-    ],
-    []
-  );
+type Props = {
+  /**
+   * Optional initial items to display. If omitted, the component will fetch from /api/gallery?active=true.
+   * Items are expected to have 'src', optional 'type', 'title' and optional 'description' and 'poster'.
+   */
+  items?: InputMediaItem[] | null;
+  /**
+   * Optional URL to fetch items from (defaults to /api/gallery?active=true)
+   */
+  fetchUrl?: string;
+  /**
+   * Whether to attempt autoplay of videos.
+   */
+  autoplay?: boolean;
+};
+
+export default function MediaGallery({ items = null, fetchUrl = "/api/gallery?active=true", autoplay = true }: Props) {
+  const [fetchedItems, setFetchedItems] = useState<InputMediaItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Decide which source to use: prop items take priority, then fetched items.
+  const sourceItems = items ?? fetchedItems ?? [];
+
+  useEffect(() => {
+    if (items) return; // caller provided items — do not fetch
+    let mounted = true;
+    setLoading(true);
+    setLoadError(null);
+
+    (async () => {
+      try {
+        const res = await fetch(fetchUrl);
+        if (!res.ok) {
+          const txt = await res.text().catch(() => null);
+          throw new Error(`Fetch failed: ${res.status} ${txt ?? ""}`);
+        }
+        const json = await res.json();
+        // normalize API response: try common shapes
+        const dataFromApi = json?.data ?? json?.items ?? json ?? [];
+        // map result to InputMediaItem shape
+        interface ApiItem {
+          url?: string;
+          src?: string;
+          path?: string;
+          publicUrl?: string;
+          public_id?: string;
+          title?: string;
+          name?: string;
+          publicId?: string;
+          description?: string;
+          caption?: string;
+          resourceType?: string;
+          type?: string;
+          poster?: string;
+          thumbnail?: string;
+          tinyThumb?: string;
+        }
+        
+                const normalized: InputMediaItem[] = (Array.isArray(dataFromApi) ? dataFromApi : []).map((it: ApiItem) => {
+          const url = it.url ?? it.src ?? it.path ?? it.publicUrl ?? it.public_id ?? "";
+          const title = it.title ?? it.name ?? it.publicId ?? "";
+          const description = it.description ?? it.caption ?? "";
+          const resourceType = it.resourceType ?? it.type ?? "";
+          const inferredType = resourceType?.startsWith?.("video") ? "video" : inferTypeFromSrc(url);
+          return {
+            src: url,
+            title: title || "Untitled",
+            description: description || "",
+            type: inferredType,
+            poster: it.poster ?? it.thumbnail ?? it.tinyThumb ?? undefined,
+          } as InputMediaItem;
+        });
+
+        if (mounted) setFetchedItems(normalized);
+      } catch (err: unknown) {
+        console.error(err);
+        console.error(err);
+        if (mounted) setLoadError("Failed to load gallery");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [items, fetchUrl]);
 
   // Resolve types and ensure a poster always exists for videos (fallback to SVG data URL)
   const media: ResolvedMediaItem[] = useMemo(() => {
-    return inputMedia.map((item) => {
+    return (sourceItems ?? []).map((item) => {
       const resolvedType = item.type ?? inferTypeFromSrc(item.src);
       const type = (resolvedType ?? "image") as "image" | "video";
-      const poster = type === "video" ? item.poster ?? svgPosterDataUrl(item.title) : undefined;
+      const poster = type === "video" ? item.poster ?? svgPosterDataUrl(item.title || "Video") : undefined;
       return {
         type,
         src: item.src,
-        title: item.title,
-        description: item.description,
+        title: item.title ?? "Untitled",
+        description: item.description ?? "",
         poster,
       };
     });
-  }, [inputMedia]);
+  }, [sourceItems]);
 
   const [index, setIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -152,26 +210,23 @@ export default function MediaGallery() {
 
   const trackRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Array<HTMLVideoElement | null>>([]);
-  // separate refs for thumbnail videos so we can let them autoplay independently
   const thumbVideoRefs = useRef<Array<HTMLVideoElement | null>>([]);
 
-  // thumbnail refs & state
   const thumbsRef = useRef<HTMLDivElement | null>(null);
   const [thumbCanScrollLeft, setThumbCanScrollLeft] = useState(false);
   const [thumbCanScrollRight, setThumbCanScrollRight] = useState(false);
 
-  // used to avoid running first-play attempts more than necessary
   const mountedRef = useRef(false);
 
   const prev = useCallback(() => {
-    if (isTransitioning) return;
+    if (isTransitioning || media.length <= 1) return;
     setIsTransitioning(true);
     setIndex((i) => (i - 1 + media.length) % media.length);
     setTimeout(() => setIsTransitioning(false), 700);
   }, [isTransitioning, media.length]);
 
   const next = useCallback(() => {
-    if (isTransitioning) return;
+    if (isTransitioning || media.length <= 1) return;
     setIsTransitioning(true);
     setIndex((i) => (i + 1) % media.length);
     setTimeout(() => setIsTransitioning(false), 700);
@@ -184,8 +239,9 @@ export default function MediaGallery() {
     setTimeout(() => setIsTransitioning(false), 700);
   };
 
-  // Autoplay behaviour, stable dependency array
+  // Autoplay behaviour
   useEffect(() => {
+    if (!autoplay) return;
     if (isPaused || isTransitioning || isDragging) return;
 
     const current = media[index];
@@ -201,12 +257,11 @@ export default function MediaGallery() {
     if (current.type === "video") {
       const v = videoRefs.current[index];
       if (!v) {
-        // video element not available yet; fallback to timeout
         timeoutId = window.setTimeout(advance, 5000);
       } else {
         try {
           v.muted = true;
-          v.loop = false; // ensure 'ended' fires
+          v.loop = false;
           v.playsInline = true;
           const playPromise = v.play();
           if (playPromise !== undefined) playPromise.catch(() => {});
@@ -226,7 +281,7 @@ export default function MediaGallery() {
     return () => {
       if (typeof timeoutId !== "undefined") clearTimeout(timeoutId);
     };
-  }, [index, isPaused, isTransitioning, isDragging, media.length, media]);
+  }, [index, isPaused, isTransitioning, isDragging, media, autoplay]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -238,7 +293,6 @@ export default function MediaGallery() {
   }, [prev, next]);
 
   useEffect(() => {
-    // Ensure only the active video's playback is running in the main slider; others are paused and reset.
     media.forEach((m, i) => {
       if (m.type !== "video") return;
       const v = videoRefs.current[i];
@@ -247,7 +301,7 @@ export default function MediaGallery() {
       if (i === index) {
         try {
           v.muted = true;
-          v.loop = false; // we rely on 'ended' to advance
+          v.loop = false;
           v.playsInline = true;
           const playPromise = v.play();
           if (playPromise !== undefined) playPromise.catch(() => {});
@@ -261,8 +315,6 @@ export default function MediaGallery() {
     });
   }, [index, media]);
 
-  // On mount: try to start the first video (index 0). Retry a few times until the DOM ref is ready.
-  // This ensures the main slide video plays on page load.
   useEffect(() => {
     if (mountedRef.current) return;
     mountedRef.current = true;
@@ -271,20 +323,17 @@ export default function MediaGallery() {
     if (!firstIsVideo) return;
 
     let attempts = 0;
-    const maxAttempts = 25; // ~2.5s with 100ms interval
+    const maxAttempts = 25;
     const tryPlayFirst = () => {
       attempts += 1;
       const v = videoRefs.current[0];
       if (v) {
         try {
-          // ensure video is muted (required for autoplay in most browsers)
           v.muted = true;
-          v.loop = false; // keep consistent with advance behavior
+          v.loop = false;
           v.playsInline = true;
-          try {
-            const p = v.play();
-            if (p !== undefined) p.catch(() => {});
-          } catch {}
+          const p = v.play();
+          if (p !== undefined) p.catch(() => {});
         } catch {}
         return;
       }
@@ -414,17 +463,12 @@ export default function MediaGallery() {
                 Gallery Highlights
               </p>
             </div>
-            <h2
-              className="text-3xl md:text-4xl font-bold tracking-tight mb-2"
-              style={{ color: COLORS.primary }}
-            >
+            <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-2" style={{ color: COLORS.primary }}>
               Our Gallery
             </h2>
-
             <div className="mb-3">
               <div className="h-1 w-20 rounded-full bg-black shadow-sm" />
             </div>
-
             <p className="text-neutral-500 max-w-md text-sm md:text-base leading-relaxed">
               A curated selection of images and short videos showcasing our craft and moments from the café.
             </p>
@@ -432,11 +476,7 @@ export default function MediaGallery() {
         </div>
 
         {/* Slider */}
-        <div
-          className="relative select-none group"
-          onMouseEnter={() => setIsPaused(true)}
-          onMouseLeave={() => setIsPaused(false)}
-        >
+        <div className="relative select-none group" onMouseEnter={() => setIsPaused(true)} onMouseLeave={() => setIsPaused(false)}>
           <div
             className="relative overflow-hidden rounded-xl shadow-2xl bg-black aspect-video lg:aspect-4/3"
             onTouchStart={onTouchStart}
@@ -448,26 +488,14 @@ export default function MediaGallery() {
               className={`flex h-full transition-transform duration-700 ease-out ${isDragging ? "duration-0" : ""}`}
               style={{
                 width: `${media.length * 100}%`,
-                transform: `translateX(-${index * (100 / media.length)}%)`,
+                transform: `translateX(-${index * (100 / Math.max(1, media.length))}%)`,
               }}
             >
               {media.map((m, i) => (
-                <div
-                  key={i}
-                  className="relative shrink-0 h-full bg-black flex items-center justify-center"
-                  style={{ width: `${100 / media.length}%` }}
-                >
+                <div key={i} className="relative shrink-0 h-full bg-black flex items-center justify-center" style={{ width: `${100 / Math.max(1, media.length)}%` }}>
                   {m.type === "image" ? (
                     <div className="relative w-full h-full">
-                      <Image
-                        src={m.src}
-                        alt={m.title}
-                        fill
-                        className="object-contain"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 768px, 896px"
-                        priority={i === index}
-                        unoptimized
-                      />
+                      <Image src={m.src} alt={m.title} fill className="object-contain" sizes="(max-width: 768px) 100vw, (max-width: 1024px) 768px, 896px" priority={i === index} unoptimized />
                     </div>
                   ) : (
                     <div className="relative w-full h-full flex items-center justify-center">
@@ -479,13 +507,11 @@ export default function MediaGallery() {
                         className="w-full h-full object-contain"
                         playsInline
                         muted
-                        autoPlay
+                        autoPlay={autoplay}
                         preload="auto"
                         poster={m.poster}
-                        // ensure react re-mounts on src change so autoplay attempts are retried
                         key={m.src + "-main"}
                       />
-                      {/* center play badge on main slide only when NOT the active playing slide */}
                       {i !== index && (
                         <div className="absolute z-20 flex items-center justify-center">
                           <div className="flex items-center justify-center w-16 h-16 rounded-full bg-white/12 backdrop-blur-sm border border-white/20 shadow-lg">
@@ -496,7 +522,6 @@ export default function MediaGallery() {
                     </div>
                   )}
 
-                  {/* small type badge (kept top-left) */}
                   <div className="absolute left-4 top-4 z-20">
                     <div className="inline-flex items-center gap-2 bg-black/40 text-white text-[11px] md:text-xs px-2 py-1 rounded-md">
                       {m.type === "video" ? <Video className="w-4 h-4" /> : <ImageIcon className="w-4 h-4" />}
@@ -508,41 +533,23 @@ export default function MediaGallery() {
             </div>
 
             {/* Prev/Next */}
-            <button
-              aria-label="Previous slide"
-              onClick={prev}
-              disabled={isTransitioning}
-              className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <button aria-label="Previous slide" onClick={prev} disabled={isTransitioning || media.length <= 1} className="absolute left-3 md:left-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed">
               <ArrowLeft className="w-5 h-5 text-gray-800" strokeWidth={2.5} />
             </button>
-            <button
-              aria-label="Next slide"
-              onClick={next}
-              disabled={isTransitioning}
-              className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <button aria-label="Next slide" onClick={next} disabled={isTransitioning || media.length <= 1} className="absolute right-3 md:right-5 top-1/2 -translate-y-1/2 z-30 w-12 h-12 md:w-12 md:h-12 rounded-full bg-white/95 backdrop-blur-sm shadow-lg flex items-center justify-center border border-gray-200 transition-all duration-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-white hover:scale-110 focus:outline-none focus:ring-2 focus:ring-gray-400 disabled:opacity-50 disabled:cursor-not-allowed">
               <ArrowRight className="w-5 h-5 text-gray-800" strokeWidth={2.5} />
             </button>
 
             <div className="absolute top-0 left-0 right-0 h-1 bg-white/10">
-              <div
-                className="h-full bg-white transition-all duration-700 ease-out"
-                style={{ width: `${((index + 1) / media.length) * 100}%` }}
-              />
+              <div className="h-full bg-white transition-all duration-700 ease-out" style={{ width: `${((index + 1) / Math.max(1, media.length)) * 100}%` }} />
             </div>
           </div>
 
-          {/* small title + description BELOW the media */}
+          {/* title + description */}
           <div className="mt-4 px-1 md:px-0">
-            <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">
-              {currentItem.title}
-            </h3>
-            <p
-              className="text-neutral-500 max-w-xl text-xs md:text-sm leading-relaxed line-clamp-3"
-              style={{ marginBottom: 0 }}
-            >
-              {currentItem.description}
+            <h3 className="text-lg md:text-xl font-semibold text-gray-900 mb-1">{currentItem?.title}</h3>
+            <p className="text-neutral-500 max-w-xl text-xs md:text-sm leading-relaxed line-clamp-3" style={{ marginBottom: 0 }}>
+              {currentItem?.description}
             </p>
           </div>
 
@@ -551,97 +558,30 @@ export default function MediaGallery() {
             {media.map((_, i) => {
               const isActive = i === index;
               return (
-                <button
-                  key={i}
-                  aria-label={`Go to slide ${i + 1}`}
-                  aria-current={isActive ? "true" : undefined}
-                  onClick={() => goTo(i)}
-                  disabled={isTransitioning}
-                  className={`transition-all duration-300 rounded-full inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 disabled:cursor-not-allowed`}
-                  style={{ width: 44, height: 44 }}
-                >
-                  <span
-                    className={`block transition-all duration-300 ${
-                      isActive
-                        ? "w-8 h-2.5 bg-gray-800 rounded-full"
-                        : "w-2.5 h-2.5 bg-gray-300 rounded-full hover:bg-gray-500"
-                    }`}
-                    aria-hidden="true"
-                  />
+                <button key={i} aria-label={`Go to slide ${i + 1}`} aria-current={isActive ? "true" : undefined} onClick={() => goTo(i)} disabled={isTransitioning} className="transition-all duration-300 rounded-full inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 disabled:cursor-not-allowed" style={{ width: 44, height: 44 }}>
+                  <span className={`block transition-all duration-300 ${isActive ? "w-8 h-2.5 bg-gray-800 rounded-full" : "w-2.5 h-2.5 bg-gray-300 rounded-full hover:bg-gray-500"}`} aria-hidden="true" />
                 </button>
               );
             })}
           </div>
 
-          {/* Thumbnail slider - improved for videos: play thumbnails instead of static posters */}
+          {/* Thumbnail slider */}
           <div className="mt-4 relative">
-            <button
-              aria-label="Scroll thumbnails left"
-              onClick={() => scrollThumbsBy("left")}
-              disabled={!thumbCanScrollLeft}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex"
-            >
+            <button aria-label="Scroll thumbnails left" onClick={() => scrollThumbsBy("left")} disabled={!thumbCanScrollLeft} className="absolute left-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex">
               <ChevronLeft className="w-4 h-4 text-gray-800" />
             </button>
 
-            <div
-              ref={thumbsRef}
-              className="flex gap-3 overflow-x-auto overflow-y-hidden px-2 md:px-8"
-              role="list"
-              aria-label="Gallery thumbnails"
-              style={{
-                scrollbarWidth: "none",
-                msOverflowStyle: "none",
-                WebkitOverflowScrolling: "touch",
-              }}
-            >
+            <div ref={thumbsRef} className="flex gap-3 overflow-x-auto overflow-y-hidden px-2 md:px-8" role="list" aria-label="Gallery thumbnails" style={{ scrollbarWidth: "none", msOverflowStyle: "none", WebkitOverflowScrolling: "touch" }}>
               {media.map((m, i) => (
-                <button
-                  key={i}
-                  data-thumb-index={i}
-                  role="listitem"
-                  onClick={() => goTo(i)}
-                  disabled={isTransitioning}
-                  className={`relative shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${
-                    i === index
-                      ? "ring-2 ring-gray-800 scale-105 shadow-md"
-                      : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"
-                  }`}
-                  style={{ width: "140px", height: "90px" }}
-                  aria-label={`Thumbnail ${i + 1} ${m.title}`}
-                >
+                <button key={i} data-thumb-index={i} role="listitem" onClick={() => goTo(i)} disabled={isTransitioning} className={`relative shrink-0 rounded-lg transition-all duration-300 focus:outline-none ${i === index ? "ring-2 ring-gray-800 scale-105 shadow-md" : "ring-1 ring-gray-300 opacity-70 hover:opacity-95 hover:ring-gray-500"}`} style={{ width: "140px", height: "90px" }} aria-label={`Thumbnail ${i + 1} ${m.title}`}>
                   <div className="relative w-full h-full">
-                    {/* For video thumbnails render a muted, autoplaying, looping <video>.
-                        This makes the thumbnails play directly instead of showing only the poster.
-                        For images we still use Next.js Image. */}
                     {m.type === "video" ? (
-                      <video
-                        ref={(el) => {
-                          thumbVideoRefs.current[i] = el;
-                        }}
-                        src={m.src}
-                        className="w-full h-full object-cover rounded-lg"
-                        playsInline
-                        muted
-                        autoPlay
-                        loop
-                        preload="metadata"
-                        poster={m.poster}
-                        key={m.src + "-thumb"}
-                      />
+                      <video ref={(el) => { thumbVideoRefs.current[i] = el; }} src={m.src} className="w-full h-full object-cover rounded-lg" playsInline muted autoPlay loop preload="metadata" poster={m.poster} key={m.src + "-thumb"} />
                     ) : (
-                      <Image
-                        src={m.src}
-                        alt={m.title}
-                        fill
-                        className="object-cover rounded-lg"
-                        sizes="140px"
-                        unoptimized
-                      />
+                      <Image src={m.src} alt={m.title} fill className="object-cover rounded-lg" sizes="140px" unoptimized />
                     )}
                   </div>
 
-                  {/* center play icon overlay for video thumbnails */}
                   {m.type === "video" && (
                     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
                       <div className="flex items-center justify-center w-11 h-11 rounded-full bg-black/45 border border-white/10 shadow-md">
@@ -650,7 +590,6 @@ export default function MediaGallery() {
                     </div>
                   )}
 
-                  {/* subtle dim on non-active thumbs */}
                   {i !== index && <div className="absolute inset-0 bg-black/18 rounded-lg" />}
 
                   <div className="absolute left-2 bottom-2 z-10 text-white text-xs px-1 py-0.5 rounded-md bg-black/40">
@@ -660,17 +599,24 @@ export default function MediaGallery() {
               ))}
             </div>
 
-            <button
-              aria-label="Scroll thumbnails right"
-              onClick={() => scrollThumbsBy("right")}
-              disabled={!thumbCanScrollRight}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex"
-            >
+            <button aria-label="Scroll thumbnails right" onClick={() => scrollThumbsBy("right")} disabled={!thumbCanScrollRight} className="absolute right-0 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-white/90 shadow-md flex items-center justify-center border border-gray-200 hover:scale-110 transition-transform disabled:opacity-50 md:flex">
               <ChevronRight className="w-4 h-4 text-gray-800" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* loading / error indicator */}
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="rounded-full bg-white/90 px-4 py-2 shadow">Loading…</div>
+        </div>
+      )}
+      {loadError && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="rounded-full bg-red-600/90 text-white px-4 py-2 shadow">{loadError}</div>
+        </div>
+      )}
     </div>
   );
 }
