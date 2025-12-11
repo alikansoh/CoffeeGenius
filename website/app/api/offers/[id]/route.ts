@@ -1,20 +1,18 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Offer from "@/models/Offer";
-import dbConnect from "@/lib/dbConnect"; 
+import dbConnect from "@/lib/dbConnect";
 import mongoose from "mongoose";
 
 function isValidObjectId(id?: string) {
   return !!id && mongoose.Types.ObjectId.isValid(id);
 }
 
-export async function GET(_req: Request, { params }: { params: { id: string } }) {
+export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
 
-  // ensure `id` is resolved if it's provided as a promise-ish value
-  const id = String(await Promise.resolve(params?.id));
-
+  const { id } = await context.params; // Correctly await the params promise
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid ID" }, { status: 400 });
   }
 
   try {
@@ -28,14 +26,12 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   }
 }
 
-export async function PUT(req: Request, { params }: { params: { id: string } }) {
+export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
 
-  // ensure `id` is resolved if it's provided as a promise-ish value
-  const { id } = await params;
-
+  const { id } = await context.params; // Correctly await the params promise
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid ID" }, { status: 400 });
   }
 
   try {
@@ -65,13 +61,12 @@ export async function PUT(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-export async function DELETE(_req: Request, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
 
-  // ensure `id` is resolved if it's provided as a promise-ish value
-  const { id } = await params;
+  const { id } = await context.params; // Correctly await the params promise
   if (!isValidObjectId(id)) {
-    return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Invalid ID" }, { status: 400 });
   }
 
   try {

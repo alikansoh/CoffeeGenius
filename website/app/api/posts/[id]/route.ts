@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 import dbConnect from "@/lib/dbConnect";
 import Post, { type IPost } from "@/models/Post";
 import { initCloudinary, uploadBufferToCloudinary } from "@/lib/cloudinarySrever";
 
 // --- Types ---
-type RouteContext = { params: { id: string } } | Promise<{ params: { id: string } }>;
+type RouteContext = { params: Promise<{ id: string }> };
 
 type FileLike = {
   arrayBuffer: () => Promise<ArrayBuffer>;
@@ -58,11 +58,10 @@ function parseTags(value: unknown): string[] | undefined {
 }
 
 // ---- GET handler ----
-export async function GET(_request: Request, context: RouteContext) {
-  const { params } = await context;
+export async function GET(_request: NextRequest, context: RouteContext) {
+  const { id } = await context.params;
   await dbConnect();
 
-  const { id } = await params;
   let doc: IPost | null = null;
   if (mongoose.isValidObjectId(id)) {
     doc = await Post.findById(id).exec();
@@ -98,11 +97,10 @@ export async function GET(_request: Request, context: RouteContext) {
 }
 
 // ---- PUT handler ----
-export async function PUT(request: Request, context: RouteContext) {
-  const { params } = await context;
+export async function PUT(req: NextRequest, context: RouteContext) {
+  const { id } = await context.params;
   await dbConnect();
 
-  const { id } = params;
   let doc: IPost | null = null;
   if (mongoose.isValidObjectId(id)) {
     doc = await Post.findById(id).exec();
@@ -116,33 +114,21 @@ export async function PUT(request: Request, context: RouteContext) {
   const updateId = doc._id;
 
   try {
-    const contentType = request.headers.get("content-type") ?? "";
+    const contentType = req.headers.get("content-type") ?? "";
     const update: Record<string, unknown> = {};
 
     if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData();
+      const formData = await req.formData();
 
-      const single = formData.get("image") ?? formData.get("file");
-      const multiple = formData.getAll("files") as unknown[];
-      const folder = formData.get("folder")?.toString() ?? "posts";
-
-      const fileCandidate = (multiple && multiple.length > 0 ? multiple[0] : single) as unknown;
-      if (fileCandidate && typeof (fileCandidate as FileLike).arrayBuffer === "function") {
-        const fileLike = fileCandidate as FileLike;
-        const arrayBuffer = await fileLike.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-
-        const resource_type =
-          (fileLike.type && fileLike.type.startsWith("video/")) ||
-          /\.(mp4|mov|webm|avi|m4v|mkv|flv|mts|m2ts|3gp|ogv)$/i.test(fileLike.name ?? "")
-            ? "video"
-            : "image";
-
+      // Process files and other fields
+      const fileCandidate = formData.get("image") as FileLike | null;
+      if (fileCandidate && typeof fileCandidate.arrayBuffer === "function") {
+        const buffer = Buffer.from(await fileCandidate.arrayBuffer());
         initCloudinary();
-        const uploadResult = await uploadBufferToCloudinary(buffer, {
-          folder,
-          resource_type,
-        }) as UploadResult;
+        const uploadResult = (await uploadBufferToCloudinary(buffer, {
+          folder: "posts",
+          resource_type: "image",
+        })) as UploadResult;
 
         update.imagePublicId = uploadResult.public_id;
         if (uploadResult.format) update.imageFormat = uploadResult.format;
@@ -174,7 +160,7 @@ export async function PUT(request: Request, context: RouteContext) {
       const tags = parseTags(tagsValue);
       if (tags) update.tags = tags;
     } else {
-      const rawBody = await request.json().catch(() => null);
+      const rawBody = await req.json().catch(() => null);
       if (!isObject(rawBody)) {
         return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
       }
@@ -261,17 +247,13 @@ export async function PUT(request: Request, context: RouteContext) {
 }
 
 // ---- DELETE handler ----
-export async function DELETE(_request: Request, context: RouteContext) {
-  const { params } = await context;
+export async function DELETE(_request: NextRequest, context: RouteContext) {
+  const { id } = await context.params;
   await dbConnect();
 
-  const { id } = await params;
   let doc: IPost | null = null;
   if (mongoose.isValidObjectId(id)) {
     doc = await Post.findById(id);
-  }
-  if (!doc) {
-    doc = await Post.findOne({ slug: id });
   }
   if (!doc) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
@@ -279,14 +261,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   try {
     await Post.deleteOne({ _id: doc._id });
-    return NextResponse.json(
-      {
-        success: true,
-        message: "Post deleted",
-        slug: typeof doc.slug === "string" ? doc.slug : undefined,
-      },
-      { status: 200 }
-    );
+    return NextResponse.json({ success: true, message: "Post deleted" }, { status: 200 });
   } catch (err) {
     console.error("DELETE /api/posts/[id] error:", err);
     return NextResponse.json({ error: "Failed to delete post" }, { status: 500 });
