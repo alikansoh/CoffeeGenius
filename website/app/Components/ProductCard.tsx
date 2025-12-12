@@ -90,26 +90,27 @@ export default function ProductCard({
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
 
-  // Notes
-  const notesArray = product.notes
-    ? product.notes.split(",").map((n) => n.trim()).filter((n) => n.length > 0)
-    : [];
-  const displayNotes = notesArray.slice(0, 3);
+  // Notes with show more/less handling
+  const allNotes = useMemo(
+    () =>
+      (product.notes || "")
+        .split(",")
+        .map((n) => n.trim())
+        .filter((n) => n.length > 0),
+    [product.notes]
+  );
+  const MIN_SHOWN = 3;
+  const [showAllNotes, setShowAllNotes] = useState(false);
+  const notesToShow = showAllNotes ? allNotes : allNotes.slice(0, MIN_SHOWN);
 
-  // Choose the best card image:
-  // - Prefer first non-video from product.images
-  // - Else use product.img
-  // - Fallback to /test.webp
+  // Image
   const cardImagePublicIdOrUrl = useMemo(() => {
     const gallery = Array.isArray(product.images) ? product.images : [];
     const firstImage = gallery.find((id) => !isVideo(id));
     return firstImage || product.img || "/test.webp";
   }, [product.images, product.img]);
-
-  // Normalize the image source: if it's a Cloudinary publicId, build a URL; if it's already a URL or local path, use as-is
   const cardImageSrc = useMemo(() => {
     if (!cardImagePublicIdOrUrl) return "/test.webp";
-    // If it looks like an HTTP(S) URL or starts with a slash, use as provided
     if (
       typeof cardImagePublicIdOrUrl === "string" &&
       (cardImagePublicIdOrUrl.startsWith("http://") ||
@@ -118,7 +119,6 @@ export default function ProductCard({
     ) {
       return cardImagePublicIdOrUrl;
     }
-    // Otherwise treat it as a Cloudinary publicId
     return getCloudinaryUrl(cardImagePublicIdOrUrl, "medium");
   }, [cardImagePublicIdOrUrl]);
 
@@ -150,14 +150,12 @@ export default function ProductCard({
   // Grinds per size
   const availableGrindsForSize = useMemo(() => {
     if (!size) return [];
-
     if (product.availableSizes && product.availableSizes.length > 0) {
       const sizeData = product.availableSizes.find((s) => s.size === size);
       if (sizeData?.availableGrinds && sizeData.availableGrinds.length > 0) {
         return sizeData.availableGrinds;
       }
     }
-
     return product.availableGrinds && product.availableGrinds.length > 0
       ? product.availableGrinds
       : product.grinds && product.grinds.length > 0
@@ -213,7 +211,7 @@ export default function ProductCard({
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
-  // Navigate using slug if present, else id
+  // Navigation
   const handleCardClick = () => {
     if (!isFlipped) {
       const identifier = product.slug || product.id;
@@ -355,17 +353,32 @@ export default function ProductCard({
               )}
             </div>
 
-            {displayNotes && displayNotes.length > 0 && (
+            {/* Notes/Flavor tags, with show more/less */}
+            {allNotes.length > 0 && (
               <div className="flex flex-wrap gap-2 mb-4">
-                {displayNotes.map((note, idx) => (
+                {notesToShow.map((note, idx) => (
                   <span
-                    key={idx}
+                    key={note + idx}
                     title={note}
                     className="px-3 py-1 text-xs font-semibold rounded-full bg-amber-50 text-amber-800 border border-amber-300 shadow-sm hover:shadow-md transition-shadow duration-150"
                   >
-                    {note}
+                    #{note}
                   </span>
                 ))}
+                {allNotes.length > MIN_SHOWN && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowAllNotes(s => !s);
+                    }}
+                    className="px-3 py-1 text-xs font-semibold rounded-full border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 transition-all"
+                    style={{ height: 32 }}
+                    aria-label={showAllNotes ? "Show less notes" : "Show more notes"}
+                  >
+                    {showAllNotes ? "Show less" : `+${allNotes.length - MIN_SHOWN} more`}
+                  </button>
+                )}
               </div>
             )}
 
