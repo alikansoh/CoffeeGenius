@@ -262,7 +262,7 @@ function ProductCard({
   return (
     <article
       role="listitem"
-      className="shrink-0 w-[82%] sm:w-[46%] md:w-[32%] lg:w-[24%] xl:w-[22%] transition-all duration-500 opacity-100 translate-y-0"
+      className="shrink-0 w-[78%] sm:w-[46%] md:w-[32%] lg:w-[24%] xl:w-[22%] transition-all duration-500 opacity-100 translate-y-0"
       style={{ transitionDelay: `${index * 80}ms` }}
       onMouseEnter={() => isLargeScreen && setIsHovered(true)}
       onMouseLeave={() => isLargeScreen && setIsHovered(false)}
@@ -291,7 +291,7 @@ function ProductCard({
                 src={cardImageSrc}
                 alt={product.name}
                 fill
-                sizes="(max-width: 640px) 82vw, (max-width:  768px) 46vw, (max-width: 1024px) 32vw, (max-width: 1280px) 24vw, 22vw"
+                sizes="(max-width: 640px) 78vw, (max-width:  768px) 46vw, (max-width: 1024px) 32vw, (max-width: 1280px) 24vw, 22vw"
                 className="object-cover transition-transform duration-500 group-hover:scale-105"
                 priority={index < 4}
               />
