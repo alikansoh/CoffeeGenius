@@ -391,8 +391,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
 
   if (error) {
     return (
-      <main className="mt-16 md:mt-10 lg:mt-0 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+<main className="mt-32 md:mt-24 lg:mt-20 sm:mt-16 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mt-20 border-2 border-dashed border-red-200 rounded-3xl bg-red-50 p-16 text-center">
             <h3 className="text-3xl font-bold text-red-900 mb-4">
               Error Loading Products
@@ -414,11 +413,11 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
         }
       `}</style>
 
-      <main className="mt-16 md:mt-10 lg:mt-0 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
+      <main className="mt-10 md:mt-10 lg:mt-0 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="mb-12">
-            <div className="flex items-center gap-2 mb-4">
+            <div className="lg:mt-6 flex items-center gap-2 mb-4">
               <div className="p-2 rounded-lg bg-amber-50">
                 <Coffee size={18} className="text-amber-700" />
               </div>
@@ -473,7 +472,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 Filters
               </span>
               {activeFiltersCount > 0 && (
-                <span className="bg-gray-900 text-white text-xs font-bold px-2. 5 py-1 rounded-full relative z-10">
+                <span className="bg-gray-900 text-white text-xs font-bold px-2.5 py-1 rounded-full relative z-10">
                   {activeFiltersCount}
                 </span>
               )}
@@ -691,7 +690,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                     <button
                       key={r}
                       onClick={() => toggleRoast(r)}
-                      className={`px-5 py-2. 5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
+                      className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
                         selectedRoasts.has(r)
                           ? "bg-gray-900 text-white border-gray-900 shadow-md"
                           : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"

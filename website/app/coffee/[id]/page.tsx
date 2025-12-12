@@ -169,7 +169,7 @@ export function RoastLevelIndicator({ level }: { level?: ExtendedProduct["roastL
 }
 
 function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant }) {
-  const stockStatus = variant?.stockStatus || 
+  const stockStatus = variant?.stockStatus ||
     (stock === 0 ? "out_of_stock" : stock < 10 ? "low_stock" : "in_stock");
 
   if (stockStatus === "out_of_stock") {
@@ -349,33 +349,46 @@ export default function ProductDetailPage() {
         const allResponse = await fetch("/api/coffee");
         if (allResponse.ok) {
           const allData = await allResponse.json();
-          const relatedTransformed: ExtendedProduct[] = allData.data
-            .filter((coffee: ApiCoffee) => coffee._id !== apiCoffee._id)
-            .slice(0, 4)
-            .map((coffee: ApiCoffee) => {
-              const relatedPrices: Record<string, number> = {};
-              if (coffee.availableSizes && coffee.availableSizes.length > 0) {
-                coffee.availableSizes.forEach((sizeObj: SizePrice) => {
-                  relatedPrices[sizeObj.size] = sizeObj.price;
-                });
-              } else {
-                relatedPrices["250g"] = coffee.minPrice;
-              }
 
-              return {
-                id: coffee._id || coffee.slug,
-                slug: coffee. slug,
-                name: coffee.name,
-                origin: coffee.origin,
-                notes: coffee.notes || "",
-                price: coffee.minPrice,
-                prices: relatedPrices,
-                img: coffee.img,
-                roastLevel: coffee.roastLevel,
-                availableGrinds: coffee.availableGrinds,
-                bestSeller: coffee. bestSeller,
-              };
-            });
+          // new logic:
+          // prefer items with the same roast level as the current product,
+          // take up to 4. If there aren't enough same-roast items, fill from others.
+          const others: ApiCoffee[] = allData.data.filter((coffee: ApiCoffee) => coffee._id !== apiCoffee._id);
+          const sameRoast = others.filter((c) => c.roastLevel === apiCoffee.roastLevel);
+          let selectedForRelated: ApiCoffee[] = sameRoast.slice(0, 4);
+
+          if (selectedForRelated.length < 4) {
+            const needed = 4 - selectedForRelated.length;
+            const additional = others
+              .filter((c) => !selectedForRelated.some((s) => s._id === c._id))
+              .slice(0, needed);
+            selectedForRelated = [...selectedForRelated, ...additional];
+          }
+
+          const relatedTransformed: ExtendedProduct[] = selectedForRelated.map((coffee: ApiCoffee) => {
+            const relatedPrices: Record<string, number> = {};
+            if (coffee.availableSizes && coffee.availableSizes.length > 0) {
+              coffee.availableSizes.forEach((sizeObj: SizePrice) => {
+                relatedPrices[sizeObj.size] = sizeObj.price;
+              });
+            } else {
+              relatedPrices["250g"] = coffee.minPrice;
+            }
+
+            return {
+              id: coffee._id || coffee.slug,
+              slug: coffee._slug,
+              name: coffee.name,
+              origin: coffee.origin,
+              notes: coffee.notes || "",
+              price: coffee.minPrice,
+              prices: relatedPrices,
+              img: coffee.img,
+              roastLevel: coffee.roastLevel,
+              availableGrinds: coffee.availableGrinds,
+              bestSeller: coffee.bestSeller,
+            } as ExtendedProduct;
+          });
 
           setRelatedProducts(relatedTransformed);
         }
@@ -610,7 +623,7 @@ export default function ProductDetailPage() {
 
       <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50">
         <div className="bg-white border-b border-gray-100">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-3 sm:py-4 md:py-4">
             <button
               onClick={() => router.push("/coffee")}
               className="inline-flex items-center gap-2 cursor-pointer text-gray-600 hover:text-gray-900 font-semibold transition-colors group text-sm sm:text-base"
@@ -625,15 +638,15 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12">
-          <div className="lg:hidden mb-4 sm:mb-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-6 sm:py-8 md:py-12 lg:py-12">
+          <div className="md:hidden mb-4 sm:mb-6">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <MapPin size={14} className="text-amber-700" />
               <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">
                 {product. origin}
               </p>
               {product.bestSeller && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold shadow-md">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#8b5e3c] text-white text-[10px] font-bold shadow-md">
                   <Star size={10} className="fill-white" />
                   <span>Best Seller</span>
                 </span>
@@ -656,11 +669,11 @@ export default function ProductDetailPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 md:gap-12 lg:gap-12">
             <div className="space-y-3 sm:space-y-4">
               <div className="relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg sm:shadow-xl">
                 {product.bestSeller && (
-                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1. 5 px-3 py-1. 5 rounded-full bg-amber-900 text-white text-xs font-bold shadow-lg">
+                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1. 5 px-3 py-1. 5 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-lg">
                     <Star size={14} className="fill-white" />
                     <span>Best Seller</span>
                   </div>
@@ -929,14 +942,14 @@ export default function ProductDetailPage() {
             </div>
 
             <div className="space-y-4 sm:space-y-6">
-              <div className="hidden lg:block">
+              <div className="hidden md:block">
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <MapPin size={16} className="text-amber-700" />
                   <p className="text-sm font-bold text-amber-700 uppercase tracking-wide">
                     {product.origin}
                   </p>
                   {product.bestSeller && (
-                    <span className="inline-flex items-center gap-1. 5 px-3 py-1 rounded-full bg-amber-900 text-white text-xs font-bold shadow-md">
+                    <span className="inline-flex items-center gap-1. 5 px-3 py-1 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-md">
                       <Star size={12} className="fill-white" />
                       <span>Best Seller</span>
                     </span>
@@ -1180,7 +1193,7 @@ export default function ProductDetailPage() {
                     className="group bg-white rounded-xl cursor-pointer sm:rounded-2xl border-2 border-gray-100 overflow-hidden hover:border-gray-900 hover:shadow-lg transition-all text-left relative"
                   >
                     {p.bestSeller && (
-                      <div className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-500 text-white text-[10px] font-bold shadow-md">
+                      <div className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#8b5e3c] text-white text-[10px] font-bold shadow-md">
                         <Star size={10} className="fill-white" />
                         <span>Best</span>
                       </div>
