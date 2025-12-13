@@ -377,7 +377,7 @@ export default function ProductDetailPage() {
 
             return {
               id: coffee._id || coffee.slug,
-              slug: coffee._slug,
+              slug: coffee.slug,
               name: coffee.name,
               origin: coffee.origin,
               notes: coffee.notes || "",
