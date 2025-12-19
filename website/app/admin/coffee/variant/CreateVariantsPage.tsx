@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { getCloudinaryUrl } from "@/app/utils/cloudinary";
 
-type SizeOption = "250g" | "1kg";
+type SizeOption = string;
 type GrindOption = "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
 
 interface CoffeeItem {
@@ -38,7 +38,7 @@ interface ServerVariant {
   _id?: string;
   coffeeId?: string | { _id: string; [key: string]: unknown };
   sku?: string;
-  size?: SizeOption;
+  size?: string;
   grind?: GrindOption;
   price?: number;
   stock?: number;
@@ -50,7 +50,9 @@ interface VariantFormData {
   tempId?: string; // client-only id for unsaved variants
   sku?: string;
   useAutoSku?: boolean; // whether SKU is auto-generated and should update when size/grind change
-  size: SizeOption;
+  size: string;
+  amount: number;
+  unit: 'g' | 'kg';
   grind: GrindOption;
   price: number;
   stock: number;
@@ -58,7 +60,6 @@ interface VariantFormData {
   isDirty?: boolean;
 }
 
-const SIZES: SizeOption[] = ["250g", "1kg"];
 const GRINDS: { value: GrindOption; label: string }[] = [
   { value: "whole-bean", label: "Whole Bean" },
   { value: "espresso", label: "Espresso" },
@@ -67,9 +68,9 @@ const GRINDS: { value: GrindOption; label: string }[] = [
   { value: "aeropress", label: "AeroPress" },
 ];
 
-const DEFAULT_PRICES: Record<SizeOption, number> = {
-  "250g": 14.99,
-  "1kg": 48.99,
+const DEFAULT_PRICES: Record<string, number> = {
+  "g": 14.99,
+  "kg": 48.99,
 };
 
 function Toast({ message, type, onClose }: { message: string; type: "error" | "success"; onClose: () => void }) {
@@ -137,6 +138,14 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     return getCloudinaryUrl(idOrUrl, preset);
   };
 
+  const parseSize = useCallback((size: string) => {
+    const match = size.match(/^(\d+(?:\.\d+)?)(g|kg)$/i);
+    if (match) {
+      return { amount: parseFloat(match[1]), unit: match[2].toLowerCase() as 'g'|'kg' };
+    }
+    return { amount: 250, unit: 'g' as 'g'|'kg' };
+  }, []);
+
   useEffect(() => {
     let mounted = true;
     const fetchCoffees = async () => {
@@ -188,20 +197,30 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
   /**
    * SKU helpers
+   *
+   * FIX: use parseSize to reliably extract amount + unit and prevent duplicated "kg"
+   * when variant.size might contain unexpected characters or decimal parts.
    */
   const generateBaseSku = useCallback(
-    (variant: { size: SizeOption; grind: GrindOption }) => {
+    (variant: { size: string; grind: GrindOption }) => {
       const coffeeCode = selectedCoffee ? selectedCoffee.name.split(" ")[0].toUpperCase().slice(0, 3) : "XXX";
-      const sizeCode = variant.size === "250g" ? "250G" : "1KG";
+
+      // Use parseSize to reliably extract numeric amount and unit (g/kg).
+      // Then format amount string: remove trailing zeros for decimals, keep integers clean.
+      const { amount, unit } = parseSize(variant.size);
+      const amtStr =
+        Number.isFinite(amount) && Number.isInteger(amount) ? String(amount) : String(amount).replace(/\.?0+$/, "");
+      const sizeCode = `${amtStr}${unit}`.toUpperCase();
+
       const grindCode = variant.grind.split("-").map((w) => w[0].toUpperCase()).join("");
       return `${coffeeCode}-${sizeCode}-${grindCode}`;
     },
-    [selectedCoffee]
+    [selectedCoffee, parseSize]
   );
 
   // existingSkus set should exclude the variant being generated (pass its tempId or id in exclude)
   const generateUniqueSku = useCallback(
-    (variant: { size: SizeOption; grind: GrindOption }, existingSkus: Set<string>, exclude?: string) => {
+    (variant: { size: string; grind: GrindOption }, existingSkus: Set<string>, exclude?: string) => {
       const base = generateBaseSku(variant);
       let idx = 1;
       let sku = "";
@@ -233,14 +252,19 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         const copy = [...prev];
         const variant = { ...copy[index] };
 
-        if (field === "size") {
-          const newSize = value as SizeOption;
-          const currentPrice = variant.price;
+        if (field === "amount") {
+          const newAmount = typeof value === "number" ? value : parseFloat(String(value || "0"));
+          variant.amount = newAmount;
+          variant.size = `${newAmount}${variant.unit}`;
 
-          if (Math.abs(currentPrice - DEFAULT_PRICES[variant.size]) < 0.01) {
-            variant.price = DEFAULT_PRICES[newSize];
+          if (variant.useAutoSku ?? true) {
+            const existingSkus = computeExistingSkus(variant);
+            variant.sku = generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus, variant.id ?? variant.tempId);
           }
-          variant.size = newSize;
+        } else if (field === "unit") {
+          const newUnit = value as 'g'|'kg';
+          variant.unit = newUnit;
+          variant.size = `${variant.amount}${newUnit}`;
 
           if (variant.useAutoSku ?? true) {
             const existingSkus = computeExistingSkus(variant);
@@ -304,8 +328,10 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
       const newVariant: VariantFormData = {
         tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
         size: "250g",
+        amount: 250,
+        unit: 'g',
         grind: "whole-bean",
-        price: DEFAULT_PRICES["250g"],
+        price: DEFAULT_PRICES["g"] ?? 14.99,
         stock: 0,
         error: null,
         isDirty: true,
@@ -428,6 +454,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     if (!Number.isFinite(variant.stock) || variant.stock < 0) {
       return `Variant ${idx + 1}: Invalid stock`;
     }
+    if (!Number.isFinite(variant.amount) || variant.amount <= 0) {
+      return `Variant ${idx + 1}: Invalid amount`;
+    }
     return null;
   }, []);
 
@@ -452,12 +481,15 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         });
 
         if (coffeeVariants.length === 0) {
+          const { amount, unit } = parseSize("250g");
           setVariants([
             {
               tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
               size: "250g",
+              amount,
+              unit,
               grind: "whole-bean",
-              price: DEFAULT_PRICES["250g"],
+              price: DEFAULT_PRICES["g"] ?? 14.99,
               stock: 0,
               error: null,
               isDirty: false,
@@ -466,31 +498,39 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
             },
           ]);
         } else {
-          const mapped = coffeeVariants.map((sv) => ({
-            id: sv.id || sv._id,
-            sku: sv.sku,
-            useAutoSku: true, // default to auto for fetched variants as well
-            size: (sv.size === "1kg" || sv.size === "250g" ? sv.size : "250g") as SizeOption,
-            grind: (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(sv.grind || "")
-              ? (sv.grind as GrindOption)
-              : "whole-bean"),
-            price: sv.price ?? DEFAULT_PRICES[(sv.size === "1kg" ? "1kg" : "250g") as SizeOption],
-            stock: sv.stock ?? 0,
-            error: null,
-            isDirty: false,
-          }));
+          const mapped = coffeeVariants.map((sv) => {
+            const { amount, unit } = parseSize(sv.size || "250g");
+            return {
+              id: sv.id || sv._id,
+              sku: sv.sku,
+              useAutoSku: true, // default to auto for fetched variants as well
+              size: sv.size || "250g",
+              amount,
+              unit,
+              grind: (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(sv.grind || "")
+                ? (sv.grind as GrindOption)
+                : "whole-bean"),
+              price: sv.price ?? (DEFAULT_PRICES[unit] ?? 14.99),
+              stock: sv.stock ?? 0,
+              error: null,
+              isDirty: false,
+            };
+          });
 
           setVariants(mapped);
         }
         setShowCoffeeSelector(false);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch variants");
+        const { amount, unit } = parseSize("250g");
         setVariants([
           {
             tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
             size: "250g",
+            amount,
+            unit,
             grind: "whole-bean",
-            price: DEFAULT_PRICES["250g"],
+            price: DEFAULT_PRICES["g"] ?? 14.99,
             stock: 0,
             error: null,
             isDirty: false,
@@ -502,7 +542,7 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         setIsFetchingVariants(false);
       }
     },
-    [generateUniqueSku, sendCookies]
+    [generateUniqueSku, sendCookies, parseSize]
   );
 
   useEffect(() => {
@@ -625,14 +665,15 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
           }
           const id = serverVariant._id || serverVariant.id || previous.id;
           const sku = serverVariant.sku || previous.sku;
-          const size = (serverVariant.size === "1kg" || serverVariant.size === "250g" ? serverVariant.size : previous.size) as SizeOption;
+          const size = serverVariant.size || previous.size;
+          const { amount, unit } = parseSize(size);
           const grind = (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(serverVariant.grind || "")
             ? (serverVariant.grind as GrindOption)
             : previous.grind);
           const price = serverVariant.price ?? previous.price;
           const stock = serverVariant.stock ?? previous.stock;
           // Keep auto by default after save
-          return { id, sku, size, grind, price, stock, isDirty: false, error: null, useAutoSku: true };
+          return { id, sku, size, amount, unit, grind, price, stock, isDirty: false, error: null, useAutoSku: true };
         })
       );
 
@@ -644,7 +685,7 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     } finally {
       setIsLoading(false);
     }
-  }, [generateUniqueSku, selectedCoffeeId, sendCookies, validateVariant]);
+  }, [generateUniqueSku, selectedCoffeeId, sendCookies, validateVariant, parseSize]);
 
   const formatPrice = useCallback((p: number) => {
     return Number.isFinite(p) ? `£${p.toFixed(2)}` : "-";
@@ -740,7 +781,7 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                         onClick={() => setSearchQuery("")}
                         className="absolute right-3 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-100 rounded-lg transition"
                       >
-                        <X size={16} className="text-gray-400" />
+                        <X size={16} />
                       </button>
                     )}
                   </div>
@@ -913,7 +954,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                                 {/* SKU display */}
                                 <div className="flex items-center gap-2">
                                   <span className="font-mono text-sm sm:text-base">{sku}</span>
-                                  <span className="ml-2 px-2 py-1 text-xs rounded-full border-2 border-gray-200 bg-gray-50">Auto</span>
+                                  <span className="ml-2 px-2 py-1 text-xs rounded-full border-2 border-gray-200 bg-gray-50">
+                                    {variant.useAutoSku ? "Auto" : "Manual"}
+                                  </span>
                                 </div>
                               </div>
                               <div className="text-xs text-gray-600 mt-1">
@@ -940,21 +983,57 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                             <div>
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Size</label>
-                              <div className="relative">
-                                <select
-                                  value={variant.size}
-                                  onChange={(e) => handleVariantChange(i, "size", e.target.value as SizeOption)}
-                                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent appearance-none cursor-pointer font-medium"
-                                >
-                                  {SIZES.map((s) => (
-                                    <option key={s} value={s}>
-                                      {s}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Amount & Unit</label>
+
+                              {/* Improved amount + unit control:
+                                  - Fixed width input for amount (keeps layout tidy)
+                                  - Clear segmented control for unit (g / kg)
+                                  - Unit buttons update the variant immediately
+                                  - Input step toggles depending on unit */}
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="number"
+                                  step={variant.unit === "g" ? "1" : "0.01"}
+                                  min={variant.unit === "g" ? 1 : 0.01}
+                                  value={variant.amount}
+                                  onChange={(e) => {
+                                    const parsed = variant.unit === "g" ? parseInt(e.target.value || "0", 10) : parseFloat(e.target.value || "0");
+                                    handleVariantChange(i, "amount", Number.isNaN(parsed) ? 0 : parsed);
+                                  }}
+                                  className="w-[120px] px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
+                                  aria-label={`Amount for variant ${i + 1}`}
+                                />
+
+                                <div className="inline-flex items-center rounded-xl bg-gray-100 p-1 border border-gray-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVariantChange(i, "unit", "g")}
+                                    aria-pressed={variant.unit === "g"}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                                      variant.unit === "g"
+                                        ? "bg-white shadow-sm text-gray-900"
+                                        : "text-gray-600 hover:bg-transparent"
+                                    }`}
+                                  >
+                                    g
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleVariantChange(i, "unit", "kg")}
+                                    aria-pressed={variant.unit === "kg"}
+                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
+                                      variant.unit === "kg"
+                                        ? "bg-white shadow-sm text-gray-900"
+                                        : "text-gray-600 hover:bg-transparent"
+                                    }`}
+                                  >
+                                    kg
+                                  </button>
+                                </div>
                               </div>
+                              <p className="mt-2 text-xs text-gray-500">
+                                Use g for single-serve / small bags. Switch to kg for larger bags. Input step adjusts automatically.
+                              </p>
                             </div>
 
                             <div>

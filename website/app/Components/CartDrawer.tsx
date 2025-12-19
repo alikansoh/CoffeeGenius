@@ -1,10 +1,12 @@
 "use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { X, Trash, Lock, ShoppingBag, Coffee as CoffeeIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useCart from "../store/CartStore";
+import { getCloudinaryUrl } from "@/app/utils/cloudinary";
 
 const COLORS = {
   primary: "#111827",
@@ -43,12 +45,12 @@ export default function CartDrawer() {
 
   useEffect(() => {
     if (isOpen) {
-      document.body.style. overflow = "hidden";
+      document.body.style.overflow = "hidden";
     } else {
-      document.body. style. overflow = "";
+      document.body.style.overflow = "";
     }
     return () => {
-      document. body.style.overflow = "";
+      document.body.style.overflow = "";
     };
   }, [isOpen]);
 
@@ -68,6 +70,15 @@ export default function CartDrawer() {
   const equipmentItems = mounted ? getItemsByType("equipment") : [];
   const shipping = totalPrice > 30 ? 0 : 4.99;
   const grandTotal = totalPrice + shipping;
+
+  // helper to normalize cloudinary publicId or URL for display
+  const getImageSrc = (idOrUrl?: string, preset: "thumbnail" | "medium" = "thumbnail") => {
+    if (!idOrUrl) return "/test.webp";
+    if (idOrUrl.startsWith("http://") || idOrUrl.startsWith("https://") || idOrUrl.startsWith("/")) {
+      return idOrUrl;
+    }
+    return getCloudinaryUrl(idOrUrl, preset);
+  };
 
   // ✅ Show loading state during SSR/hydration
   if (!mounted) {
@@ -218,7 +229,7 @@ export default function CartDrawer() {
                           <div className="w-16 h-16 rounded-lg bg-white overflow-hidden flex-shrink-0 border border-gray-200">
                             {item.img ?  (
                               <Image
-                                src={item.img}
+                                src={getImageSrc(item.img, "thumbnail")}
                                 alt={item.name}
                                 width={64}
                                 height={64}
@@ -277,7 +288,7 @@ export default function CartDrawer() {
                               <button
                                 type="button"
                                 onClick={() => removeItem(item.id)}
-                                className="p-1. 5 text-gray-400 hover:text-red-600 rounded-lg focus:outline-none"
+                                className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg focus:outline-none"
                                 aria-label={`Remove ${item.name}`}
                                 title="Remove"
                               >
@@ -309,7 +320,7 @@ export default function CartDrawer() {
                           <div className="w-16 h-16 rounded-lg bg-white overflow-hidden flex-shrink-0 border border-gray-200">
                             {item.img ? (
                               <Image
-                                src={item.img}
+                                src={getImageSrc(item.img, "thumbnail")}
                                 alt={item.name}
                                 width={64}
                                 height={64}
@@ -325,11 +336,11 @@ export default function CartDrawer() {
                               <div>
                                 <div
                                   className="text-sm font-medium line-clamp-2"
-                                  style={{ color: COLORS. primary }}
+                                  style={{ color: COLORS.primary }}
                                 >
                                   {item.name}
                                 </div>
-                                {item.metadata?. brand && (
+                                {item.metadata?.brand && (
                                   <div className="mt-1 text-xs text-gray-500">
                                     {item.metadata.brand}
                                   </div>
@@ -358,7 +369,7 @@ export default function CartDrawer() {
                                 <button
                                   type="button"
                                   aria-label={`Increase quantity for ${item.name}`}
-                                  onClick={() => updateQuantity(item.id, item. quantity + 1)}
+                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
                                   disabled={typeof item.stock === 'number' && item.stock > 0 && item.quantity >= item.stock}
                                   className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
@@ -413,7 +424,7 @@ export default function CartDrawer() {
                   <span className="text-base font-semibold" style={{ color: COLORS.primary }}>
                     Total
                   </span>
-                  <span className="text-lg font-bold" style={{ color: COLORS. primary }}>
+                  <span className="text-lg font-bold" style={{ color: COLORS.primary }}>
                     {formatPrice(grandTotal)}
                   </span>
                 </div>

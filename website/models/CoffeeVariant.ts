@@ -3,7 +3,7 @@ import mongoose, { Schema, Document, Types } from "mongoose";
 export interface ICoffeeVariant extends Document {
   coffeeId: Types.ObjectId;
   sku: string;
-  size: "250g" | "1kg";
+  size: string;
   grind: "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
   price: number;
   stock: number;
@@ -30,7 +30,6 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
     },
     size: {
       type: String,
-      enum: ["250g", "1kg"],
       required: true,
     },
     grind: {
@@ -62,7 +61,7 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
 CoffeeVariantSchema.index({ coffeeId: 1, size: 1, grind: 1 }, { unique: true });
 
 // Index for fast SKU lookup
-CoffeeVariantSchema. index({ sku: 1 });
+CoffeeVariantSchema.index({ sku: 1 });
 
 // Prevent model recompilation in Next.js dev mode
 export default mongoose.models.CoffeeVariant ||
