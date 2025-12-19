@@ -35,7 +35,6 @@ interface EquipmentData {
   notes: string;
   description: string;
   specs: { key: string; value: string }[];
-  bestSeller: boolean;
 }
 
 interface PendingFile {
@@ -175,7 +174,6 @@ export default function AdminEditEquipmentPage() {
     notes: "",
     description: "",
     specs: [],
-    bestSeller: false,
   });
 
   const [originalData, setOriginalData] = useState<EquipmentData | null>(null);
@@ -252,7 +250,6 @@ export default function AdminEditEquipmentPage() {
         notes: e.notes || "",
         description: e.description || "",
         specs: specsArray,
-        bestSeller: e.bestSeller || false,
       };
 
       // Choose main and order images with detected map
@@ -519,7 +516,6 @@ export default function AdminEditEquipmentPage() {
           if (s.key) acc[s.key] = s.value;
           return acc;
         }, {}),
-        bestSeller: formData.bestSeller,
       };
 
       const res = await fetch(`/api/equipment/${encodeURIComponent(formData._id)}`, {
@@ -704,32 +700,7 @@ export default function AdminEditEquipmentPage() {
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <label className="flex items-center gap-3 cursor-pointer group">
-                    <div className="relative">
-                      <input
-                        type="checkbox"
-                        checked={formData.bestSeller}
-                        onChange={(e) => setField("bestSeller", e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-12 h-7 bg-gray-300 rounded-full peer peer-checked:bg-gray-900 transition-all duration-300" />
-                      <div className="absolute left-1 top-1 w-5 h-5 bg-white rounded-full transition-transform duration-300 peer-checked:translate-x-5 shadow-md" />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Star
-                        size={18}
-                        className={`transition-all ${
-                          formData.bestSeller ? "text-yellow-500 fill-yellow-500" : "text-gray-400"
-                        }`}
-                      />
-                      <span className="text-sm font-bold text-gray-900">Mark as Best Seller</span>
-                    </div>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-2 ml-15">
-                    This equipment will be featured in the best sellers section
-                  </p>
-                </div>
+                
               </div>
             </section>
 

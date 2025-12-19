@@ -94,7 +94,7 @@ function EquipmentCard({
         )}
 
         <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-          <div className="text-2xl font-bold text-gray-900">{formatPriceGBP(product.price)}</div>
+          <div className="text-xl font-bold text-gray-900">{formatPriceGBP(product.price)}</div>
           <div className="flex gap-2">
             <button
               onClick={(e) => {
@@ -105,7 +105,6 @@ function EquipmentCard({
                 added ? "opacity-80" : ""
               }`}
             >
-              <ShoppingCart className="w-4 h-4" />
               <span className="sm:inline">{added ? "Added" : "Add To Cart"}</span>
             </button>
           </div>
@@ -416,7 +415,7 @@ export default function EquipmentGalleryPage() {
       alert("This item is out of stock.");
       return;
     }
-
+  
     const cartItem: Omit<CartItem, "quantity"> = {
       id: p.id,
       productType: "equipment",
@@ -424,13 +423,13 @@ export default function EquipmentGalleryPage() {
       variantId: p.id,
       sku: p.slug ?? p.id,
       name: p.name,
-      price: Math.round((p.price ?? 0) * 100), // store in pence
+      price: Number(p.price ?? 0), // fixed: store pounds decimal!
       img: p.img ?? "/test.webp",
       size: undefined as unknown as string,
       grind: undefined as unknown as string,
       stock: p.stock ?? 0,
     };
-
+  
     addItem(cartItem, 1);
     setAddingMap((s) => ({ ...s, [p.id]: true }));
     setTimeout(() => setAddingMap((s) => ({ ...s, [p.id]: false })), 1200);

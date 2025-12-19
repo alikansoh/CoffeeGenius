@@ -185,6 +185,12 @@ export default function EquipmentDetailPage() {
     return [];
   }, [product]);
 
+  // Helper: pick image for Cart (use the first media item or fallback)
+  const getPrimaryImageForCart = () => {
+    if (mediaItems.length > 0) return mediaItems[0];
+    return "/test.webp";
+  };
+
   const isVideoId = useCallback(
     (id: string) => {
       if (!id) return false;
@@ -206,10 +212,27 @@ export default function EquipmentDetailPage() {
 
   const currentMedia = allDisplayMedia[selectedImageIndex] ?? allDisplayMedia[0] ?? null;
 
+  // Normalize price: always return a number in pounds (e.g. 12.5)
+  const normalizePriceToPounds = useCallback((p?: number, pence?: number) => {
+    if (typeof pence === "number") {
+      return pence / 100;
+    }
+    if (typeof p === "number") {
+      // Heuristic: if the value looks like pence (e.g. > 1000), treat as pence
+      if (p > 1000) return p / 100;
+      return p;
+    }
+    return 0;
+  }, []);
+
   const price = useMemo(() => {
     if (!product) return 0;
-    return product.price ?? product.minPrice ?? (product.pricePence ? product.pricePence / 100 : 0);
-  }, [product]);
+    // prefer explicit pence fields
+    const p = normalizePriceToPounds(product.price, product.pricePence);
+    if (p > 0) return p;
+    const min = normalizePriceToPounds(product.minPrice, product.minPricePence);
+    return min;
+  }, [product, normalizePriceToPounds]);
 
   const stock = product?.totalStock ?? 0;
   const isOutOfStock = stock === 0;
@@ -233,19 +256,23 @@ export default function EquipmentDetailPage() {
 
     const cartItem = {
       id: product._id || product.slug,
-      productType: "equipment",
+      productType: "equipment" as const,
       productId: product._id || product.slug,
       variantId: product._id || product.slug,
       name: `${product.name} ${product.brand ? `— ${product.brand}` : ""}`,
-      price,
-      img: product.imgUrl || (product.imagesUrls && product.imagesUrls[0]) || "/test.webp",
+      // fixed: normalized resolved image url (will work for both url/publicId)
+      img: resolveImageUrl(getPrimaryImageForCart(), "thumbnail"),
+      price: Number(price) || 0,
       size: undefined,
       grind: undefined,
       sku: product._id || product.slug,
       stock,
+      metadata: {
+        brand: product.brand,
+        category: product.category,
+      },
     };
 
-    // @ts-expect-error: store typing differs from this ad-hoc cart item shape on purpose
     addItem(cartItem, quantity);
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 2000);
@@ -331,6 +358,13 @@ export default function EquipmentDetailPage() {
       </div>
     );
   }
+
+  // helper used when rendering related products - keep consistent normalization
+  const formatRelatedPrice = (p: ApiEquipment) => {
+    const rp = normalizePriceToPounds(p.price, p.pricePence);
+    if (rp > 0) return rp;
+    return normalizePriceToPounds(p.minPrice, p.minPricePence);
+  };
 
   return (
     <>
@@ -645,9 +679,9 @@ export default function EquipmentDetailPage() {
               </div>
 
               {product.notes && (
-                <div className="bg-amber-50 rounded-xl p-5 border-l-4 border-amber-400">
-                  <h4 className="font-bold mb-2 text-amber-900">Important Note</h4>
-                  <p className="text-sm text-amber-800 leading-relaxed">{product.notes}</p>
+                <div className="bg-gray-100 rounded-xl p-5 border-l-4 border-black">
+                  <h4 className="font-bold mb-2">Important Note</h4>
+                  <p className="text-sm  leading-relaxed">{product.notes}</p>
                 </div>
               )}
 
@@ -774,8 +808,7 @@ export default function EquipmentDetailPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {relatedProducts.map((relatedProduct) => {
-                  const relatedPrice =
-                    relatedProduct.price ?? relatedProduct.minPrice ?? (relatedProduct.pricePence ? relatedProduct.pricePence / 100 : 0);
+                  const relatedPrice = formatRelatedPrice(relatedProduct);
                   const relatedImg = relatedProduct.imgUrl || (relatedProduct.imagesUrls && relatedProduct.imagesUrls[0]);
                   const relatedStock = relatedProduct.totalStock ?? 0;
 
@@ -876,4 +909,4 @@ export default function EquipmentDetailPage() {
       )}
     </>
   );
-}
+} 
