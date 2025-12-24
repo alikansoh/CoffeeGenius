@@ -7,7 +7,7 @@ import {
   CardElement,
   PaymentRequestButtonElement,
 } from '@stripe/react-stripe-js';
-import type { PaymentRequest } from '@stripe/stripe-js';
+import type { PaymentRequest, ConfirmCardPaymentOptions } from '@stripe/stripe-js';
 import useCart from '@/app/store/CartStore';
 import { useRouter } from 'next/navigation';
 import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
@@ -15,6 +15,7 @@ import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
 type Props = {
   total: number;
   clientSecret: string;
+  orderId?: string | null; // optional, create-payment-intent returns this and page may pass it
 };
 
 type ShippingOption = {
@@ -96,7 +97,14 @@ const MIN_AUTOCOMPLETE_CHARS = 4;
 const DEBOUNCE_MS = 800;
 const SESSION_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes
 
-export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.Element {
+// Local type to describe the minimal shape returned by stripe.confirmCardPayment we use here.
+// We avoid using `any` and we declare the members we access.
+type LocalConfirmResult = {
+  error?: { message?: string } | null;
+  paymentIntent?: { status?: string } | null;
+};
+
+export default function CheckoutForm({ total, clientSecret, orderId }: Props): React.JSX.Element {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -520,7 +528,7 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
     }, 150);
   };
 
-  // Payment Request setup (unchanged)
+  // Payment Request setup
   useEffect(() => {
     if (!stripe || !clientSecret) {
       setPaymentRequest(null);
@@ -551,7 +559,71 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
       });
   }, [stripe, clientSecret, amountPence]);
 
-  // Payment Request handlers (unchanged)
+  // Helper: extract paymentIntentId from clientSecret if possible
+  const extractPaymentIntentId = (cs?: string | null): string | null => {
+    if (!cs) return null;
+    // clientSecret is like "pi_XXXXXXXX_secret_YYYYYY"
+    const parts = cs.split('_secret');
+    if (parts.length > 0 && parts[0].startsWith('pi_')) return parts[0];
+    return null;
+  };
+
+  const paymentIntentId = useMemo(() => extractPaymentIntentId(clientSecret ?? null), [clientSecret]);
+
+  // saveShipping: call /api/save-shipping to persist shipping BEFORE confirming payment
+  const saveShipping = useCallback(
+    async (opts: {
+      paymentIntentId?: string | null;
+      orderId?: string | null;
+      shippingAddress: Record<string, unknown> | null;
+      client: { name?: string | null; email?: string | null; phone?: string | null } | null;
+    }) => {
+      try {
+        const res = await fetch('/api/save-shipping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentIntentId: opts.paymentIntentId ?? undefined,
+            orderId: opts.orderId ?? undefined,
+            shippingAddress: opts.shippingAddress,
+            client: opts.client,
+          }),
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error((body as { message?: string })?.message ?? 'Failed to save shipping');
+        }
+        return true;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('saveShipping error:', msg);
+        throw e;
+      }
+    },
+    []
+  );
+
+  // simplified function to call complete-order after payment as a best-effort (webhook is the primary source of truth)
+  const finalizeOrder = useCallback(
+    async (opts: { paymentIntentId?: string | null; orderId?: string | null }) => {
+      try {
+        await fetch('/api/complete-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentIntentId: opts.paymentIntentId ?? undefined,
+            orderId: opts.orderId ?? undefined,
+          }),
+        });
+      } catch (e) {
+        // non-blocking — webhook will handle it
+        console.warn('finalizeOrder warning:', e);
+      }
+    },
+    []
+  );
+
+  // Payment Request handlers (modified to save shipping BEFORE confirming payment)
   useEffect(() => {
     if (!paymentRequest || !stripe) return;
 
@@ -572,12 +644,36 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
       const event = ev as PaymentMethodEvent;
       setError(null);
 
+      // Build payer values without mixing ?? and || operators directly
+      const payerNameVal = event.payerName ?? `${firstName} ${lastName}`.trim();
+      const payerEmailVal = event.payerEmail ?? email;
+      const payerPhoneVal = event.payerPhone ?? phone;
+
+      const payer = {
+        name: payerNameVal && payerNameVal.trim() ? payerNameVal : null,
+        email: payerEmailVal ?? null,
+        phone: payerPhoneVal ?? null,
+      };
+
+      const shippingAddress = event.shippingAddress ?? null;
+
       try {
-        const result = await stripe.confirmCardPayment(
+        // 1) Save shipping BEFORE confirming payment to avoid race conditions
+        try {
+          await saveShipping({ paymentIntentId, orderId, shippingAddress, client: payer });
+        } catch (e) {
+          event.complete('fail');
+          setError('Failed to save shipping details. Please try again.');
+          return;
+        }
+
+        // 2) Confirm payment with the payment method from the wallet
+        // Use a local typed shape for the result to avoid `any`.
+        const result = (await stripe.confirmCardPayment(
           clientSecret,
           { payment_method: (event.paymentMethod as { id: string }).id },
-          { handleActions: false }
-        );
+          { handleActions: false } as ConfirmCardPaymentOptions
+        )) as unknown as LocalConfirmResult;
 
         if (result.error) {
           event.complete('fail');
@@ -586,7 +682,7 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
         }
 
         if (result.paymentIntent && result.paymentIntent.status === 'requires_action') {
-          const next = await stripe.confirmCardPayment(clientSecret);
+          const next = (await stripe.confirmCardPayment(clientSecret)) as unknown as LocalConfirmResult;
           if (next.error) {
             event.complete('fail');
             setError(next.error.message ?? 'Payment requires additional action.');
@@ -596,19 +692,9 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
 
         event.complete('success');
 
-        await fetch('/api/complete-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: result.paymentIntent?.id ?? null,
-            shippingAddress: event.shippingAddress ?? null,
-            payer: {
-              name: event.payerName ?? `${firstName} ${lastName}`.trim(),
-              email: event.payerEmail ?? email,
-              phone: event.payerPhone ?? phone,
-            },
-          }),
-        }).catch(() => {});
+        // 3) Optional: best-effort call to complete-order to mark paid / decrement stock immediately.
+        // The webhook is the canonical processor; this is a fallback/fast path.
+        await finalizeOrder({ paymentIntentId, orderId });
 
         clearCart();
         router.push('/checkout/success');
@@ -621,10 +707,50 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
       }
     };
 
-    paymentRequest.on('shippingaddresschange', onShippingAddressChange as unknown as (e: unknown) => void);
-    paymentRequest.on('paymentmethod', onPaymentMethod as unknown as (e: unknown) => void);
-  }, [paymentRequest, stripe, clientSecret, amountPence, firstName, lastName, email, phone, clearCart, router]);
+    // attach handlers; stripe's PaymentRequest returns an EventEmitter-style object
+    // The `on` API expects specific event signatures; we cast handlers to `unknown` when attaching
+    // to avoid leaking `any`, while keeping runtime behavior.
+    (paymentRequest as unknown as { on: (evName: string, fn: unknown) => void }).on(
+      'shippingaddresschange',
+      onShippingAddressChange as unknown
+    );
+    (paymentRequest as unknown as { on: (evName: string, fn: unknown) => void }).on(
+      'paymentmethod',
+      onPaymentMethod as unknown
+    );
 
+    // cleanup
+    return () => {
+      try {
+        // attempt to call `off` if available
+        (paymentRequest as unknown as { off?: (evName: string, fn: unknown) => void }).off?.(
+          'shippingaddresschange',
+          onShippingAddressChange as unknown
+        );
+        (paymentRequest as unknown as { off?: (evName: string, fn: unknown) => void }).off?.(
+          'paymentmethod',
+          onPaymentMethod as unknown
+        );
+      } catch {}
+    };
+  }, [
+    paymentRequest,
+    stripe,
+    clientSecret,
+    amountPence,
+    firstName,
+    lastName,
+    email,
+    phone,
+    saveShipping,
+    paymentIntentId,
+    orderId,
+    finalizeOrder,
+    clearCart,
+    router,
+  ]);
+
+  // Form submit for card payments — save shipping BEFORE calling stripe.confirmCardPayment
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
@@ -656,7 +782,30 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
     setProcessing(true);
 
     try {
-      const result = await stripe.confirmCardPayment(clientSecret, {
+      // 1) Save shipping BEFORE payment confirmation
+      const shippingPayload = {
+        firstName,
+        lastName,
+        email,
+        phone,
+        unit,
+        address,
+        city,
+        postcode: normalizedPostcode,
+        country,
+      };
+      const clientPayload = { name: `${firstName} ${lastName}`.trim(), email, phone };
+
+      try {
+        await saveShipping({ paymentIntentId, orderId, shippingAddress: shippingPayload, client: clientPayload });
+      } catch (e) {
+        setError('Failed to save shipping details. Please try again.');
+        setProcessing(false);
+        return;
+      }
+
+      // 2) Confirm payment
+      const result = (await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: cardElement,
           billing_details: {
@@ -672,7 +821,7 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
             },
           },
         },
-      });
+      })) as unknown as LocalConfirmResult;
 
       if (result.error) {
         setError(result.error.message ?? 'Payment failed.');
@@ -681,24 +830,8 @@ export default function CheckoutForm({ total, clientSecret }: Props): React.JSX.
       }
 
       if (result.paymentIntent?.status === 'succeeded') {
-        await fetch('/api/complete-order', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: result.paymentIntent.id,
-            shippingAddress: {
-              firstName,
-              lastName,
-              email,
-              phone,
-              unit,
-              address,
-              city,
-              postcode: normalizedPostcode,
-              country,
-            },
-          }),
-        }).catch(() => {});
+        // best-effort finalize (webhook remains canonical)
+        await finalizeOrder({ paymentIntentId, orderId });
 
         clearCart();
         router.push('/checkout/success');
