@@ -1,7 +1,19 @@
 "use client";
 import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { JSX, useEffect, useState } from "react";
+import { JSX, useEffect, useState, useId } from "react";
+
+/**
+ * IMPORTANT: Google branding
+ * - Per Google Branding Guidelines and the clause you referenced (e.g., 3.2.2(b) and "Branding Guidelines"),
+ *   you must use the official "G color" logo or the approved "Powered by Google" badge — not plain text.
+ * - Keep the file unmodified and reference it from this component as shown below.
+ *
+ * Note: the badge file in your `public/` directory is named:
+ *   GoogleMaps_Logo_DarkGray_1x.png
+ *
+ * If you later prefer, rename the file to a clearer name like `powered_by_google.png` (and update the constant).
+ */
 
 type Review = {
   id?: string;
@@ -19,15 +31,22 @@ type ApiResponse = {
   place_url?: string;
   rating?: number;
   user_ratings_total?: number;
-  fetched_at?: string;
-  cached_until?: string;
+  fetched_at?: string; // ISO
+  cached_until?: string; // ISO
   error?: string;
 };
+
+const MAX_REVIEWS_DISPLAY = 5; // Limit number of reviews shown (configurable)
+
+// Path to the official badge saved in public/
+// Make sure the filename and casing exactly match the file in your /public folder.
+const GOOGLE_BADGE_SRC = "/GoogleMaps_Logo_DarkGray_1x.png";
 
 export default function GoogleReviews(): JSX.Element {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const uniqueId = useId();
 
   useEffect(() => {
     let mounted = true;
@@ -35,7 +54,13 @@ export default function GoogleReviews(): JSX.Element {
     async function fetchReviews() {
       try {
         setLoading(true);
-        const res = await fetch("/api/google-reviews");
+        setError(null);
+        const res = await fetch("/api/google-reviews", {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+
         const contentType = (res.headers.get("content-type") ?? "").toLowerCase();
         const text = await res.text();
 
@@ -92,6 +117,9 @@ export default function GoogleReviews(): JSX.Element {
     const stars = [];
     for (let i = 0; i < 5; i++) {
       const fill = Math.max(0, Math.min(1, value - i));
+      // Use unique IDs per component instance to avoid DOM ID collisions
+      const clipId = `star-clip-${uniqueId}-${i}-${rating?.toString().replace(/\./g, "-") ?? "0"}`;
+
       stars.push(
         <svg
           key={i}
@@ -101,26 +129,34 @@ export default function GoogleReviews(): JSX.Element {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           className="inline-block"
+          aria-hidden="true"
+          focusable="false"
         >
           <defs>
-            <clipPath id={`star-clip-${i}-${rating}`}>
+            <clipPath id={clipId}>
               <rect x="0" y="0" width={`${fill * 100}%`} height="100%" />
             </clipPath>
           </defs>
           <path d={starPath} fill="#E2E8F0" />
-          <path
-            d={starPath}
-            fill="#FBBF24"
-            clipPath={`url(#star-clip-${i}-${rating})`}
-          />
+          <path d={starPath} fill="#FBBF24" clipPath={`url(#${clipId})`} />
         </svg>
       );
     }
-    return <div className="flex items-center gap-0.5">{stars}</div>;
+    return <div className="flex items-center gap-0.5" aria-hidden="true">{stars}</div>;
+  }
+
+  function renderTimestamp(iso?: string) {
+    if (!iso) return null;
+    try {
+      const dt = new Date(iso);
+      return dt.toLocaleString();
+    } catch {
+      return iso;
+    }
   }
 
   return (
-    <section className="py-16 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50">
+    <section className="py-16 px-4 bg-gradient-to-b from-slate-50 via-white to-slate-50" aria-labelledby="reviews-heading">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="text-center mb-14 space-y-4">
@@ -129,7 +165,7 @@ export default function GoogleReviews(): JSX.Element {
               Customer Reviews
             </p>
           </div>
-          <h2 className="text-4xl lg:text-5xl font-serif text-slate-900 leading-tight font-bold max-w-4xl mx-auto">
+          <h2 id="reviews-heading" className="text-4xl lg:text-5xl font-serif text-slate-900 leading-tight font-bold max-w-4xl mx-auto">
             What Our Guests Say
           </h2>
           <div className="flex items-center justify-center gap-2 pt-2">
@@ -140,7 +176,7 @@ export default function GoogleReviews(): JSX.Element {
             <div className="w-1.5 h-1.5 bg-slate-300 rounded-full animate-pulse"></div>
           </div>
           <p className="text-slate-600 text-base max-w-2xl mx-auto leading-relaxed">
-            Authentic feedback from our valued customers on Google Reviews
+            Authentic user reviews aggregated from Google Reviews.
           </p>
         </div>
 
@@ -163,6 +199,16 @@ export default function GoogleReviews(): JSX.Element {
                   ? `${data.user_ratings_total.toLocaleString()} reviews`
                   : "No reviews"}
               </p>
+              {data?.fetched_at && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Last updated: {renderTimestamp(data.fetched_at)}
+                </p>
+              )}
+              {data?.cached_until && (
+                <p className="text-xs text-slate-400">
+                  Cached until: {renderTimestamp(data.cached_until)}
+                </p>
+              )}
             </div>
           </div>
 
@@ -180,7 +226,7 @@ export default function GoogleReviews(): JSX.Element {
                 : "Customer feedback from Google Reviews"}
             </p>
             <p className="text-xs text-slate-500">
-              We showcase a selection of recent reviews. Click below to explore all reviews on Google Maps.
+              We display user-generated reviews from Google. These are provided verbatim and do not constitute endorsement by us or Google.
             </p>
           </div>
 
@@ -189,8 +235,9 @@ export default function GoogleReviews(): JSX.Element {
             <a
               href={placeLink}
               target="_blank"
-              rel="noopener noreferrer"
+              rel="noopener noreferrer nofollow"
               className="inline-flex items-center gap-2 px-7 py-3.5 bg-slate-900 text-white font-semibold text-sm rounded-xl transition-all duration-300 hover:bg-slate-800 hover:shadow-xl hover:-translate-y-1 group border-2 border-slate-900 hover:border-slate-800"
+              aria-label="View all reviews on Google Maps (opens in a new tab)"
             >
               View on Google
               <ArrowRight className="w-4 h-4 transition-transform duration-300 group-hover:translate-x-1" />
@@ -235,7 +282,7 @@ export default function GoogleReviews(): JSX.Element {
         ) : (
           <>
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 mb-8">
-              {data.reviews.map((r, i) => {
+              {data.reviews.slice(0, MAX_REVIEWS_DISPLAY).map((r, i) => {
                 const photoUrl = normalizePhotoUrl(r.profile_photo_url ?? undefined);
 
                 return (
@@ -281,6 +328,18 @@ export default function GoogleReviews(): JSX.Element {
                     <p className="text-sm text-slate-700 leading-relaxed">
                       {r.text ?? ""}
                     </p>
+
+                    {/* Link to the review author or Google if available */}
+                    {r.author_url && (
+                      <a
+                        href={r.author_url}
+                        target="_blank"
+                        rel="noopener noreferrer nofollow"
+                        className="text-xs text-slate-500 hover:text-slate-700 mt-auto self-start"
+                      >
+                        View author profile
+                      </a>
+                    )}
                   </div>
                 );
               })}
@@ -290,8 +349,9 @@ export default function GoogleReviews(): JSX.Element {
               <a
                 href={placeLink}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="noopener noreferrer nofollow"
                 className="inline-flex items-center gap-2 px-8 py-4 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg hover:shadow-xl hover:-translate-y-1 group border-2 border-slate-900 hover:border-slate-800"
+                aria-label="See all reviews on Google Maps (opens in a new tab)"
               >
                 See all reviews on Google
                 <ArrowRight className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" />
@@ -299,6 +359,44 @@ export default function GoogleReviews(): JSX.Element {
             </div>
           </>
         )}
+
+        {/* Google attribution and legal notice */}
+        <div className="mt-8 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
+          <p className="max-w-xl">
+            Reviews provided by Google. Displayed verbatim. For full review details and Google terms see{" "}
+            <a href={placeLink} target="_blank" rel="noopener noreferrer nofollow" className="underline">
+              this listing on Google Maps
+            </a>
+            .
+          </p>
+
+          {/* Official badge: ensure you host an approved asset and do not modify it */}
+          <a
+            href="https://about.google/brand-resource-center/logos-list/"
+            target="_blank"
+            rel="noopener noreferrer nofollow"
+            aria-label="Google brand resources (opens in a new tab)"
+            className="mt-2"
+            style={{ lineHeight: 0 }}
+          >
+            <Image
+              src={GOOGLE_BADGE_SRC}
+              alt="Powered by Google"
+              width={60}
+              height={60}
+              style={{ objectFit: "contain" }}
+              priority={false}
+            />
+          </a>
+
+          <p className="mt-2">
+            Please ensure your use of Google data complies with the{" "}
+            <a href="https://developers.google.com/maps/terms" target="_blank" rel="noopener noreferrer nofollow" className="underline">
+              Google Maps Platform Terms of Service
+            </a>{" "}
+            and the Google Brand Guidelines.
+          </p>
+        </div>
       </div>
     </section>
   );

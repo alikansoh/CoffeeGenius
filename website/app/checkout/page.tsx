@@ -23,8 +23,8 @@ export default function CheckoutPage() {
 
   const subtotal = getTotalPrice();
   const shipping = subtotal > 30 ? 0 : 4.99;
-  const tax = Math.round(subtotal * 0.2 * 100) / 100;
-  const total = Math.round((subtotal + shipping + tax) * 100) / 100;
+  // VAT removed entirely
+  const total = Math.round((subtotal + shipping) * 100) / 100;
 
   useEffect(() => {
     async function createIntent() {
@@ -67,32 +67,32 @@ export default function CheckoutPage() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6 sm:mb-8">
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-black mb-2">Checkout</h1>
-          <p className="text-sm sm:text-base text-gray-600">Complete your order securely</p>
+          <h1 className="text-3xl sm:text-3xl lg:text-4xl font-bold text-black mb-2">Checkout</h1>
+          <p className="text-base sm:text-base text-gray-600">Complete your order securely</p>
         </div>
 
         {/* Progress Steps */}
         <div className="mb-6 sm:mb-8 overflow-x-auto">
           <div className="flex items-center justify-center space-x-2 sm:space-x-4 min-w-max px-4">
             <div className="flex items-center">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center font-semibold text-sm sm:text-base">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center font-semibold text-base sm:text-base">
                 1
               </div>
-              <span className="ml-1 sm:ml-2 text-xs sm:text-sm font-medium text-black whitespace-nowrap">Cart</span>
+              <span className="ml-1 sm:ml-2 text-sm sm:text-base font-medium text-black whitespace-nowrap">Cart</span>
             </div>
             <div className="w-8 sm:w-16 h-0.5 bg-black"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center font-semibold text-sm sm:text-base">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center font-semibold text-base sm:text-base">
                 2
               </div>
-              <span className="ml-1 sm:ml-2 text-xs sm:text-sm font-medium text-black whitespace-nowrap">Checkout</span>
+              <span className="ml-1 sm:ml-2 text-sm sm:text-base font-medium text-black whitespace-nowrap">Checkout</span>
             </div>
             <div className="w-8 sm:w-16 h-0.5 bg-gray-300"></div>
             <div className="flex items-center">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-semibold text-sm sm:text-base">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-semibold text-base sm:text-base">
                 3
               </div>
-              <span className="ml-1 sm:ml-2 text-xs sm:text-sm font-medium text-gray-500 whitespace-nowrap">Complete</span>
+              <span className="ml-1 sm:ml-2 text-sm sm:text-base font-medium text-gray-500 whitespace-nowrap">Complete</span>
             </div>
           </div>
         </div>
@@ -102,8 +102,8 @@ export default function CheckoutPage() {
           {/* Order Summary (shows first on mobile/tablet via order utilities) */}
           <aside className="order-1 lg:order-2 lg:col-span-1">
             <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6 lg:sticky lg:top-4">
-              <h2 className="text-lg sm:text-xl font-bold mb-4 flex items-center text-black">
-                <ShoppingBag className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+              <h2 className="text-xl sm:text-xl font-bold mb-4 flex items-center text-black">
+                <ShoppingBag className="w-5 h-5 sm:w-5 sm:h-5 mr-2" />
                 Order Summary
               </h2>
 
@@ -125,18 +125,18 @@ export default function CheckoutPage() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-xs sm:text-sm text-black truncate">
+                      <h3 className="font-medium text-sm sm:text-base text-black truncate">
                         {it.name}
                       </h3>
-                      <p className="text-[10px] sm:text-xs text-gray-500 mt-1">
+                      <p className="text-sm sm:text-sm text-gray-500 mt-1">
                         {it.size
                           ? `${it.size}${it.grind ? ` • ${it.grind}` : ""}`
                           : it.metadata?.brand}
                       </p>
-                      <p className="text-[10px] sm:text-xs text-gray-400 mt-1">Qty: {it.quantity}</p>
+                      <p className="text-sm sm:text-sm text-gray-400 mt-1">Qty: {it.quantity}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-semibold text-xs sm:text-sm text-black">
+                      <p className="font-semibold text-sm sm:text-base text-black">
                         £{(it.price * it.quantity).toFixed(2)}
                       </p>
                     </div>
@@ -146,11 +146,11 @@ export default function CheckoutPage() {
 
               {/* Price Breakdown */}
               <div className="space-y-2 sm:space-y-3 py-3 sm:py-4 border-t border-gray-200">
-                <div className="flex justify-between text-xs sm:text-sm">
+                <div className="flex justify-between text-sm sm:text-base">
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium text-black">£{subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-xs sm:text-sm">
+                <div className="flex justify-between text-sm sm:text-base">
                   <span className="text-gray-600">Shipping</span>
                   <span className="font-medium text-black">
                     {shipping === 0 ? (
@@ -160,10 +160,7 @@ export default function CheckoutPage() {
                     )}
                   </span>
                 </div>
-                <div className="flex justify-between text-xs sm:text-sm">
-                  <span className="text-gray-600">VAT (20%)</span>
-                  <span className="font-medium text-black">£{tax.toFixed(2)}</span>
-                </div>
+                {/* VAT removed */}
               </div>
 
               {/* Total */}
@@ -179,7 +176,7 @@ export default function CheckoutPage() {
               {/* Free Shipping Notice */}
               {subtotal < 30 && (
                 <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-black text-white rounded-lg text-center">
-                  <p className="text-[10px] sm:text-xs">
+                  <p className="text-sm sm:text-base">
                     Add <strong>£{(30 - subtotal).toFixed(2)}</strong> more for free shipping!
                   </p>
                 </div>
@@ -192,7 +189,7 @@ export default function CheckoutPage() {
             {!items || items.length === 0 ? (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8 text-center">
                 <ShoppingBag className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-base sm:text-lg text-gray-600 mb-4">Your cart is empty.</p>
+                <p className="text-lg sm:text-lg text-gray-600 mb-4">Your cart is empty.</p>
                 <Link
                   href="/coffee"
                   className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm sm:text-base"
@@ -204,7 +201,7 @@ export default function CheckoutPage() {
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
                 <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
                   <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-black"></div>
-                  <span className="text-sm sm:text-base text-gray-600">Preparing secure payment…</span>
+                  <span className="text-base sm:text-lg text-gray-600">Preparing secure payment…</span>
                 </div>
               </div>
             ) : clientSecret ? (
@@ -213,7 +210,7 @@ export default function CheckoutPage() {
               </Elements>
             ) : (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
-                <p className="text-sm sm:text-base text-red-600">
+                <p className="text-base sm:text-lg text-red-600">
                   Unable to initialize payment. Please try again later.
                 </p>
               </div>
@@ -223,18 +220,18 @@ export default function CheckoutPage() {
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 sm:p-6">
               <div className="grid grid-cols-3 gap-2 sm:gap-4 text-center">
                 <div className="flex flex-col items-center">
-                  <CreditCard className="w-6 h-6 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" />
-                  <p className="text-[10px] sm:text-xs text-gray-600 font-medium">Secure Payment</p>
+                  <CreditCard className="w-7 h-7 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" />
+                  <p className="text-sm sm:text-sm text-gray-600 font-medium">Secure Payment</p>
                 </div>
                 <div className="flex flex-col items-center">
-                  <Package className="w-6 h-6 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" />
-                  <p className="text-[10px] sm:text-xs text-gray-600 font-medium">Fast Delivery</p>
+                  <Package className="w-7 h-7 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" />
+                  <p className="text-sm sm:text-sm text-gray-600 font-medium">Fast Delivery</p>
                 </div>
                 <div className="flex flex-col items-center">
-                  <svg className="w-6 h-6 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-7 h-7 sm:w-8 sm:h-8 text-black mb-1 sm:mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
-                  <p className="text-[10px] sm:text-xs text-gray-600 font-medium">Money Back</p>
+                  <p className="text-sm sm:text-sm text-gray-600 font-medium">Money Back</p>
                 </div>
               </div>
             </div>
