@@ -1,202 +1,304 @@
-'use server';
-
 import { NextResponse } from 'next/server';
+import Stripe from 'stripe';
 import dbConnect from '@/lib/dbConnect';
 import Order from '@/models/Order';
-import Stripe from 'stripe';
-import mongoose from 'mongoose';
 import CoffeeVariant from '@/models/CoffeeVariant';
 import Coffee from '@/models/Coffee';
 import Equipment from '@/models/Equipment';
+import mongoose from 'mongoose';
 
-interface ProductWithStock {
+type ProductSource = 'variant' | 'coffee' | 'equipment';
+
+interface ProductDocLean {
+  _id?: mongoose. Types.ObjectId | string;
   stock?: number;
-  slug?: string;
-  // allow other fields but don't reference them directly
+  coffeeId?: mongoose.Types.ObjectId | string;
+  slug?:  string;
   [k: string]: unknown;
 }
-
-type ProductSource = 'variant' | 'coffee' | 'equipment' | string;
 
 interface OrderItem {
   id: string;
   qty: number;
-  source?: ProductSource;
+  source?: ProductSource | string;
+  [k: string]: unknown;
 }
 
-interface OrderDoc {
+interface OrderDocument extends mongoose.Document {
   _id: mongoose.Types.ObjectId;
   items?: OrderItem[];
   status?: string;
   paymentIntentId?: string;
   paidAt?: Date | null;
-  save(opts?: { session?: mongoose.ClientSession } | undefined): Promise<void>;
-  // allow other fields
+  metadata?: Record<string, unknown>;
+  client?: {
+    name?: string;
+    email?: string;
+    phone?: string;
+  } | null;
+  shippingAddress?: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    unit?: string;
+    line1?: string;
+    city?:  string;
+    postcode?: string;
+    country?: string;
+  } | null;
+  save(opts?: { session?: mongoose. ClientSession }): Promise<this>;
   [k: string]: unknown;
 }
 
-async function decrementStock(
-  session: mongoose.ClientSession,
-  item: { id: string; qty: number; source?: ProductSource }
-): Promise<void> {
-  const qty = item.qty;
-  const id = item.id;
-  const src = item.source ?? 'unknown';
+async function decrementOneAtomic(
+  session: mongoose.ClientSession | null,
+  item: { id: string; qty: number; source?: string }
+): Promise<{ id: string; qty: number; source:  string; before: number; after:  number }> {
+  const { id, qty, source = 'variant' } = item;
+  const sessionOpt = session ?? undefined;
 
-  if (src === 'variant') {
-    const variant = (await CoffeeVariant.findById(id).session(session).exec()) as unknown as ProductWithStock | null;
-    if (!variant) throw new Error(`Variant not found for id=${id}`);
-    const available = Number(variant.stock ?? 0);
-    if (available < qty) throw new Error(`Insufficient stock for variant id=${id}`);
-    variant.stock = available - qty;
-    // variant is a plain object from .findById().exec(); call save on the mongoose document instead
-    // Re-fetch as a document to save with session
-    const variantDoc = await CoffeeVariant.findById(id).session(session).exec();
-    if (!variantDoc) throw new Error(`Variant not found for id=${id}`);
-    (variantDoc as unknown as { stock?: number }).stock = available - qty;
-    await variantDoc.save({ session });
-    return;
+  if (source === 'variant') {
+    const updated = (await CoffeeVariant.findOneAndUpdate(
+      { _id: id, stock:  { $gte: qty } },
+      { $inc: { stock: -qty } },
+      { new: true, session: sessionOpt, lean: true }
+    ).exec()) as ProductDocLean | null;
+
+    if (!updated || typeof updated.stock !== 'number') {
+      throw new Error(`Insufficient stock or variant not found for id=${id}`);
+    }
+
+    if (updated.coffeeId) {
+      await Coffee.findByIdAndUpdate(updated.coffeeId, { $inc: { totalStock: -qty } }, { session: sessionOpt }).exec();
+    }
+
+    return { id, qty, source, before: updated.stock + qty, after: updated.stock };
   }
 
-  if (src === 'coffee') {
-    const coffee = (await Coffee.findById(id).session(session).exec()) as unknown as ProductWithStock | null;
-    if (!coffee) throw new Error(`Coffee not found for id=${id}`);
-    const available = Number(coffee.stock ?? 0);
-    if (available < qty) throw new Error(`Insufficient stock for coffee id=${id}`);
-    // Re-fetch as document to save
-    const coffeeDoc = await Coffee.findById(id).session(session).exec();
-    if (!coffeeDoc) throw new Error(`Coffee not found for id=${id}`);
-    (coffeeDoc as unknown as { stock?: number }).stock = available - qty;
-    await coffeeDoc.save({ session });
-    return;
+  if (source === 'coffee') {
+    const updated = (await Coffee.findOneAndUpdate(
+      { _id: id, stock: { $gte:  qty } },
+      { $inc: { stock: -qty } },
+      { new: true, session: sessionOpt, lean: true }
+    ).exec()) as ProductDocLean | null;
+
+    if (!updated || typeof updated.stock !== 'number') {
+      throw new Error(`Insufficient stock or coffee not found for id=${id}`);
+    }
+
+    return { id, qty, source, before:  updated.stock + qty, after: updated.stock };
   }
 
-  if (src === 'equipment') {
-    let equip = null as ProductWithStock | null;
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      equip = (await Equipment.findById(id).session(session).exec()) as unknown as ProductWithStock | null;
+  if (source === 'equipment') {
+    let updated = null as ProductDocLean | null;
+    
+    if (mongoose. Types.ObjectId.isValid(id)) {
+      updated = (await Equipment.findOneAndUpdate(
+        { _id: id, stock: { $gte: qty } },
+        { $inc:  { stock: -qty } },
+        { new: true, session:  sessionOpt, lean: true }
+      ).exec()) as ProductDocLean | null;
     }
-    if (!equip) {
-      equip = (await Equipment.findOne({ slug: id }).session(session).exec()) as unknown as ProductWithStock | null;
+
+    if (!updated) {
+      updated = (await Equipment.findOneAndUpdate(
+        { slug: id, stock: { $gte: qty } },
+        { $inc: { stock: -qty } },
+        { new: true, session: sessionOpt, lean: true }
+      ).exec()) as ProductDocLean | null;
     }
-    if (!equip) throw new Error(`Equipment not found for id/slug=${id}`);
-    const available = Number(equip.stock ?? 0);
-    if (available < qty) throw new Error(`Insufficient stock for equipment id=${id}`);
-    // Re-fetch as document to save
-    let equipDoc = null as (mongoose.Document & { stock?: number }) | null;
-    if (mongoose.Types.ObjectId.isValid(id)) {
-      equipDoc = (await Equipment.findById(id).session(session).exec()) as unknown as (mongoose.Document & { stock?: number }) | null;
+
+    if (!updated || typeof updated.stock !== 'number') {
+      throw new Error(`Insufficient stock or equipment not found for id/slug=${id}`);
     }
-    if (!equipDoc) {
-      equipDoc = (await Equipment.findOne({ slug: id }).session(session).exec()) as unknown as (mongoose.Document & { stock?: number }) | null;
-    }
-    if (!equipDoc) throw new Error(`Equipment not found for id/slug=${id}`);
-    equipDoc.stock = available - qty;
-    await equipDoc.save({ session });
-    return;
+
+    return { id, qty, source, before: updated.stock + qty, after: updated.stock };
   }
 
   throw new Error(`Unknown product source for id=${id}`);
 }
 
 export async function POST(req: Request) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const stripeSecret = process.env. STRIPE_SECRET_KEY;
+
+  if (!webhookSecret || ! stripeSecret) {
+    console.error('Missing STRIPE_WEBHOOK_SECRET or STRIPE_SECRET_KEY');
+    return new Response('Missing configuration', { status: 500 });
+  }
+
+  const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+
+  const buf = Buffer.from(await req.arrayBuffer());
+  const sig = req.headers.get('stripe-signature') ?? '';
+
+  let event:  Stripe.Event;
+
   try {
-    const rawBody = await req.json().catch(() => ({} as unknown));
-    const body = (typeof rawBody === 'object' && rawBody !== null) ? (rawBody as Record<string, unknown>) : {};
+    event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
+  } catch (err) {
+    console.error('Webhook signature verification failed:', err);
+    return new Response('Invalid signature', { status: 400 });
+  }
 
-    const paymentIntentId = typeof body.paymentIntentId === 'string' ? body.paymentIntentId : null;
-    const orderId = typeof body.orderId === 'string' ? body.orderId : null;
+  try {
+    if (event. type === 'payment_intent. succeeded') {
+      const pi = event.data.object as Stripe.PaymentIntent;
+      
+      const orderIdRaw = (pi.metadata && typeof pi.metadata === 'object')
+        ? (pi.metadata as Record<string, unknown>)['order_id']
+        : undefined;
+      const orderId = typeof orderIdRaw === 'string' ? orderIdRaw : null;
+      const paymentIntentId = pi.id;
 
-    if (!paymentIntentId && !orderId) {
-      return NextResponse.json({ success: false, message: 'Missing paymentIntentId or orderId' }, { status: 400 });
-    }
+      await dbConnect();
 
-    await dbConnect();
+      let order = null as OrderDocument | null;
+      
+      if (orderId && mongoose. Types.ObjectId.isValid(orderId)) {
+        const found = await Order.findById(orderId).exec();
+        order = found as OrderDocument | null;
+      }
 
-    let order: OrderDoc | null = null;
-    if (orderId) {
-      const found = await Order.findById(orderId).exec();
-      order = (found as unknown) as OrderDoc | null;
-    }
-    if (!order && paymentIntentId) {
-      const found = await Order.findOne({ paymentIntentId }).exec();
-      order = (found as unknown) as OrderDoc | null;
-    }
-    if (!order) return NextResponse.json({ success: false, message: 'Order not found' }, { status: 404 });
+      if (!order) {
+        const found = await Order.findOne({ paymentIntentId }).exec();
+        order = found as OrderDocument | null;
+      }
 
-    // Optionally verify PaymentIntent status with Stripe
-    const stripeSecret = process.env.STRIPE_SECRET_KEY;
-    if (stripeSecret && paymentIntentId) {
-      const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+      if (!order) {
+        console.warn('Webhook: no order found for PaymentIntent', paymentIntentId, 'metadata.order_id=', orderId);
+        return NextResponse.json({ received: true }, { status: 200 });
+      }
+
+      // ✅ KEY FIX: Check if stock was already decremented
+      const alreadyDecremented = order.metadata?.stockDecremented === true;
+      
+      if (order.status === 'paid' || order.status === 'shipped') {
+        console.log('Webhook: order already processed', order._id.toString());
+        return NextResponse.json({ received: true }, { status: 200 });
+      }
+
+      const conn = mongoose.connection;
+      const session = await conn.startSession();
+      session.startTransaction();
+
       try {
-        const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
-        if (pi && pi.status !== 'succeeded') {
-          return NextResponse.json({ success: false, message: 'PaymentIntent not succeeded' }, { status: 400 });
+        const stockChanges: Array<{ id: string; qty: number; source?: string; before: number; after: number }> = [];
+        const items = Array.isArray(order.items) ? order.items : [];
+
+        // ✅ Only decrement stock if not already done
+        if (!alreadyDecremented && items.length > 0) {
+          for (const rawItem of items) {
+            if (! rawItem || typeof rawItem !== 'object') {
+              throw new Error('Order contains invalid item');
+            }
+
+            const rec = rawItem as Record<string, unknown>;
+            const id = typeof rec. id === 'string' ? rec.id : String(rec.id ?? '');
+            const qtyRaw = rec.qty ?? rec.quantity;
+            const qty = typeof qtyRaw === 'number' ? qtyRaw :  Number(qtyRaw ?? 0);
+            const source = typeof rec.source === 'string' ? rec.source : 'variant';
+
+            if (!id) throw new Error('Order contains item with missing id');
+            if (!Number. isFinite(qty) || qty <= 0) throw new Error(`Order contains item with invalid qty for id=${id}`);
+
+            const change = await decrementOneAtomic(session, { id, qty, source });
+            stockChanges. push(change);
+          }
         }
-      } catch (err) {
-        console.warn('Stripe retrieve error:', err);
-        // Proceed — we don't fail hard on Stripe retrieve error here
-      }
-    }
 
-    // If already paid, nothing to do
-    if (order.status === 'paid' || order.status === 'shipped') {
-      return NextResponse.json({ success: true, message: 'Order already processed' }, { status: 200 });
-    }
-
-    // Ensure items exist and are in expected shape
-    const items = Array.isArray(order.items) ? order.items : [];
-    const typedItems = items
-      .map((it) => {
-        if (it && typeof it === 'object') {
-          const rec = it as unknown as Record<string, unknown>;
-          const id = typeof rec.id === 'string' ? rec.id : String(rec.id ?? '');
-          const qty = Number(rec.qty ?? rec.quantity ?? 0);
-          const source = typeof rec.source === 'string' ? rec.source : undefined;
-          if (!id || !Number.isFinite(qty) || qty <= 0) return null;
-          return { id, qty, source } as OrderItem; // Type assertion here
+        // ✅ CRITICAL: Fetch order within transaction and preserve existing fields
+        const orderInSession = (await Order. findById(order._id).session(session).exec()) as OrderDocument | null;
+        
+        if (!orderInSession) {
+          throw new Error('Order disappeared during transaction');
         }
-        return null;
-      })
-      .filter((x): x is OrderItem => x !== null);
 
-    if (typedItems.length === 0) {
-      return NextResponse.json({ success: false, message: 'Order contains no valid items' }, { status: 400 });
+        // ✅ NEW: Extract billing details from PaymentIntent
+        const billingDetails = pi.payment_method 
+          ? await stripe.paymentMethods.retrieve(pi.payment_method as string).catch(() => null)
+          : null;
+
+        // ✅ NEW: Update client info if not already set (preserve existing data)
+        if (!orderInSession.client && billingDetails?. billing_details) {
+          const bd = billingDetails.billing_details;
+          orderInSession.client = {
+            name: bd. name || undefined,
+            email: bd. email || undefined,
+            phone:  bd.phone || undefined,
+          };
+        }
+
+        // ✅ NEW: Update shipping address if not already set (preserve existing data)
+        if (!orderInSession.shippingAddress && billingDetails?.billing_details?. address) {
+          const addr = billingDetails.billing_details.address;
+          const name = billingDetails.billing_details.name || '';
+          const nameParts = name.split(' ');
+          const firstName = nameParts[0] || '';
+          const lastName = nameParts.slice(1).join(' ') || '';
+
+          orderInSession.shippingAddress = {
+            firstName:  firstName || undefined,
+            lastName:  lastName || undefined,
+            email:  billingDetails.billing_details.email || undefined,
+            phone: billingDetails.billing_details.phone || undefined,
+            unit: addr.line2 || undefined,
+            line1: addr.line1 || undefined,
+            city: addr.city || undefined,
+            postcode:  addr.postal_code || undefined,
+            country: addr.country || 'GB',
+          };
+        }
+
+        // ✅ Preserve existing shipping address and client info (don't overwrite)
+        orderInSession.status = 'paid';
+        orderInSession.paymentIntentId = paymentIntentId;
+        orderInSession. paidAt = orderInSession. paidAt || new Date();
+        
+        // ✅ Merge metadata without losing existing data
+        orderInSession.metadata = {
+          ...(orderInSession. metadata ?? {}),
+          stockDecremented: true,
+          stockChanges: alreadyDecremented ? (orderInSession.metadata?.stockChanges ?? []) : stockChanges,
+          prices_verified: true,
+        };
+
+        await orderInSession.save({ session });
+        await session.commitTransaction();
+        session.endSession();
+
+        console.log(`Order ${order._id.toString()} marked paid. Stock ${alreadyDecremented ? 'already decremented' : 'decremented'}.`);
+        return NextResponse.json({ received: true }, { status: 200 });
+        
+      } catch (txErr) {
+        await session.abortTransaction();
+        session.endSession();
+        
+        const msg = txErr instanceof Error ? txErr. message : String(txErr);
+        console.error('Error processing payment webhook (transaction aborted):', msg);
+        
+        try {
+          order.status = 'failed';
+          order.metadata = {
+            ...(order.metadata ??  {}),
+            failureReason: msg
+          };
+          await order.save();
+        } catch (e) {
+          console. error('Failed to mark order failed after transaction error', e);
+        }
+        
+        return new Response('Processing error', { status: 500 });
+      }
     }
 
-    // Decrement stock and mark paid in a transaction (best-effort fallback)
-    const conn = mongoose.connection;
-    const session = await conn.startSession();
-    session.startTransaction();
-    try {
-      for (const it of typedItems) {
-        await decrementStock(session, { id: it.id, qty: it.qty, source: it.source });
-      }
-      // mark order paid
-      order.status = 'paid';
-      order.paymentIntentId = paymentIntentId ?? order.paymentIntentId;
-      order.paidAt = new Date();
-      await order.save({ session });
-      await session.commitTransaction();
-      session.endSession();
-      return NextResponse.json({ success: true, message: 'Order marked paid and stock decremented' }, { status: 200 });
-    } catch (errInner) {
-      await session.abortTransaction();
-      session.endSession();
-      const msg = errInner instanceof Error ? errInner.message : String(errInner);
-      console.error('complete-order transaction failed:', msg);
-      // mark order as failed for manual review (best-effort)
-      try {
-        order.status = 'failed';
-        await order.save();
-      } catch (e) {
-        console.error('Failed to mark order failed after transaction error', e);
-      }
-      return NextResponse.json({ success: false, message: msg }, { status: 500 });
-    }
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('complete-order error:', message);
-    return NextResponse.json({ success: false, message }, { status: 500 });
+    return NextResponse.json({ received: true }, { status: 200 });
+    
+  } catch (err) {
+    console.error('Webhook handler error:', err);
+    return new Response('Webhook handler error', { status:  500 });
   }
 }
+
+export const runtime = 'nodejs';
