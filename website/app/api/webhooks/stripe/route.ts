@@ -154,6 +154,17 @@ export async function POST(req: Request) {
         }
       }
 
+      // Parse billing address if saved (ADDED)
+      const billingAddressJson = typeof metadata.billingAddress === 'string' ? metadata.billingAddress : null;
+      let billingAddress = null;
+      if (billingAddressJson) {
+        try {
+          billingAddress = JSON.parse(billingAddressJson);
+        } catch (err) {
+          console.warn('Failed to parse billingAddress from metadata:', err);
+        }
+      }
+
       // Parse client info if saved
       const clientJson = typeof metadata.client === 'string' ? metadata.client : null;
       let client = null;
@@ -227,6 +238,11 @@ export async function POST(req: Request) {
           orderData.shippingAddress = shippingAddress;
         }
 
+        // ADD THIS: include billing address if available
+        if (billingAddress) {
+          orderData.billingAddress = billingAddress;
+        }
+
         // Add client info if available
         if (client) {
           orderData.client = client;
@@ -265,6 +281,11 @@ export async function POST(req: Request) {
 
           if (shippingAddress) {
             failedOrderData.shippingAddress = shippingAddress;
+          }
+
+          // Include billingAddress on failed order if present
+          if (billingAddress) {
+            failedOrderData.billingAddress = billingAddress;
           }
 
           if (client) {

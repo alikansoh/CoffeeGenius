@@ -39,6 +39,16 @@ export interface IOrder extends Document {
   paidAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  billingAddress?: {
+    firstName?: string;
+    lastName?: string;
+    unit?: string;
+    line1?: string;
+    city?: string;
+    postcode?: string;
+    country?: string;
+    sameAsShipping?: boolean;
+  } | null;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
@@ -82,6 +92,16 @@ const OrderSchema = new Schema<IOrder>(
       postcode: String,
       country: String,
     },
+    billingAddress: {
+        firstName: String,
+        lastName: String,
+        unit: String,
+        line1: String,
+        city: String,
+        postcode: String,
+        country: String,
+        sameAsShipping: Boolean,
+      },
     metadata: { type: Schema.Types.Mixed },
     paidAt: { type: Date, default: null },
   },

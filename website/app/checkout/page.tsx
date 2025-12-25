@@ -15,27 +15,42 @@ const stripePromise = loadStripe(
 );
 
 export default function CheckoutPage() {
+  // Subscribe to the cart store, but don't derive render-critical values
+  // from it synchronously to avoid SSR/CSR mismatches.
   const items = useCart((s) => s.items);
   const getTotalPrice = useCart((s) => s.getTotalPrice);
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const subtotal = getTotalPrice();
-  const shipping = subtotal > 30 ? 0 : 4.99;
-  // VAT removed entirely
-  const total = Math.round((subtotal + shipping) * 100) / 100;
+  // Track whether we're on the client and mounted.
+  // We will only use the cart values for rendering after mount to ensure
+  // the server-rendered HTML matches the initial client render.
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Derive visible values only after mount to prevent hydration mismatch.
+  const visibleItems = mounted ? items : [];
+  const subtotal = mounted ? getTotalPrice() : 0;
+  const shipping = mounted ? (subtotal > 30 ? 0 : 4.99) : 0;
+  // VAT removed entirely
+  const total = mounted ? Math.round((subtotal + shipping) * 100) / 100 : 0;
+
+  useEffect(() => {
+    // Only create a payment intent when we are on the client and have items.
+    if (!mounted) return;
     async function createIntent() {
-      if (!items || items.length === 0) return;
+      if (!visibleItems || visibleItems.length === 0) return;
 
       setLoading(true);
       try {
         const res = await fetch("/api/create-payment-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items }),
+          body: JSON.stringify({ items: visibleItems }),
         });
 
         const data = await res.json();
@@ -52,11 +67,15 @@ export default function CheckoutPage() {
     }
 
     createIntent();
-  }, [items]);
+  }, [mounted, visibleItems]);
 
   const getImageSrc = (idOrUrl?: string, preset: "thumbnail" | "medium" = "thumbnail") => {
     if (!idOrUrl) return "/test.webp";
-    if (idOrUrl.startsWith("http://") || idOrUrl.startsWith("https://") || idOrUrl.startsWith("/")) {
+    if (
+      idOrUrl.startsWith("http://") ||
+      idOrUrl.startsWith("https://") ||
+      idOrUrl.startsWith("/")
+    ) {
       return idOrUrl;
     }
     return getCloudinaryUrl(idOrUrl, preset);
@@ -109,7 +128,7 @@ export default function CheckoutPage() {
 
               {/* Items List */}
               <div className="max-h-48 sm:max-h-64 overflow-y-auto mb-4 space-y-3">
-                {items.map((it) => (
+                {visibleItems.map((it) => (
                   <div key={it.id} className="flex gap-2 sm:gap-3 pb-3 border-b border-gray-200">
                     <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white border border-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
                       {it.img ? (
@@ -142,6 +161,13 @@ export default function CheckoutPage() {
                     </div>
                   </div>
                 ))}
+                {/* If not mounted we intentionally show nothing here (to match server render) */}
+                {!mounted && visibleItems.length === 0 && (
+                  <div className="text-sm text-gray-500">Loading items…</div>
+                )}
+                {mounted && visibleItems.length === 0 && (
+                  <div className="text-sm text-gray-500">No items in your cart.</div>
+                )}
               </div>
 
               {/* Price Breakdown */}
@@ -173,8 +199,8 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {/* Free Shipping Notice */}
-              {subtotal < 30 && (
+              {/* Free Shipping Notice: only show after mount to avoid SSR/CSR mismatch */}
+              {mounted && subtotal < 30 && (
                 <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-black text-white rounded-lg text-center">
                   <p className="text-sm sm:text-base">
                     Add <strong>£{(30 - subtotal).toFixed(2)}</strong> more for free shipping!
@@ -186,7 +212,7 @@ export default function CheckoutPage() {
 
           {/* Forms (shows second on mobile/tablet via order utilities) */}
           <div className="order-2 lg:order-1 lg:col-span-2 space-y-4 sm:space-y-6">
-            {!items || items.length === 0 ? (
+            {!mounted || visibleItems.length === 0 ? (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8 text-center">
                 <ShoppingBag className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-lg sm:text-lg text-gray-600 mb-4">Your cart is empty.</p>

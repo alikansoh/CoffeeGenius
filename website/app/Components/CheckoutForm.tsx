@@ -116,7 +116,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const router = useRouter();
   const clearCart = useCart((s) => s.clearCart);
 
-  // Contact / shipping
+  // Contact / shipping (shipping fields)
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [firstName, setFirstName] = useState<string>('');
@@ -127,7 +127,20 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const [postcode, setPostcode] = useState<string>('');
   const [country, setCountry] = useState<string>('GB');
 
+  // Billing fields (shown when billingSame is false)
+  const [billingFirstName, setBillingFirstName] = useState<string>('');
+  const [billingLastName, setBillingLastName] = useState<string>('');
+  const [billingUnit, setBillingUnit] = useState<string>('');
+  const [billingAddress, setBillingAddress] = useState<string>('');
+  const [billingCity, setBillingCity] = useState<string>('');
+  const [billingPostcode, setBillingPostcode] = useState<string>('');
+  const [billingCountry, setBillingCountry] = useState<string>('GB');
+
+  // New: billingSame flag (checkbox). When false, billing form appears.
+  const [billingSame, setBillingSame] = useState<boolean>(true);
+
   const [postcodeError, setPostcodeError] = useState<string | null>(null);
+  const [billingPostcodeError, setBillingPostcodeError] = useState<string | null>(null);
 
   // Refs & libs
   const addressRef = useRef<HTMLInputElement | null>(null);
@@ -137,6 +150,9 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   // session token (typed)
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // track when a prediction was just selected to avoid onBlur-triggered geocode racing
+  const justSelectedPredictionRef = useRef<boolean>(false);
 
   // Predictions: we support two kinds:
   // - placePrediction from new AutocompleteSuggestion (has placeId)
@@ -191,21 +207,24 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const normalizeUkPostcode = (value: string): string => {
     const raw = (value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (raw.length <= 3) return raw;
+    // Insert a space before the last 3 characters (standard inward code length)
     return `${raw.slice(0, raw.length - 3)} ${raw.slice(-3)}`.trim();
   };
 
+  // Improved (more permissive but still strict enough) UK postcode regex:
+  // Accepts e.g. EC1 2NV, EC1A 1BB, WC2H 7LT, SW1A 1AA, etc.
   const isValidUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = normalizeUkPostcode(value);
-    const re =
-      /^(GIR 0AA|[A-PR-UWYZ]([0-9]{1,2}|[A-HK-Y][0-9]{1,2}|[0-9][A-HJKPSTUW])\s?[0-9][ABD-HJLNP-UW-Z]{2})$/i;
+    // Allow optional space and be case-insensitive
+    const re = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
     return re.test(normalized);
   };
 
   const isProbablyUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = value.trim().toUpperCase();
-    // start-of-input postcode-like (e.g. SW1A or SW1A1 or SW1A 1AA)
+    // start-of-input postcode-like (e.g. SW1A or SW1A1 or SW1A 1AA or EC1)
     return /^[A-Z]{1,2}\d/.test(normalized);
   };
 
@@ -416,9 +435,21 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
 
   // when selecting a prediction
   const selectPrediction = async (p: Prediction): Promise<void> => {
+    // Mark that we just selected a prediction to avoid onBlur geocode races
+    justSelectedPredictionRef.current = true;
+    // After a short delay allow blur handling to resume
+    window.setTimeout(() => {
+      justSelectedPredictionRef.current = false;
+    }, 400);
+
     setAddress(p.text);
     setPredictions([]);
     setShowPredictions(false);
+
+    // Programmatically blur the address input so keyboard closes on mobile
+    try {
+      addressRef.current?.blur();
+    } catch {}
 
     // If the prediction is a geocode result, directly geocode/parse it
     if (p.isGeocode) {
@@ -526,6 +557,16 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   };
 
   const handleAddressBlur = (): void => {
+    // If we just selected a prediction, do not run the postcode geocode logic —
+    // this avoids the input being "stuck" or triggering unwanted geocode after selection.
+    if (justSelectedPredictionRef.current) {
+      // hide predictions but do not run geocode
+      setTimeout(() => {
+        setShowPredictions(false);
+      }, 50);
+      return;
+    }
+
     setTimeout(() => {
       setShowPredictions(false);
       if (isProbablyUkPostcode(address) && predictions.length === 0) {
@@ -585,6 +626,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     async (opts: {
       paymentIntentId?: string | null;
       shippingAddress: Record<string, unknown> | null;
+      billingAddress?: Record<string, unknown> | null;
       client: { name?: string | null; email?: string | null; phone?: string | null } | null;
     }) => {
       try {
@@ -594,6 +636,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
           body: JSON.stringify({
             paymentIntentId: opts.paymentIntentId ?? undefined,
             shippingAddress: opts.shippingAddress,
+            billingAddress: opts.billingAddress ?? undefined,
             client: opts.client,
           }),
         });
@@ -705,10 +748,22 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         country: countryVal || country,
       };
 
+      // Build billing payload — Wallet payments use same address
+      const billingPayload = {
+        firstName: normalizedFirst || firstName,
+        lastName: normalizedLast || lastName,
+        unit: addressLine1 || unit,
+        address: addressLine0 || address,
+        city: cityVal || city,
+        postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : postcode,
+        country: countryVal || country,
+        sameAsShipping: true, // Wallet payments use same address
+      };
+
       try {
         // 1) Save shipping BEFORE confirming payment to avoid race conditions
         try {
-          await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, client: payer });
+          await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: payer });
         } catch (e) {
           event.complete('fail');
           setError('Failed to save shipping details. Please try again.');
@@ -806,23 +861,43 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     e.preventDefault();
     setError(null);
     setPostcodeError(null);
+    setBillingPostcodeError(null);
 
     if (!stripe || !elements) {
       setError('Stripe is not loaded yet.');
       return;
     }
 
+    // Basic required fields for shipping
     if (!email || !firstName || !lastName || !address || !city || !postcode || !phone) {
-      setError('Please fill in all required fields.');
+      setError('Please fill in all required shipping fields.');
       return;
+    }
+
+    // If billing is different, require billing fields
+    if (!billingSame) {
+      if (!billingFirstName || !billingLastName || !billingAddress || !billingCity || !billingPostcode) {
+        setError('Please fill in all required billing fields.');
+        return;
+      }
     }
 
     const normalizedPostcode = normalizeUkPostcode(postcode);
     if (!isValidUkPostcode(normalizedPostcode)) {
-      setPostcodeError('Please enter a valid UK postcode (e.g. SW1A 1AA).');
+      setPostcodeError('Please enter a valid UK postcode (e.g. EC1A 1BB or SW1A 1AA).');
       return;
     }
     setPostcode(normalizedPostcode);
+
+    let normalizedBillingPostcode = billingPostcode;
+    if (!billingSame) {
+      normalizedBillingPostcode = normalizeUkPostcode(billingPostcode);
+      if (!isValidUkPostcode(normalizedBillingPostcode)) {
+        setBillingPostcodeError('Please enter a valid UK postcode for billing (e.g. EC1A 1BB).');
+        return;
+      }
+      setBillingPostcode(normalizedBillingPostcode);
+    }
 
     const cardElement = elements.getElement(CardElement);
     if (!cardElement) {
@@ -847,19 +922,40 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       };
       const clientPayload = { name: `${firstName} ${lastName}`.trim(), email, phone };
 
+      // Build billing payload to send to server
+      const billingPayload = billingSame
+        ? {
+            firstName,
+            lastName,
+            unit,
+            address,
+            city,
+            postcode: normalizedPostcode,
+            country,
+            sameAsShipping: true,
+          }
+        : {
+            firstName: billingFirstName,
+            lastName: billingLastName,
+            unit: billingUnit,
+            address: billingAddress,
+            city: billingCity,
+            postcode: normalizedBillingPostcode,
+            country: billingCountry,
+            sameAsShipping: false,
+          };
+
       try {
-        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, client: clientPayload });
+        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: clientPayload });
       } catch (e) {
         setError('Failed to save shipping details. Please try again.');
         setProcessing(false);
         return;
       }
 
-      // 2) Confirm payment
-      const result = (await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card: cardElement,
-          billing_details: {
+      // 2) Prepare billing details for Stripe
+      const billingDetails = billingSame
+        ? {
             name: `${firstName} ${lastName}`.trim(),
             email: email || undefined,
             phone: phone || undefined,
@@ -870,7 +966,25 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
               postal_code: normalizedPostcode,
               country,
             },
-          },
+          }
+        : {
+            name: `${billingFirstName} ${billingLastName}`.trim(),
+            email: email || undefined,
+            phone: phone || undefined,
+            address: {
+              line1: billingAddress,
+              line2: billingUnit || undefined,
+              city: billingCity,
+              postal_code: normalizedBillingPostcode,
+              country: billingCountry,
+            },
+          };
+
+      // 3) Confirm payment
+      const result = (await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card: cardElement,
+          billing_details: billingDetails,
         },
       })) as unknown as LocalConfirmResult;
 
@@ -1049,7 +1163,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
               placeholder="123 High Street or SW1A 1AA"
             />
             <div className="text-xs text-gray-500 mt-1">
-              💡 <strong>Tip:</strong> Enter your <strong>postcode first</strong> (e.g. SW1A 1AA) for faster results, or start typing your street name.
+              💡 <strong>Tip:</strong> Enter your <strong>postcode first</strong> (e.g. SW1A 1AA or EC1 2NV) for faster results, or start typing your street name.
             </div>
 
             {showPredictions && predictions.length > 0 && (
@@ -1102,7 +1216,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
                   const normalized = normalizeUkPostcode(postcode);
                   setPostcode(normalized);
                   if (normalized && !isValidUkPostcode(normalized)) {
-                    setPostcodeError('Please enter a valid UK postcode (e.g. SW1A 1AA).');
+                    setPostcodeError('Please enter a valid UK postcode (e.g. EC1A 1BB or SW1A 1AA).');
                   } else {
                     setPostcodeError(null);
                   }
@@ -1132,8 +1246,152 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
               </select>
             </div>
           </div>
+
+          {/* Billing same as shipping checkbox */}
+          <div className="pt-2">
+            <label className="inline-flex items-center space-x-2 text-sm">
+              <input
+                type="checkbox"
+                checked={billingSame}
+                onChange={(e) => setBillingSame(e.target.checked)}
+                className="h-4 w-4 text-black rounded border-gray-300 focus:ring-black"
+              />
+              <span>Billing address same as shipping</span>
+            </label>
+            <div className="text-xs text-gray-500 mt-1">If unchecked, you&apos;ll be able to enter a different billing address.</div>
+          </div>
         </div>
       </div>
+
+      {/* Billing Address (appears when billingSame === false) */}
+      {!billingSame && (
+        <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
+          <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm:mb-4 flex items-center">
+            <Lock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
+            Billing Address
+          </h2>
+
+          <div className="space-y-3 sm:space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <div>
+                <label className="block text-base font-medium text-black mb-1 sm:mb-2">First Name <span className="text-black">*</span></label>
+                <input
+                  name="billing-given-name"
+                  autoComplete="billing given-name"
+                  type="text"
+                  value={billingFirstName}
+                  onChange={(e) => setBillingFirstName(e.target.value)}
+                  required
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                  placeholder="John"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base font-medium text-black mb-1 sm:mb-2">Last Name <span className="text-black">*</span></label>
+                <input
+                  name="billing-family-name"
+                  autoComplete="billing family-name"
+                  type="text"
+                  value={billingLastName}
+                  onChange={(e) => setBillingLastName(e.target.value)}
+                  required
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                  placeholder="Doe"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-base font-medium text-black mb-1 sm:mb-2">Apt, suite, unit (optional)</label>
+              <input
+                name="billing-address-line2"
+                autoComplete="billing address-line2"
+                type="text"
+                value={billingUnit}
+                onChange={(e) => setBillingUnit(e.target.value)}
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                placeholder="Flat 4 / Apt 2B"
+              />
+            </div>
+
+            <div>
+              <label className="block text-base font-medium text-black mb-1 sm:mb-2">Street Address <span className="text-black">*</span></label>
+              <input
+                name="billing-address-line1"
+                autoComplete="billing address-line1"
+                type="text"
+                value={billingAddress}
+                onChange={(e) => setBillingAddress(e.target.value)}
+                required
+                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                placeholder="123 High Street"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-base font-medium text-black mb-1 sm:mb-2">City <span className="text-black">*</span></label>
+                <input
+                  name="billing-address-level2"
+                  autoComplete="billing address-level2"
+                  type="text"
+                  value={billingCity}
+                  onChange={(e) => setBillingCity(e.target.value)}
+                  required
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                  placeholder="London"
+                />
+              </div>
+
+              <div>
+                <label className="block text-base font-medium text-black mb-1 sm:mb-2">Postcode <span className="text-black">*</span></label>
+                <input
+                  name="billing-postal-code"
+                  autoComplete="billing postal-code"
+                  type="text"
+                  value={billingPostcode}
+                  onChange={(e) => {
+                    setBillingPostcode(e.target.value);
+                    setBillingPostcodeError(null);
+                  }}
+                  onBlur={() => {
+                    const normalized = normalizeUkPostcode(billingPostcode);
+                    setBillingPostcode(normalized);
+                    if (normalized && !isValidUkPostcode(normalized)) {
+                      setBillingPostcodeError('Please enter a valid UK postcode (e.g. EC1A 1BB).');
+                    } else {
+                      setBillingPostcodeError(null);
+                    }
+                  }}
+                  required
+                  className={`w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all ${billingPostcodeError ? 'border-red-400' : 'border-gray-300'}`}
+                  placeholder="EC1A 1BB"
+                />
+                {billingPostcodeError ? (
+                  <div className="text-xs text-red-600 mt-1">{billingPostcodeError}</div>
+                ) : (
+                  <div className="text-xs text-gray-500 mt-1">Enter a UK postcode (we will normalize it for you)</div>
+                )}
+              </div>
+
+              <div className="col-span-2 sm:col-span-1">
+                <label className="block text-base font-medium text-black mb-1 sm:mb-2">Country <span className="text-black">*</span></label>
+                <select
+                  name="billing-country"
+                  autoComplete="billing country"
+                  value={billingCountry}
+                  onChange={(e) => setBillingCountry(e.target.value)}
+                  required
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                >
+                  <option value="GB">United Kingdom</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Payment */}
       <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
@@ -1175,4 +1433,4 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       </p>
     </form>
   );
-}
+} 
