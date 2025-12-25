@@ -132,21 +132,6 @@ export async function POST(req: Request) {
 
     await dbConnect();
 
-    // If idempotency key provided, check if PaymentIntent already exists
-    if (idempotencyKey) {
-      const stripeSecret = process.env.STRIPE_SECRET_KEY;
-      if (stripeSecret) {
-        try {
-          const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
-          // Try to retrieve existing PaymentIntent with this idempotency key
-          // Note: Stripe doesn't provide a direct way to search by idempotency key
-          // So we'll just let the create call handle it (Stripe will return existing if key matches)
-        } catch (err) {
-          // Continue to create new
-        }
-      }
-    }
-
     // Verify items and prices
     let verifiedItems: VerifiedItem[];
     try {
@@ -163,7 +148,7 @@ export async function POST(req: Request) {
     const total = subtotal + shipping;
     const amount = Math.round(total * 100);
 
-    // Build order items for metadata
+    // Build order items for metadata (compact)
     const orderItems = verifiedItems.map((it) => ({
       id: it.id,
       name: it.name,
@@ -173,8 +158,7 @@ export async function POST(req: Request) {
       source: it.source,
     }));
 
-    // Create Stripe PaymentIntent WITHOUT creating order
-    // Store all order data in metadata so webhook can create the order after payment
+    // Create Stripe PaymentIntent
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
     if (!stripeSecret) {
       console.error('STRIPE_SECRET_KEY is not configured');
@@ -183,20 +167,41 @@ export async function POST(req: Request) {
 
     const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
 
+    // Canonical metadata keys expected by the webhook:
+    // items, subtotal, shipping, total
+    // Also accept optional shipping and billing payloads from the request and store under:
+    // shippingAddress, billingAddress (stringified) — these are optional fallbacks.
+    const metadata: Record<string, string> = {
+      items: JSON.stringify(orderItems),
+      subtotal: subtotal.toFixed(2),
+      shipping: shipping.toFixed(2),
+      total: total.toFixed(2),
+      prices_verified: 'true',
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    };
+
+    if (body.shipping) {
+      try {
+        metadata.shippingAddress = typeof body.shipping === 'string' ? body.shipping : JSON.stringify(body.shipping);
+      } catch {}
+    }
+    if (body.billing) {
+      try {
+        metadata.billingAddress = typeof body.billing === 'string' ? body.billing : JSON.stringify(body.billing);
+      } catch {}
+    }
+    if (body.client) {
+      try {
+        metadata.client = typeof body.client === 'string' ? body.client : JSON.stringify(body.client);
+      } catch {}
+    }
+
     const paymentIntent = await stripe.paymentIntents.create(
       {
         amount,
         currency: 'gbp',
         automatic_payment_methods: { enabled: true },
-        metadata: {
-          // Store order data in metadata - webhook will create order
-          items: JSON.stringify(orderItems),
-          subtotal: subtotal.toFixed(2),
-          shipping: shipping.toFixed(2),
-          total: total.toFixed(2),
-          prices_verified: 'true',
-          ...(idempotencyKey ? { idempotencyKey } : {}),
-        },
+        metadata,
       },
       idempotencyKey ? { idempotencyKey } : undefined
     );

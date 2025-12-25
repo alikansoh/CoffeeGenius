@@ -49,8 +49,28 @@ type ShippingAddressChangeEvent = {
   }) => void;
 };
 
+/*
+  Wallet/paymentMethod shape we might receive from Payment Request / Apple Pay.
+  This is intentionally conservative but typed instead of using `any`.
+*/
+type WalletBillingAddress = {
+  line1?: string | null;
+  line2?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+};
+
+type WalletPaymentMethod = {
+  id: string;
+  billing_details?: {
+    name?: string | null;
+    address?: WalletBillingAddress | null;
+  } | null;
+};
+
 type PaymentMethodEvent = {
-  paymentMethod: { id: string };
+  paymentMethod: WalletPaymentMethod;
   payerName?: string | null;
   payerEmail?: string | null;
   payerPhone?: string | null;
@@ -357,22 +377,18 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       }
 
       // 2) If input looks like a postcode (or even for any input) perform a lightweight geocode to include nearby addresses
-      // This helps when users type postcode only — geocoder returns rich address components.
       const wantGeocode = isProbablyUkPostcode(trimmed) || trimmed.length <= 7;
       if (wantGeocode && geocoderRef.current) {
         try {
-          // Use geocode but keep it limited (componentRestrictions country=GB)
           geocoderRef.current.geocode(
             { address: trimmed, componentRestrictions: { country: 'GB' } },
             (geocodeResults, status) => {
               if (status === 'OK' && geocodeResults && geocodeResults.length > 0) {
-                // map top 4 geocode results (formatted_address exists)
                 const geoPreds = geocodeResults.slice(0, 4).map((g, idx) => ({
                   id: `geo-${idx}-${g.place_id ?? g.formatted_address}`,
                   text: g.formatted_address ?? '',
                   isGeocode: true as const,
                 }));
-                // merge geocode results after autocomplete suggestions, but de-duplicate by text
                 const combined = [
                   ...results,
                   ...geoPreds.filter((gp) => !results.some((r) => r.text === gp.text)),
@@ -381,7 +397,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
                 setActivePredictionIndex(-1);
                 setShowPredictions(combined.length > 0);
               } else {
-                // no geocode hits -> show only suggestions (if any)
                 setPredictions(results);
                 setActivePredictionIndex(-1);
                 setShowPredictions(results.length > 0);
@@ -435,9 +450,7 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
 
   // when selecting a prediction
   const selectPrediction = async (p: Prediction): Promise<void> => {
-    // Mark that we just selected a prediction to avoid onBlur geocode races
     justSelectedPredictionRef.current = true;
-    // After a short delay allow blur handling to resume
     window.setTimeout(() => {
       justSelectedPredictionRef.current = false;
     }, 400);
@@ -446,22 +459,18 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     setPredictions([]);
     setShowPredictions(false);
 
-    // Programmatically blur the address input so keyboard closes on mobile
     try {
       addressRef.current?.blur();
     } catch {}
 
-    // If the prediction is a geocode result, directly geocode/parse it
     if (p.isGeocode) {
       await geocodeAddress(p.text);
       clearSession();
       return;
     }
 
-    // If we have a placeId, call Place (new API) with same sessionToken
     const placesLib = placesLibRef.current;
     if (!placesLib) {
-      // fallback: geocode by text
       await geocodeAddress(p.text);
       clearSession();
       return;
@@ -474,12 +483,10 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         sessionToken: sessionTokenRef.current ?? undefined,
       });
 
-      // extract components (new API uses longText sometimes; fallback to long_name)
       const components = place.addressComponents ?? [];
       const lookup = (type: string): string | null => {
         const comp = components.find((c) => (c.types ?? []).includes(type));
         if (!comp) return null;
-        // avoid `any` by narrowing shape for fallback
         const longText = (comp as { longText?: string }).longText;
         const long_name = (comp as { long_name?: string }).long_name;
         return longText ?? long_name ?? null;
@@ -500,7 +507,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       setPostcode(postalCode ? normalizeUkPostcode(postalCode) : '');
       setCountry('GB');
 
-      // clear session after selection (billing-friendly)
       clearSession();
     } catch (err) {
       console.warn('[Place.fetchFields] error, falling back to geocode', err);
@@ -552,15 +558,11 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     } else if (e.key === 'Escape') {
       setShowPredictions(false);
       setPredictions([]);
-      // no session clear here — allow user to continue typing within same session
     }
   };
 
   const handleAddressBlur = (): void => {
-    // If we just selected a prediction, do not run the postcode geocode logic —
-    // this avoids the input being "stuck" or triggering unwanted geocode after selection.
     if (justSelectedPredictionRef.current) {
-      // hide predictions but do not run geocode
       setTimeout(() => {
         setShowPredictions(false);
       }, 50);
@@ -642,13 +644,14 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         });
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
-          throw new Error((body as { message?: string })?.message ?? 'Failed to save shipping');
+          const msg = (body as { message?: string })?.message ?? `Failed to save shipping (status ${res.status})`;
+          throw new Error(msg);
         }
         return true;
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('saveShipping error:', msg);
-        throw e;
+        throw new Error(msg);
       }
     },
     []
@@ -748,8 +751,9 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         country: countryVal || country,
       };
 
-      // Build billing payload — Wallet payments use same address
-      const billingPayload = {
+      // Build billing payload — Wallet payments use same address by default,
+      // but prefer any billing details the wallet provided on the paymentMethod.
+      let billingPayload: Record<string, unknown> = {
         firstName: normalizedFirst || firstName,
         lastName: normalizedLast || lastName,
         unit: addressLine1 || unit,
@@ -757,24 +761,46 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         city: cityVal || city,
         postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : postcode,
         country: countryVal || country,
-        sameAsShipping: true, // Wallet payments use same address
+        sameAsShipping: true,
       };
+
+      // If the wallet provided a billing address in the paymentMethod, prefer that
+      try {
+        const pm = event.paymentMethod;
+        if (pm && pm.billing_details && pm.billing_details.address) {
+          const addr = pm.billing_details.address;
+          const name = pm.billing_details.name ?? null;
+          const [bFirst, ...bRest] = (name || '').split(/\s+/);
+          billingPayload = {
+            firstName: bFirst || billingPayload.firstName,
+            lastName: bRest.length ? bRest.join(' ') : billingPayload.lastName,
+            unit: addr.line2 ?? billingPayload.unit,
+            address: addr.line1 ?? billingPayload.address,
+            city: addr.city ?? billingPayload.city,
+            postcode: addr.postal_code ? normalizeUkPostcode(String(addr.postal_code)) : billingPayload.postcode,
+            country: addr.country ?? billingPayload.country,
+            sameAsShipping: false,
+          };
+        }
+      } catch (err) {
+        // ignore and fall back to same-as-shipping
+      }
 
       try {
         // 1) Save shipping BEFORE confirming payment to avoid race conditions
         try {
           await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: payer });
         } catch (e) {
+          const message = e instanceof Error ? e.message : String(e);
           event.complete('fail');
-          setError('Failed to save shipping details. Please try again.');
+          setError(message || 'Failed to save shipping details. Please try again.');
           return;
         }
 
         // 2) Confirm payment with the payment method from the wallet
-        // Use a local typed shape for the result to avoid `any`.
         const result = (await stripe.confirmCardPayment(
           clientSecret,
-          { payment_method: (event.paymentMethod as { id: string }).id },
+          { payment_method: event.paymentMethod.id },
           { handleActions: false } as ConfirmCardPaymentOptions
         )) as unknown as LocalConfirmResult;
 
@@ -948,7 +974,8 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       try {
         await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: clientPayload });
       } catch (e) {
-        setError('Failed to save shipping details. Please try again.');
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg || 'Failed to save shipping details. Please try again.');
         setProcessing(false);
         return;
       }
@@ -1433,4 +1460,4 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       </p>
     </form>
   );
-} 
+}
