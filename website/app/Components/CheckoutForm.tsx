@@ -15,7 +15,7 @@ import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
 type Props = {
   total: number;
   clientSecret: string;
-  paymentIntentId?: string | null; // optional, page may pass this directly
+  paymentIntentId?: string | null;
 };
 
 type ShippingOption = {
@@ -25,7 +25,6 @@ type ShippingOption = {
   amount: number;
 };
 
-// Expanded to match Payment Request / Wallet shipping address shapes
 type ShippingAddress = {
   country?: string;
   countryCode?: string;
@@ -49,10 +48,6 @@ type ShippingAddressChangeEvent = {
   }) => void;
 };
 
-/*
-  Wallet/paymentMethod shape we might receive from Payment Request / Apple Pay.
-  This is intentionally conservative but typed instead of using `any`.
-*/
 type WalletBillingAddress = {
   line1?: string | null;
   line2?: string | null;
@@ -78,24 +73,18 @@ type PaymentMethodEvent = {
   complete: (result: 'success' | 'fail' | 'unknown') => void;
 };
 
-/*
-  Minimal local typing for the new Places module returned by google.maps.importLibrary('places').
-  This avoids using `any` while covering the members we need.
-*/
 type PlacesModule = {
   AutocompleteSessionToken: new () => google.maps.places.AutocompleteSessionToken;
   AutocompleteSuggestion: {
     fetchAutocompleteSuggestions: (req: {
       input: string;
       includedRegionCodes?: string[];
-      // sessionToken supported in the new API
       sessionToken?: google.maps.places.AutocompleteSessionToken;
     }) => Promise<{
       suggestions?: Array<{
         placePrediction?: {
           placeId?: string;
           text?: { text?: string };
-          // description or other fields may exist
         };
       }>;
     }>;
@@ -103,10 +92,8 @@ type PlacesModule = {
   Place: new (opts: { id: string }) => {
     fetchFields: (opts: {
       fields: string[];
-      // sessionToken supported in the new API
       sessionToken?: google.maps.places.AutocompleteSessionToken;
     }) => Promise<void>;
-    // After fetchFields resolves, these will be populated
     addressComponents?: Array<{ types?: string[]; longText?: string; long_name?: string }>;
     formattedAddress?: string;
   };
@@ -118,13 +105,10 @@ declare global {
   }
 }
 
-// reduce requests / UX tuning
 const MIN_AUTOCOMPLETE_CHARS = 4;
 const DEBOUNCE_MS = 800;
 const SESSION_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes
 
-// Local type to describe the minimal shape returned by stripe.confirmCardPayment we use here.
-// We avoid using `any` and we declare the members we access.
 type LocalConfirmResult = {
   error?: { message?: string } | null;
   paymentIntent?: { status?: string } | null;
@@ -136,7 +120,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const router = useRouter();
   const clearCart = useCart((s) => s.clearCart);
 
-  // Contact / shipping (shipping fields)
   const [email, setEmail] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [firstName, setFirstName] = useState<string>('');
@@ -147,7 +130,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const [postcode, setPostcode] = useState<string>('');
   const [country, setCountry] = useState<string>('GB');
 
-  // Billing fields (shown when billingSame is false)
   const [billingFirstName, setBillingFirstName] = useState<string>('');
   const [billingLastName, setBillingLastName] = useState<string>('');
   const [billingUnit, setBillingUnit] = useState<string>('');
@@ -156,47 +138,35 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const [billingPostcode, setBillingPostcode] = useState<string>('');
   const [billingCountry, setBillingCountry] = useState<string>('GB');
 
-  // New: billingSame flag (checkbox). When false, billing form appears.
   const [billingSame, setBillingSame] = useState<boolean>(true);
 
   const [postcodeError, setPostcodeError] = useState<string | null>(null);
   const [billingPostcodeError, setBillingPostcodeError] = useState<string | null>(null);
 
-  // Refs & libs
   const addressRef = useRef<HTMLInputElement | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const placesLibRef = useRef<PlacesModule | null>(null);
 
-  // session token (typed)
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // track when a prediction was just selected to avoid onBlur-triggered geocode racing
   const justSelectedPredictionRef = useRef<boolean>(false);
 
-  // Predictions: we support two kinds:
-  // - placePrediction from new AutocompleteSuggestion (has placeId)
-  // - geocode results (no placeId) created with fake id 'geo:<idx>'
   type Prediction = { id: string; text: string; placeId?: string; isGeocode?: boolean };
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [activePredictionIndex, setActivePredictionIndex] = useState<number>(-1);
   const [showPredictions, setShowPredictions] = useState<boolean>(false);
 
-  // debounce
   type Timer = ReturnType<typeof setTimeout>;
   const debounceTimerRef = useRef<Timer | null>(null);
 
-  // Payment request state
   const [paymentRequest, setPaymentRequest] = useState<PaymentRequest | null>(null);
   const [canUsePaymentRequest, setCanUsePaymentRequest] = useState<boolean>(false);
 
-  // UX state
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
   const amountPence = useMemo(() => Math.round(total * 100), [total]);
 
-  // load Google maps script
   const loadGooglePlaces = (apiKey: string): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       if (typeof window === 'undefined') return reject(new Error('No window'));
@@ -223,20 +193,15 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       document.head.appendChild(script);
     });
 
-  // UK postcode helpers
   const normalizeUkPostcode = (value: string): string => {
     const raw = (value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (raw.length <= 3) return raw;
-    // Insert a space before the last 3 characters (standard inward code length)
     return `${raw.slice(0, raw.length - 3)} ${raw.slice(-3)}`.trim();
   };
 
-  // Improved (more permissive but still strict enough) UK postcode regex:
-  // Accepts e.g. EC1 2NV, EC1A 1BB, WC2H 7LT, SW1A 1AA, etc.
   const isValidUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = normalizeUkPostcode(value);
-    // Allow optional space and be case-insensitive
     const re = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
     return re.test(normalized);
   };
@@ -244,11 +209,9 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
   const isProbablyUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = value.trim().toUpperCase();
-    // start-of-input postcode-like (e.g. SW1A or SW1A1 or SW1A 1AA or EC1)
     return /^[A-Z]{1,2}\d/.test(normalized);
   };
 
-  // parse geocode results
   const parsePlaceToFields = (place: google.maps.GeocoderResult): void => {
     const components = place.address_components ?? [];
     const lookup = (type: string): string | null => {
@@ -272,7 +235,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     setCountry('GB');
   };
 
-  // initialize geocoder and import new Places module
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!apiKey) return;
@@ -286,15 +248,10 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
 
         geocoderRef.current = new g.maps.Geocoder();
 
-        // importLibrary is supported on the new SDK; it returns the module with new classes.
-        // We cast to our local PlacesModule type for safe usage without using `any`.
         try {
           const mod = await g.maps.importLibrary('places');
           placesLibRef.current = mod as unknown as PlacesModule;
         } catch (err) {
-          // importLibrary may not exist in all environments; fall back to global places if available
-          // The global google.maps.places does not expose the new Place & AutocompleteSuggestion constructors,
-          // but we keep the fallback in case importLibrary isn't available (less optimal).
           console.warn('[Places] importLibrary failed, new API may not be available:', err);
         }
       })
@@ -310,13 +267,11 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     };
   }, []);
 
-  // session token lifecycle helpers
   const startSession = (): void => {
     if (!placesLibRef.current || !window.google?.maps?.places) return;
     if (!sessionTokenRef.current) {
       sessionTokenRef.current = new placesLibRef.current.AutocompleteSessionToken();
     }
-    // reset/refresh expire timer
     if (sessionTimerRef.current) {
       clearTimeout(sessionTimerRef.current);
     }
@@ -334,7 +289,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     sessionTokenRef.current = null;
   };
 
-  // fetch suggestions using new AutocompleteSuggestion API + geocode fallback for postcodes
   const fetchPredictions = useCallback(
     async (inputValue: string): Promise<void> => {
       const trimmed = inputValue.trim();
@@ -344,13 +298,11 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         return;
       }
 
-      // start/ensure session token
       startSession();
 
       const placesLib = placesLibRef.current;
       const results: Prediction[] = [];
 
-      // 1) Use new AutocompleteSuggestion when available
       if (placesLib) {
         try {
           const resp = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
@@ -367,7 +319,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
             if (text && placeId) {
               results.push({ id: `p-${placeId}`, text, placeId });
             } else if (text) {
-              // fallback: create id from index
               results.push({ id: `p-${i}`, text });
             }
           }
@@ -376,7 +327,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         }
       }
 
-      // 2) If input looks like a postcode (or even for any input) perform a lightweight geocode to include nearby addresses
       const wantGeocode = isProbablyUkPostcode(trimmed) || trimmed.length <= 7;
       if (wantGeocode && geocoderRef.current) {
         try {
@@ -403,13 +353,12 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
               }
             }
           );
-          return; // geocoder callback will set predictions
+          return;
         } catch (err) {
           console.warn('[Geocoder] error', err);
         }
       }
 
-      // fallback if no geocode requested or geocoder not available
       setPredictions(results);
       setActivePredictionIndex(-1);
       setShowPredictions(results.length > 0);
@@ -427,7 +376,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     [fetchPredictions]
   );
 
-  // handle input changes
   const handleAddressInput = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const value = e.target.value;
     setAddress(value);
@@ -438,17 +386,14 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     setShowPredictions(false);
 
     if (!value || value.trim().length < MIN_AUTOCOMPLETE_CHARS) {
-      // clear session if input cleared
       clearSession();
       return;
     }
 
-    // schedule new predictions (including postcode inputs)
     startSession();
     scheduleFetchPredictions(value);
   };
 
-  // when selecting a prediction
   const selectPrediction = async (p: Prediction): Promise<void> => {
     justSelectedPredictionRef.current = true;
     window.setTimeout(() => {
@@ -515,7 +460,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     }
   };
 
-  // geocode helper (used for postcode or fallback)
   const geocodeAddress = async (value: string): Promise<void> => {
     const geocoder = geocoderRef.current;
     if (!geocoder || !value) return;
@@ -523,8 +467,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       geocoder.geocode({ address: value, componentRestrictions: { country: 'GB' } }, (results, status) => {
         if (status === 'OK' && results && results.length > 0) {
           parsePlaceToFields(results[0]);
-        } else {
-          // nothing found — leave address as-is
         }
       });
     } catch (err) {
@@ -577,7 +519,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     }, 150);
   };
 
-  // Payment Request setup
   useEffect(() => {
     if (!stripe || !clientSecret) {
       setPaymentRequest(null);
@@ -608,22 +549,18 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       });
   }, [stripe, clientSecret, amountPence]);
 
-  // Helper: extract paymentIntentId from clientSecret if possible
   const extractPaymentIntentId = (cs?: string | null): string | null => {
     if (!cs) return null;
-    // clientSecret is like "pi_XXXXXXXX_secret_YYYYYY"
     const parts = cs.split('_secret');
     if (parts.length > 0 && parts[0].startsWith('pi_')) return parts[0];
     return null;
   };
 
-  // combine prop and extracted id (prop wins)
   const paymentIntentId = useMemo(
     () => paymentIntentIdProp ?? extractPaymentIntentId(clientSecret ?? null),
     [paymentIntentIdProp, clientSecret]
   );
 
-  // saveShipping: call /api/save-shipping to persist shipping BEFORE confirming payment
   const saveShipping = useCallback(
     async (opts: {
       paymentIntentId?: string | null;
@@ -657,7 +594,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     []
   );
 
-  // simplified function to call complete-order after payment as a best-effort (webhook is the primary source of truth)
   const finalizeOrder = useCallback(
     async (opts: { paymentIntentId?: string | null }) => {
       try {
@@ -669,14 +605,64 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
           }),
         });
       } catch (e) {
-        // non-blocking — webhook will handle it
         console.warn('finalizeOrder warning:', e);
       }
     },
     []
   );
 
-  // Payment Request handlers (modified to save shipping BEFORE confirming payment)
+  // Centralized result handling for Stripe confirm responses
+  const handleConfirmResult = useCallback(
+    async (result: LocalConfirmResult): Promise<boolean> => {
+      // result.error -> show message
+      if (result.error) {
+        const msg = result.error.message ?? 'Payment failed.';
+        setError(msg);
+        return false;
+      }
+
+      const status = result.paymentIntent?.status ?? '';
+
+      if (status === 'succeeded') {
+        return true;
+      }
+
+      if (status === 'requires_action' || status === 'requires_confirmation') {
+        // Try to handle actions (3DS) - this will show UI if required
+        if (!stripe) {
+          setError('Stripe SDK not available to complete authentication.');
+          return false;
+        }
+        const next = (await stripe.confirmCardPayment(clientSecret)) as unknown as LocalConfirmResult;
+        if (next.error) {
+          setError(next.error.message ?? 'Authentication required but failed.');
+          return false;
+        }
+        if (next.paymentIntent?.status === 'succeeded') {
+          return true;
+        }
+        setError('Payment requires additional action and was not completed.');
+        return false;
+      }
+
+      if (status === 'requires_payment_method') {
+        setError('Payment method was declined. Please try another card or payment method.');
+        return false;
+      }
+
+      if (status === 'processing') {
+        // Processing: treat as in-progress. Webhook will be canonical.
+        setError(null);
+        return true;
+      }
+
+      // Fallback
+      setError('Payment not completed. Try another card.');
+      return false;
+    },
+    [stripe, clientSecret]
+  );
+
   useEffect(() => {
     if (!paymentRequest || !stripe) return;
 
@@ -697,15 +683,12 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       const event = ev as PaymentMethodEvent;
       setError(null);
 
-      // Build payer values without mixing ?? and || operators directly
       const payerNameVal = event.payerName ?? `${firstName} ${lastName}`.trim();
       const payerEmailVal = event.payerEmail ?? email;
       const payerPhoneVal = event.payerPhone ?? phone;
 
-      // prefer event payer values, otherwise try shippingAddress.recipient and other fields
       const shippingAddressRaw = event.shippingAddress ?? null;
 
-      // Normalize recipient to first/last name
       const recipient = (shippingAddressRaw?.recipient ?? payerNameVal ?? '')?.trim();
       let normalizedFirst = '';
       let normalizedLast = '';
@@ -715,7 +698,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         normalizedLast = parts.length > 0 ? parts.join(' ') : '';
       }
 
-      // addressLine handling
       const addressLine0 = shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 0
         ? (shippingAddressRaw.addressLine[0] ?? '')
         : '';
@@ -723,12 +705,10 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         ? (shippingAddressRaw.addressLine[1] ?? '')
         : '';
 
-      // city / region / postal / country
       const cityVal = (shippingAddressRaw?.city ?? shippingAddressRaw?.administrativeArea ?? city) ?? '';
       const postcodeVal = (shippingAddressRaw?.postalCode ?? '') ?? '';
       const countryVal = (shippingAddressRaw?.country ?? shippingAddressRaw?.countryCode ?? country) ?? '';
 
-      // phone: prefer event.payerPhone, then shippingAddress.phone
       const phoneVal = payerPhoneVal ?? (shippingAddressRaw?.phone as string | null | undefined) ?? null;
       const emailVal = payerEmailVal ?? null;
 
@@ -738,7 +718,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         phone: phoneVal ?? null,
       };
 
-      // Build shipping payload in the same shape as card flow expects
       const shippingPayload: Record<string, unknown> = {
         firstName: normalizedFirst || (firstName || ''),
         lastName: normalizedLast || (lastName || ''),
@@ -751,8 +730,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         country: countryVal || country,
       };
 
-      // Build billing payload — Wallet payments use same address by default,
-      // but prefer any billing details the wallet provided on the paymentMethod.
       let billingPayload: Record<string, unknown> = {
         firstName: normalizedFirst || firstName,
         lastName: normalizedLast || lastName,
@@ -764,7 +741,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         sameAsShipping: true,
       };
 
-      // If the wallet provided a billing address in the paymentMethod, prefer that
       try {
         const pm = event.paymentMethod;
         if (pm && pm.billing_details && pm.billing_details.address) {
@@ -782,47 +758,44 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
             sameAsShipping: false,
           };
         }
-      } catch (err) {
-        // ignore and fall back to same-as-shipping
+      } catch {
+        // ignore and fall back
       }
 
       try {
-        // 1) Save shipping BEFORE confirming payment to avoid race conditions
+        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: payer });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
         try {
-          await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: payer });
-        } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
           event.complete('fail');
-          setError(message || 'Failed to save shipping details. Please try again.');
-          return;
-        }
+        } catch {}
+        setError(message || 'Failed to save shipping details. Please try again.');
+        return;
+      }
 
-        // 2) Confirm payment with the payment method from the wallet
+      setProcessing(true);
+      try {
         const result = (await stripe.confirmCardPayment(
           clientSecret,
           { payment_method: event.paymentMethod.id },
           { handleActions: false } as ConfirmCardPaymentOptions
         )) as unknown as LocalConfirmResult;
 
-        if (result.error) {
-          event.complete('fail');
-          setError(result.error.message ?? 'Payment failed.');
+        const ok = await handleConfirmResult(result);
+
+        if (!ok) {
+          try {
+            event.complete('fail');
+          } catch {}
+          setProcessing(false);
           return;
         }
 
-        if (result.paymentIntent && result.paymentIntent.status === 'requires_action') {
-          const next = (await stripe.confirmCardPayment(clientSecret)) as unknown as LocalConfirmResult;
-          if (next.error) {
-            event.complete('fail');
-            setError(next.error.message ?? 'Payment requires additional action.');
-            return;
-          }
-        }
+        try {
+          event.complete('success');
+        } catch {}
 
-        event.complete('success');
-
-        // 3) Optional: best-effort call to complete-order to mark paid / decrement stock immediately.
-        // The webhook is the canonical processor; this is a fallback/fast path.
+        // best-effort finalize
         await finalizeOrder({ paymentIntentId });
 
         clearCart();
@@ -833,12 +806,11 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         } catch {}
         const message = err instanceof Error ? err.message : String(err);
         setError(message || 'Unexpected error during wallet payment.');
+      } finally {
+        setProcessing(false);
       }
     };
 
-    // attach handlers; stripe's PaymentRequest returns an EventEmitter-style object
-    // The `on` API expects specific event signatures; we cast handlers to `unknown` when attaching
-    // to avoid leaking `any`, while keeping runtime behavior.
     (paymentRequest as unknown as { on: (evName: string, fn: unknown) => void }).on(
       'shippingaddresschange',
       onShippingAddressChange as unknown
@@ -848,10 +820,8 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       onPaymentMethod as unknown
     );
 
-    // cleanup
     return () => {
       try {
-        // attempt to call `off` if available
         (paymentRequest as unknown as { off?: (evName: string, fn: unknown) => void }).off?.(
           'shippingaddresschange',
           onShippingAddressChange as unknown
@@ -880,9 +850,9 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     address,
     postcode,
     country,
+    handleConfirmResult,
   ]);
 
-  // Form submit for card payments — save shipping BEFORE calling stripe.confirmCardPayment
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
@@ -894,13 +864,11 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       return;
     }
 
-    // Basic required fields for shipping
     if (!email || !firstName || !lastName || !address || !city || !postcode || !phone) {
       setError('Please fill in all required shipping fields.');
       return;
     }
 
-    // If billing is different, require billing fields
     if (!billingSame) {
       if (!billingFirstName || !billingLastName || !billingAddress || !billingCity || !billingPostcode) {
         setError('Please fill in all required billing fields.');
@@ -934,7 +902,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
     setProcessing(true);
 
     try {
-      // 1) Save shipping BEFORE payment confirmation
       const shippingPayload = {
         firstName,
         lastName,
@@ -948,7 +915,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
       };
       const clientPayload = { name: `${firstName} ${lastName}`.trim(), email, phone };
 
-      // Build billing payload to send to server
       const billingPayload = billingSame
         ? {
             firstName,
@@ -980,7 +946,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         return;
       }
 
-      // 2) Prepare billing details for Stripe
       const billingDetails = billingSame
         ? {
             name: `${firstName} ${lastName}`.trim(),
@@ -1007,7 +972,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
             },
           };
 
-      // 3) Confirm payment
       const result = (await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: cardElement,
@@ -1015,21 +979,18 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         },
       })) as unknown as LocalConfirmResult;
 
-      if (result.error) {
-        setError(result.error.message ?? 'Payment failed.');
+      const ok = await handleConfirmResult(result);
+
+      if (!ok) {
         setProcessing(false);
         return;
       }
 
-      if (result.paymentIntent?.status === 'succeeded') {
-        // best-effort finalize (webhook remains canonical)
-        await finalizeOrder({ paymentIntentId });
+      // best-effort finalize
+      await finalizeOrder({ paymentIntentId });
 
-        clearCart();
-        router.push('/checkout/success');
-      } else {
-        setError('Payment not completed. Try another card.');
-      }
+      clearCart();
+      router.push('/checkout/success');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
@@ -1274,7 +1235,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
             </div>
           </div>
 
-          {/* Billing same as shipping checkbox */}
           <div className="pt-2">
             <label className="inline-flex items-center space-x-2 text-sm">
               <input
@@ -1290,7 +1250,6 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
         </div>
       </div>
 
-      {/* Billing Address (appears when billingSame === false) */}
       {!billingSame && (
         <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
           <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm:mb-4 flex items-center">

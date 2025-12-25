@@ -6,8 +6,6 @@ import dbConnect from '@/lib/dbConnect';
 import Order from '@/models/Order';
 import mongoose from 'mongoose';
 
-export const runtime = 'nodejs';
-
 export async function POST(req: Request) {
   try {
     const raw = await req.json().catch(() => ({} as Record<string, unknown>));
