@@ -15,7 +15,7 @@ import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
 type Props = {
   total: number;
   clientSecret: string;
-  orderId?: string | null; // optional, create-payment-intent returns this and page may pass it
+  paymentIntentId?: string | null; // optional, page may pass this directly
 };
 
 type ShippingOption = {
@@ -25,11 +25,17 @@ type ShippingOption = {
   amount: number;
 };
 
+// Expanded to match Payment Request / Wallet shipping address shapes
 type ShippingAddress = {
   country?: string;
+  countryCode?: string;
   city?: string | null;
+  administrativeArea?: string | null;
   postalCode?: string | null;
   addressLine?: (string | null)[] | null;
+  recipient?: string | null;
+  organization?: string | null;
+  phone?: string | null;
   [key: string]: unknown;
 };
 
@@ -104,7 +110,7 @@ type LocalConfirmResult = {
   paymentIntent?: { status?: string } | null;
 };
 
-export default function CheckoutForm({ total, clientSecret, orderId }: Props): React.JSX.Element {
+export default function CheckoutForm({ total, clientSecret, paymentIntentId: paymentIntentIdProp }: Props): React.JSX.Element {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -568,13 +574,16 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
     return null;
   };
 
-  const paymentIntentId = useMemo(() => extractPaymentIntentId(clientSecret ?? null), [clientSecret]);
+  // combine prop and extracted id (prop wins)
+  const paymentIntentId = useMemo(
+    () => paymentIntentIdProp ?? extractPaymentIntentId(clientSecret ?? null),
+    [paymentIntentIdProp, clientSecret]
+  );
 
   // saveShipping: call /api/save-shipping to persist shipping BEFORE confirming payment
   const saveShipping = useCallback(
     async (opts: {
       paymentIntentId?: string | null;
-      orderId?: string | null;
       shippingAddress: Record<string, unknown> | null;
       client: { name?: string | null; email?: string | null; phone?: string | null } | null;
     }) => {
@@ -584,7 +593,6 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: opts.paymentIntentId ?? undefined,
-            orderId: opts.orderId ?? undefined,
             shippingAddress: opts.shippingAddress,
             client: opts.client,
           }),
@@ -605,14 +613,13 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
 
   // simplified function to call complete-order after payment as a best-effort (webhook is the primary source of truth)
   const finalizeOrder = useCallback(
-    async (opts: { paymentIntentId?: string | null; orderId?: string | null }) => {
+    async (opts: { paymentIntentId?: string | null }) => {
       try {
         await fetch('/api/complete-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             paymentIntentId: opts.paymentIntentId ?? undefined,
-            orderId: opts.orderId ?? undefined,
           }),
         });
       } catch (e) {
@@ -649,18 +656,59 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
       const payerEmailVal = event.payerEmail ?? email;
       const payerPhoneVal = event.payerPhone ?? phone;
 
+      // prefer event payer values, otherwise try shippingAddress.recipient and other fields
+      const shippingAddressRaw = event.shippingAddress ?? null;
+
+      // Normalize recipient to first/last name
+      const recipient = (shippingAddressRaw?.recipient ?? payerNameVal ?? '')?.trim();
+      let normalizedFirst = '';
+      let normalizedLast = '';
+      if (recipient) {
+        const parts = recipient.split(/\s+/);
+        normalizedFirst = parts.shift() ?? '';
+        normalizedLast = parts.length > 0 ? parts.join(' ') : '';
+      }
+
+      // addressLine handling
+      const addressLine0 = shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 0
+        ? (shippingAddressRaw.addressLine[0] ?? '')
+        : '';
+      const addressLine1 = shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 1
+        ? (shippingAddressRaw.addressLine[1] ?? '')
+        : '';
+
+      // city / region / postal / country
+      const cityVal = (shippingAddressRaw?.city ?? shippingAddressRaw?.administrativeArea ?? city) ?? '';
+      const postcodeVal = (shippingAddressRaw?.postalCode ?? '') ?? '';
+      const countryVal = (shippingAddressRaw?.country ?? shippingAddressRaw?.countryCode ?? country) ?? '';
+
+      // phone: prefer event.payerPhone, then shippingAddress.phone
+      const phoneVal = payerPhoneVal ?? (shippingAddressRaw?.phone as string | null | undefined) ?? null;
+      const emailVal = payerEmailVal ?? null;
+
       const payer = {
-        name: payerNameVal && payerNameVal.trim() ? payerNameVal : null,
-        email: payerEmailVal ?? null,
-        phone: payerPhoneVal ?? null,
+        name: (payerNameVal && payerNameVal.trim()) ? payerNameVal : (recipient || null),
+        email: emailVal ?? null,
+        phone: phoneVal ?? null,
       };
 
-      const shippingAddress = event.shippingAddress ?? null;
+      // Build shipping payload in the same shape as card flow expects
+      const shippingPayload: Record<string, unknown> = {
+        firstName: normalizedFirst || (firstName || ''),
+        lastName: normalizedLast || (lastName || ''),
+        email: emailVal ?? email,
+        phone: phoneVal ?? phone,
+        unit: addressLine1 || '',
+        address: addressLine0 || (address || ''),
+        city: cityVal || city,
+        postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : (postcode || ''),
+        country: countryVal || country,
+      };
 
       try {
         // 1) Save shipping BEFORE confirming payment to avoid race conditions
         try {
-          await saveShipping({ paymentIntentId, orderId, shippingAddress, client: payer });
+          await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, client: payer });
         } catch (e) {
           event.complete('fail');
           setError('Failed to save shipping details. Please try again.');
@@ -694,7 +742,7 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
 
         // 3) Optional: best-effort call to complete-order to mark paid / decrement stock immediately.
         // The webhook is the canonical processor; this is a fallback/fast path.
-        await finalizeOrder({ paymentIntentId, orderId });
+        await finalizeOrder({ paymentIntentId });
 
         clearCart();
         router.push('/checkout/success');
@@ -744,10 +792,13 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
     phone,
     saveShipping,
     paymentIntentId,
-    orderId,
     finalizeOrder,
     clearCart,
     router,
+    city,
+    address,
+    postcode,
+    country,
   ]);
 
   // Form submit for card payments — save shipping BEFORE calling stripe.confirmCardPayment
@@ -797,7 +848,7 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
       const clientPayload = { name: `${firstName} ${lastName}`.trim(), email, phone };
 
       try {
-        await saveShipping({ paymentIntentId, orderId, shippingAddress: shippingPayload, client: clientPayload });
+        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, client: clientPayload });
       } catch (e) {
         setError('Failed to save shipping details. Please try again.');
         setProcessing(false);
@@ -831,7 +882,7 @@ export default function CheckoutForm({ total, clientSecret, orderId }: Props): R
 
       if (result.paymentIntent?.status === 'succeeded') {
         // best-effort finalize (webhook remains canonical)
-        await finalizeOrder({ paymentIntentId, orderId });
+        await finalizeOrder({ paymentIntentId });
 
         clearCart();
         router.push('/checkout/success');

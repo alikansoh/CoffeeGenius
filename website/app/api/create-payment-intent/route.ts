@@ -6,49 +6,24 @@ import dbConnect from '@/lib/dbConnect';
 import CoffeeVariant from '@/models/CoffeeVariant';
 import Coffee from '@/models/Coffee';
 import Equipment from '@/models/Equipment';
-import Order from '@/models/Order';
 import mongoose from 'mongoose';
 
 type ClientItem = { id: string; name: string; price: number; quantity: number };
 type VerifiedItem = { id: string; name: string; quantity: number; clientPrice: number; storedPrice: number; source: 'variant' | 'coffee' | 'equipment' };
 
 interface ProductDoc {
-  // possible numeric price fields (pence or units)
   pricePence?: number;
   minPricePence?: number;
   minPrice?: number;
   price?: number;
-  // human-friendly name
   name?: string;
-  // slug for equipment lookup
   slug?: string;
-  // any other fields are irrelevant for our typing here
 }
 
 interface StoredLookup {
   price: number;
   source: 'variant' | 'coffee' | 'equipment';
   docName?: string;
-}
-
-interface OrderLean {
-  paymentIntentId?: string;
-  total: number;
-  _id: mongoose.Types.ObjectId;
-  metadata?: Record<string, unknown>;
-}
-
-interface OrderDocument extends mongoose.Document {
-  _id: mongoose.Types.ObjectId;
-  paymentIntentId?: string;
-  items?: unknown[];
-  subtotal?: number;
-  shipping?: number;
-  total?: number;
-  currency?: string;
-  status?: string;
-  metadata?: Record<string, unknown>;
-  save: () => Promise<this>;
 }
 
 function parseItems(input: unknown): ClientItem[] {
@@ -75,7 +50,6 @@ function normalizeDocPriceToGbp(doc: ProductDoc | null | undefined): number {
 
   const pricePence = asNum((doc as ProductDoc).pricePence) ?? asNum((doc as ProductDoc).minPricePence) ?? asNum((doc as ProductDoc).minPrice);
   if (typeof pricePence === 'number') {
-    // pricePence is in pence -> convert to GBP
     return Number((pricePence / 100).toFixed(2));
   }
 
@@ -86,7 +60,6 @@ function normalizeDocPriceToGbp(doc: ProductDoc | null | undefined): number {
 }
 
 async function findStoredPriceForId(id: string): Promise<StoredLookup | null> {
-  // If id looks like a Mongo ObjectId, check by id on variant/coffee/equipment
   if (mongoose.Types.ObjectId.isValid(id)) {
     try {
       const variant = (await CoffeeVariant.findById(id).lean().exec()) as unknown as ProductDoc | null;
@@ -94,7 +67,7 @@ async function findStoredPriceForId(id: string): Promise<StoredLookup | null> {
         return { price: normalizeDocPriceToGbp(variant), source: 'variant', docName: variant.name };
       }
     } catch {
-      // ignore and continue to other lookups
+      // ignore
     }
     try {
       const coffee = (await Coffee.findById(id).lean().exec()) as unknown as ProductDoc | null;
@@ -114,7 +87,6 @@ async function findStoredPriceForId(id: string): Promise<StoredLookup | null> {
     }
   }
 
-  // fallback: try to find equipment by slug
   try {
     const equipBySlug = (await Equipment.findOne({ slug: id }).lean().exec()) as unknown as ProductDoc | null;
     if (equipBySlug) {
@@ -156,25 +128,22 @@ export async function POST(req: Request) {
     const items = parseItems(rawItems);
     if (items.length === 0) return NextResponse.json({ error: 'No items in cart.' }, { status: 400 });
 
-    // Idempotency key (header preferred, fallback to body.idempotencyKey)
     const idempotencyKey = (req.headers.get('Idempotency-Key') ?? (body.idempotencyKey as string) ?? null) as string | null;
 
     await dbConnect();
 
-    // If an idempotency key was provided, try to return existing order
+    // If idempotency key provided, check if PaymentIntent already exists
     if (idempotencyKey) {
-      const existing = (await Order.findOne({ 'metadata.idempotencyKey': idempotencyKey }).lean().exec()) as unknown as OrderLean | null;
-      if (existing) {
-        // If already has PaymentIntent client_secret stored in metadata, return it
-        const existingPI = existing.paymentIntentId ? existing.paymentIntentId : null;
-        return NextResponse.json(
-          {
-            clientSecret: null, // PaymentIntent may not be retrievable easily; client should reuse returned order info
-            amount: Math.round(existing.total * 100),
-            orderId: existing._id.toString(),
-          },
-          { status: 200 }
-        );
+      const stripeSecret = process.env.STRIPE_SECRET_KEY;
+      if (stripeSecret) {
+        try {
+          const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+          // Try to retrieve existing PaymentIntent with this idempotency key
+          // Note: Stripe doesn't provide a direct way to search by idempotency key
+          // So we'll just let the create call handle it (Stripe will return existing if key matches)
+        } catch (err) {
+          // Continue to create new
+        }
       }
     }
 
@@ -194,7 +163,7 @@ export async function POST(req: Request) {
     const total = subtotal + shipping;
     const amount = Math.round(total * 100);
 
-    // Build order items
+    // Build order items for metadata
     const orderItems = verifiedItems.map((it) => ({
       id: it.id,
       name: it.name,
@@ -204,18 +173,8 @@ export async function POST(req: Request) {
       source: it.source,
     }));
 
-    // Create pending order (with idempotency metadata when provided)
-    const orderDoc = (await Order.create({
-      items: orderItems,
-      subtotal: Number(subtotal.toFixed(2)),
-      shipping: Number(shipping.toFixed(2)),
-      total: Number(total.toFixed(2)),
-      currency: 'gbp',
-      status: 'pending',
-      metadata: { prices_verified: true, ...(idempotencyKey ? { idempotencyKey } : {}) },
-    })) as unknown as OrderDocument;
-
-    // Create Stripe PaymentIntent; pass orderId in metadata; use Stripe idempotency via options if idempotencyKey provided
+    // Create Stripe PaymentIntent WITHOUT creating order
+    // Store all order data in metadata so webhook can create the order after payment
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
     if (!stripeSecret) {
       console.error('STRIPE_SECRET_KEY is not configured');
@@ -230,22 +189,23 @@ export async function POST(req: Request) {
         currency: 'gbp',
         automatic_payment_methods: { enabled: true },
         metadata: {
-          order_id: orderDoc._id.toString(),
+          // Store order data in metadata - webhook will create order
+          items: JSON.stringify(orderItems),
+          subtotal: subtotal.toFixed(2),
+          shipping: shipping.toFixed(2),
+          total: total.toFixed(2),
           prices_verified: 'true',
+          ...(idempotencyKey ? { idempotencyKey } : {}),
         },
       },
       idempotencyKey ? { idempotencyKey } : undefined
     );
 
-    // Save paymentIntent id on the order document
-    orderDoc.paymentIntentId = paymentIntent.id;
-    await orderDoc.save();
-
     return NextResponse.json(
       {
         clientSecret: paymentIntent.client_secret ?? null,
         amount,
-        orderId: orderDoc._id.toString(),
+        paymentIntentId: paymentIntent.id,
       },
       { status: 200 }
     );

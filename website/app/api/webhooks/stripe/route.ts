@@ -16,27 +16,19 @@ interface ProductDocLean {
   stock?: number;
   coffeeId?: mongoose.Types.ObjectId | string;
   slug?: string;
-  // allow extra fields without referencing them
-  [k: string]: unknown;
-}
-
-interface OrderItem {
-  id: string;
-  qty: number;
-  source?: ProductSource | string;
-  // allow extra fields
   [k: string]: unknown;
 }
 
 interface OrderDocument extends mongoose.Document {
   _id: mongoose.Types.ObjectId;
-  items?: OrderItem[];
+  items?: unknown[];
   status?: string;
   paymentIntentId?: string;
   paidAt?: Date | null;
+  shippingAddress?: Record<string, unknown>;
+  client?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   save(opts?: { session?: mongoose.ClientSession }): Promise<this>;
-  // allow other fields
   [k: string]: unknown;
 }
 
@@ -50,8 +42,7 @@ async function decrementOneAtomic(
   item: { id: string; qty: number; source?: string }
 ): Promise<{ id: string; qty: number; source: string; before: number; after: number }> {
   const { id, qty, source = 'variant' } = item;
-
-  const sessionOpt = session ?? undefined; // pass undefined if null
+  const sessionOpt = session ?? undefined;
 
   if (source === 'variant') {
     const updated = (await CoffeeVariant.findOneAndUpdate(
@@ -64,7 +55,6 @@ async function decrementOneAtomic(
       throw new Error(`Insufficient stock or variant not found for id=${id}`);
     }
 
-    // Optionally update parent Coffee.totalStock if you maintain that field
     if (updated.coffeeId) {
       await Coffee.findByIdAndUpdate(updated.coffeeId, { $inc: { totalStock: -qty } }, { session: sessionOpt }).exec();
     }
@@ -86,7 +76,6 @@ async function decrementOneAtomic(
   }
 
   if (source === 'equipment') {
-    // try by object id first, then by slug
     let updated = null as ProductDocLean | null;
     if (mongoose.Types.ObjectId.isValid(id)) {
       updated = (await Equipment.findOneAndUpdate(
@@ -121,7 +110,6 @@ export async function POST(req: Request) {
 
   const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
 
-  // raw body required for Stripe signature verification
   const buf = Buffer.from(await req.arrayBuffer());
   const sig = req.headers.get('stripe-signature') ?? '';
 
@@ -136,68 +124,77 @@ export async function POST(req: Request) {
   try {
     if (event.type === 'payment_intent.succeeded') {
       const pi = event.data.object as Stripe.PaymentIntent;
-
-      // safely extract metadata.order_id (metadata may be undefined or not an object)
-      const orderIdRaw = (pi.metadata && typeof pi.metadata === 'object') ? (pi.metadata as Record<string, unknown>)['order_id'] : undefined;
-      const orderId = typeof orderIdRaw === 'string' ? orderIdRaw : null;
       const paymentIntentId = pi.id;
 
       await dbConnect();
 
-      // find order by metadata.order_id or by paymentIntentId
-      let order = null as OrderDocument | null;
-      if (orderId && mongoose.Types.ObjectId.isValid(orderId)) {
-        const found = await Order.findById(orderId).exec();
-        order = found as OrderDocument | null;
-      }
-      if (!order) {
-        const found = await Order.findOne({ paymentIntentId }).exec();
-        order = found as OrderDocument | null;
-      }
+      // Check if order already exists for this payment intent (idempotency)
+      const order = (await Order.findOne({ paymentIntentId }).exec()) as OrderDocument | null;
 
-      if (!order) {
-        console.warn('Webhook: no order found for PaymentIntent', paymentIntentId, 'metadata.order_id=', orderId);
+      if (order) {
+        console.log('Webhook: order already exists for PaymentIntent', paymentIntentId);
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
-      // idempotent: skip already-processed orders
-      if (order.status === 'paid' || order.status === 'shipped') {
-        console.log('Webhook: order already processed', order._id.toString());
+      // Parse order data from metadata
+      const metadata = pi.metadata && typeof pi.metadata === 'object' ? pi.metadata : {};
+      const itemsJson = typeof metadata.items === 'string' ? metadata.items : '[]';
+      const subtotal = parseFloat(metadata.subtotal as string) || 0;
+      const shipping = parseFloat(metadata.shipping as string) || 0;
+      const total = parseFloat(metadata.total as string) || 0;
+
+      // Parse shipping address if saved
+      const shippingAddressJson = typeof metadata.shippingAddress === 'string' ? metadata.shippingAddress : null;
+      let shippingAddress = null;
+      if (shippingAddressJson) {
+        try {
+          shippingAddress = JSON.parse(shippingAddressJson);
+        } catch (err) {
+          console.warn('Failed to parse shippingAddress from metadata:', err);
+        }
+      }
+
+      // Parse client info if saved
+      const clientJson = typeof metadata.client === 'string' ? metadata.client : null;
+      let client = null;
+      if (clientJson) {
+        try {
+          client = JSON.parse(clientJson);
+        } catch (err) {
+          console.warn('Failed to parse client from metadata:', err);
+        }
+      }
+
+      let items: Array<{ id: string; name: string; qty: number; unitPrice: number; totalPrice: number; source: string }> = [];
+      try {
+        items = JSON.parse(itemsJson);
+      } catch (err) {
+        console.error('Failed to parse items from metadata:', err);
+        return new Response('Invalid metadata', { status: 400 });
+      }
+
+      if (!Array.isArray(items) || items.length === 0) {
+        console.warn('Webhook: no items found in PaymentIntent metadata');
         return NextResponse.json({ received: true }, { status: 200 });
       }
 
-      // run atomic decrements inside a transaction (requires replica set / Atlas)
+      // Create order and decrement stock in a transaction
       const conn = mongoose.connection;
       const session = await conn.startSession();
       session.startTransaction();
+
       try {
         const stockChanges: Array<{ id: string; qty: number; source?: string; before: number; after: number }> = [];
 
-        const items = Array.isArray(order.items) ? order.items : [];
-        if (items.length === 0) {
-          // No items to decrement — mark paid and continue
-          order.status = 'paid';
-          order.paymentIntentId = paymentIntentId;
-          order.paidAt = new Date();
-          const metadata = { ...(order.metadata ?? {}), prices_verified: true };
-          order.metadata = metadata;
-          await order.save({ session });
-          await session.commitTransaction();
-          session.endSession();
-          console.log(`Order ${order._id.toString()} marked paid (no items).`);
-          return NextResponse.json({ received: true }, { status: 200 });
-        }
-
-        for (const rawItem of items) {
-          // validate item shape at runtime
-          if (!rawItem || typeof rawItem !== 'object') {
+        // Decrement stock for each item
+        for (const item of items) {
+          if (!item || typeof item !== 'object') {
             throw new Error('Order contains invalid item');
           }
-          const rec = rawItem as Record<string, unknown>;
-          const id = typeof rec.id === 'string' ? rec.id : String(rec.id ?? '');
-          const qtyRaw = rec.qty ?? rec.quantity;
-          const qty = typeof qtyRaw === 'number' ? qtyRaw : Number(qtyRaw ?? 0);
-          const source = typeof rec.source === 'string' ? rec.source : 'variant';
+
+          const id = typeof item.id === 'string' ? item.id : String(item.id ?? '');
+          const qty = typeof item.qty === 'number' ? item.qty : Number(item.qty ?? 0);
+          const source = typeof item.source === 'string' ? item.source : 'variant';
 
           if (!id) throw new Error('Order contains item with missing id');
           if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Order contains item with invalid qty for id=${id}`);
@@ -206,16 +203,42 @@ export async function POST(req: Request) {
           stockChanges.push(change);
         }
 
-        order.status = 'paid';
-        order.paymentIntentId = paymentIntentId;
-        order.paidAt = new Date();
-        order.metadata = { ...(order.metadata ?? {}), stockChanges, prices_verified: true };
-        await order.save({ session });
+        // Create the order (NOW, after payment succeeded)
+        const orderData: Record<string, unknown> = {
+          items,
+          subtotal: Number(subtotal.toFixed(2)),
+          shipping: Number(shipping.toFixed(2)),
+          total: Number(total.toFixed(2)),
+          currency: 'gbp',
+          status: 'paid',
+          paymentIntentId,
+          paidAt: new Date(),
+          metadata: {
+            prices_verified: true,
+            stockChanges,
+            stockDecremented: true,
+            pricedAt: new Date().toISOString(),
+            shippingConfirmed: !!shippingAddress,
+          },
+        };
+
+        // Add shipping address if available
+        if (shippingAddress) {
+          orderData.shippingAddress = shippingAddress;
+        }
+
+        // Add client info if available
+        if (client) {
+          orderData.client = client;
+        }
+
+        const newOrder = new Order(orderData);
+        await newOrder.save({ session });
 
         await session.commitTransaction();
         session.endSession();
 
-        console.log(`Order ${order._id.toString()} marked paid and stock decremented.`);
+        console.log(`Order ${newOrder._id.toString()} created, marked paid, and stock decremented.`);
         return NextResponse.json({ received: true }, { status: 200 });
       } catch (txErr) {
         await session.abortTransaction();
@@ -224,19 +247,39 @@ export async function POST(req: Request) {
         const msg = txErr instanceof Error ? txErr.message : String(txErr);
         console.error('Error processing payment webhook (transaction aborted):', msg);
 
+        // Create a failed order record for tracking
         try {
-          order.status = 'failed';
-          order.metadata = { ...(order.metadata ?? {}), failureReason: msg };
-          await order.save();
+          const failedOrderData: Record<string, unknown> = {
+            items,
+            subtotal: Number(subtotal.toFixed(2)),
+            shipping: Number(shipping.toFixed(2)),
+            total: Number(total.toFixed(2)),
+            currency: 'gbp',
+            status: 'failed',
+            paymentIntentId,
+            metadata: {
+              failureReason: msg,
+              prices_verified: true,
+            },
+          };
+
+          if (shippingAddress) {
+            failedOrderData.shippingAddress = shippingAddress;
+          }
+
+          if (client) {
+            failedOrderData.client = client;
+          }
+
+          await Order.create(failedOrderData);
         } catch (e) {
-          console.error('Failed to mark order failed after transaction error', e);
+          console.error('Failed to create failed order record', e);
         }
 
         return new Response('Processing error', { status: 500 });
       }
     }
 
-    // ack other events
     return NextResponse.json({ received: true }, { status: 200 });
   } catch (err) {
     console.error('Webhook handler error:', err);

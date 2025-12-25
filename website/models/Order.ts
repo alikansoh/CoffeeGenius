@@ -90,3 +90,5 @@ const OrderSchema = new Schema<IOrder>(
 
 const Order: Model<IOrder> = (mongoose.models.Order as Model<IOrder>) || mongoose.model<IOrder>('Order', OrderSchema);
 export default Order;
+// Example excerpt - add this after your schema definition
+ 
