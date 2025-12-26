@@ -775,31 +775,82 @@ export default function CheckoutForm({ total, clientSecret, paymentIntentId: pay
 
       setProcessing(true);
       try {
-        const result = (await stripe.confirmCardPayment(
+        // STEP 1: Confirm payment WITHOUT handling actions first
+        // This allows us to check if 3DS is needed
+        const result = await stripe!.confirmCardPayment(
           clientSecret,
           { payment_method: event.paymentMethod.id },
           { handleActions: false } as ConfirmCardPaymentOptions
-        )) as unknown as LocalConfirmResult;
+        ) as unknown as LocalConfirmResult;
 
-        const ok = await handleConfirmResult(result);
+        // STEP 2: Check if 3DS is required
+        const status = result.paymentIntent?.status ?? '';
 
-        if (!ok) {
+        if (status === 'requires_action') {
+          console.log('3DS authentication required for wallet payment');
+
+          // Close the wallet payment sheet first
+          try {
+            event.complete('success'); // Tell wallet "we got the payment method"
+          } catch {}
+
+          // STEP 3: Handle 3DS authentication
+          // This will show the 3DS modal/redirect
+          const authResult = await stripe!.confirmCardPayment(clientSecret) as unknown as LocalConfirmResult;
+
+          if (authResult.error) {
+            setError(authResult.error.message ?? 'Authentication failed.');
+            setProcessing(false);
+            return;
+          }
+
+          if (authResult.paymentIntent?.status !== 'succeeded') {
+            setError('Payment authentication was not completed.');
+            setProcessing(false);
+            return;
+          }
+
+          // Payment succeeded after 3DS
+          console.log('Payment succeeded after 3DS authentication');
+
+        } else if (status === 'succeeded') {
+          // No 3DS required, payment succeeded immediately
+          console.log('Payment succeeded without 3DS');
+
+          try {
+            event.complete('success');
+          } catch {}
+
+        } else if (result.error) {
+          // Payment failed
+          const msg = result.error.message ?? 'Payment failed.';
+          setError(msg);
           try {
             event.complete('fail');
           } catch {}
           setProcessing(false);
           return;
+
+        } else {
+          // Other status (requires_payment_method, etc.)
+          const ok = await handleConfirmResult(result);
+          if (!ok) {
+            try {
+              event.complete('fail');
+            } catch {}
+            setProcessing(false);
+            return;
+          }
+          try {
+            event.complete('success');
+          } catch {}
         }
 
-        try {
-          event.complete('success');
-        } catch {}
-
-        // best-effort finalize
+        // Payment succeeded - finalize order
         await finalizeOrder({ paymentIntentId });
-
         clearCart();
         router.push('/checkout/success');
+
       } catch (err) {
         try {
           event.complete && event.complete('fail');
