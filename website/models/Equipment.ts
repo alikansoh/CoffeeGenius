@@ -16,7 +16,6 @@ export interface IEquipment extends Document {
   currency?: string;
   img?: string;
   images?: string[];
-  stock?: number;
   totalStock?: number;
   notes?: string;
   description?: string;

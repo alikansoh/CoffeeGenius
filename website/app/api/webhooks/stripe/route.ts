@@ -17,6 +17,7 @@ type ProductSource = 'variant' | 'coffee' | 'equipment';
 interface ProductDocLean {
   _id?: mongoose.Types.ObjectId | string;
   stock?: number;
+  totalStock?: number;
   coffeeId?: mongoose.Types.ObjectId | string;
   slug?: string;
   [k: string]: unknown;
@@ -127,24 +128,30 @@ async function decrementOneAtomic(
 
   if (source === 'equipment') {
     let updated: ProductDocLean | null = null;
+
+    // First try to match by ObjectId using totalStock
     if (mongoose.Types.ObjectId.isValid(id)) {
       updated = (await Equipment.findOneAndUpdate(
-        { _id: id, stock: { $gte: qty } },
-        { $inc: { stock: -qty } },
+        { _id: id, totalStock: { $gte: qty } },
+        { $inc: { totalStock: -qty } },
         { new: true, session: sessionOpt, lean: true }
       ).exec()) as ProductDocLean | null;
     }
+
+    // Fallback to slug matching using totalStock
     if (!updated) {
       updated = (await Equipment.findOneAndUpdate(
-        { slug: id, stock: { $gte: qty } },
-        { $inc: { stock: -qty } },
+        { slug: id, totalStock: { $gte: qty } },
+        { $inc: { totalStock: -qty } },
         { new: true, session: sessionOpt, lean: true }
       ).exec()) as ProductDocLean | null;
     }
-    if (!updated || typeof updated.stock !== 'number') {
-      throw new Error(`Insufficient stock or equipment not found for id/slug=${id}`);
+
+    if (!updated || typeof updated.totalStock !== 'number') {
+      throw new Error(`Insufficient totalStock or equipment not found for id/slug=${id}`);
     }
-    return { id, qty, source, before: updated.stock + qty, after: updated.stock };
+
+    return { id, qty, source, before: updated.totalStock + qty, after: updated.totalStock };
   }
 
   throw new Error(`Unknown product source for id=${id}`);
