@@ -14,7 +14,7 @@ interface OrderDocument extends mongoose.Document {
 }
 
 /**
- * This endpoint is now a fallback/fast-path for marking shipping as confirmed.
+ * This endpoint is a fallback/fast-path for marking shipping as confirmed.
  * The webhook is the PRIMARY processor that creates orders and decrements stock.
  * This endpoint just confirms that shipping info was saved and can provide immediate feedback.
  * 

@@ -19,6 +19,9 @@ export interface IOrder extends Document {
   currency: string;
   status: OrderStatus;
   paymentIntentId?: string | null;
+  // New: optional reference to the Client document
+  clientId?: mongoose.Types.ObjectId | string | null;
+  // Embedded snapshot (keep for historical integrity)
   client?: {
     name?: string;
     email?: string;
@@ -76,11 +79,17 @@ const OrderSchema = new Schema<IOrder>(
       default: 'pending',
     },
     paymentIntentId: { type: String, index: true, sparse: true },
+
+    // New reference field
+    clientId: { type: Schema.Types.ObjectId, ref: 'Client', index: true, required: false },
+
+    // Keep the embedded snapshot
     client: {
       name: String,
       email: String,
       phone: String,
     },
+
     shippingAddress: {
       firstName: String,
       lastName: String,
@@ -93,15 +102,15 @@ const OrderSchema = new Schema<IOrder>(
       country: String,
     },
     billingAddress: {
-        firstName: String,
-        lastName: String,
-        unit: String,
-        line1: String,
-        city: String,
-        postcode: String,
-        country: String,
-        sameAsShipping: Boolean,
-      },
+      firstName: String,
+      lastName: String,
+      unit: String,
+      line1: String,
+      city: String,
+      postcode: String,
+      country: String,
+      sameAsShipping: Boolean,
+    },
     metadata: { type: Schema.Types.Mixed },
     paidAt: { type: Date, default: null },
   },
@@ -110,5 +119,3 @@ const OrderSchema = new Schema<IOrder>(
 
 const Order: Model<IOrder> = (mongoose.models.Order as Model<IOrder>) || mongoose.model<IOrder>('Order', OrderSchema);
 export default Order;
-// Example excerpt - add this after your schema definition
- 
