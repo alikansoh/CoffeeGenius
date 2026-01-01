@@ -771,7 +771,7 @@ export async function POST(req: Request) {
           console.log(`✅ Invoice record saved: ${invoiceDoc._id.toString()}`);
 
           // Fire-and-forget: generate PDF & send email in background
-          processInvoice(invoiceData, companyInfo)
+         await processInvoice(invoiceData, companyInfo)
             .then(async () => {
               try {
                 await Invoice.findByIdAndUpdate(invoiceDoc._id, {
