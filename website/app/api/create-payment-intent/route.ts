@@ -18,12 +18,35 @@ interface ProductDoc {
   price?: number;
   name?: string;
   slug?: string;
+  stock?: number;
+  totalStock?: number;
 }
 
 interface StoredLookup {
   price: number;
   source: 'variant' | 'coffee' | 'equipment';
   docName?: string;
+}
+
+interface Shortage {
+  id: string;
+  name: string;
+  requested: number;
+  available: number;
+  source: string;
+}
+
+interface ErrorPayload {
+  error: string;
+  message?: string;
+  shortages?: Shortage[];
+  serverLog?: string;
+}
+
+interface SuccessPayload {
+  clientSecret: string | null;
+  amount: number;
+  paymentIntentId: string;
 }
 
 function parseItems(input: unknown): ClientItem[] {
@@ -121,12 +144,55 @@ async function verifyItems(items: ClientItem[]): Promise<VerifiedItem[]> {
   return verified;
 }
 
+// Returns an array of shortages (empty if all available)
+async function validateStockAvailability(verifiedItems: VerifiedItem[]): Promise<Shortage[]> {
+  const shortages: Shortage[] = [];
+
+  for (const item of verifiedItems) {
+    const { id, quantity, source, name } = item;
+
+    let available = 0;
+
+    if (source === 'variant') {
+      const variant = await CoffeeVariant.findById(id).select('stock').lean();
+      available = variant?.stock ?? 0;
+    } else if (source === 'coffee') {
+      const coffee = await Coffee.findById(id).select('stock').lean();
+      available = coffee?.stock ?? 0;
+    } else if (source === 'equipment') {
+      const equipment = mongoose.Types.ObjectId.isValid(id)
+        ? await Equipment.findById(id).select('totalStock').lean()
+        : await Equipment.findOne({ slug: id }).select('totalStock').lean();
+      available = equipment?.totalStock ?? 0;
+    }
+
+    if (available < quantity) {
+      shortages.push({
+        id,
+        name,
+        requested: quantity,
+        available,
+        source,
+      });
+    }
+  }
+
+  return shortages;
+}
+
 export async function POST(req: Request) {
+  // expose details only when enabled intentionally (avoid leaking logs in production)
+  const exposeErrors = process.env.NEXT_PUBLIC_EXPOSE_SERVER_ERRORS === 'true' || process.env.NODE_ENV !== 'production';
+
   try {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
     const rawItems = body.items;
     const items = parseItems(rawItems);
-    if (items.length === 0) return NextResponse.json({ error: 'No items in cart.' }, { status: 400 });
+    if (items.length === 0) {
+      const payload: ErrorPayload = { error: 'No items in cart.' };
+      if (exposeErrors) payload.serverLog = 'No items were provided in the create-payment-intent request.';
+      return NextResponse.json(payload, { status: 400 });
+    }
 
     const idempotencyKey = (req.headers.get('Idempotency-Key') ?? (body.idempotencyKey as string) ?? null) as string | null;
 
@@ -139,8 +205,25 @@ export async function POST(req: Request) {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.warn('Price verification failed:', message);
-      return NextResponse.json({ error: `Price verification failed: ${message}` }, { status: 400 });
+      const payload: ErrorPayload = { error: `Price verification failed: ${message}` };
+      if (exposeErrors) payload.serverLog = `Price verification failed: ${message}`;
+      return NextResponse.json(payload, { status: 400 });
     }
+
+    // Check stock availability BEFORE creating PaymentIntent and return structured shortages if any
+    const shortages = await validateStockAvailability(verifiedItems);
+    if (shortages.length > 0) {
+      console.error('❌ Stock validation failed:', shortages);
+      // Return structured response so the client can surface item-level stock problems to the user
+      const payload: ErrorPayload = {
+        error: 'Stock unavailable',
+        message: 'One or more items in your cart are out of stock or have insufficient quantity.',
+        shortages,
+      };
+      if (exposeErrors) payload.serverLog = `Stock validation failed: ${JSON.stringify(shortages)}`;
+      return NextResponse.json(payload, { status: 409 });
+    }
+    console.log('✅ Stock availability confirmed (pre-payment check)');
 
     // Compute totals (use storedPrice)
     const subtotal = verifiedItems.reduce((sum, it) => sum + it.storedPrice * it.quantity, 0);
@@ -162,7 +245,9 @@ export async function POST(req: Request) {
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
     if (!stripeSecret) {
       console.error('STRIPE_SECRET_KEY is not configured');
-      return NextResponse.json({ error: 'Server not configured (missing STRIPE_SECRET_KEY)' }, { status: 500 });
+      const payload: ErrorPayload = { error: 'Server not configured (missing STRIPE_SECRET_KEY)' };
+      if (exposeErrors) payload.serverLog = 'Missing STRIPE_SECRET_KEY environment variable';
+      return NextResponse.json(payload, { status: 500 });
     }
 
     const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
@@ -206,17 +291,18 @@ export async function POST(req: Request) {
       idempotencyKey ? { idempotencyKey } : undefined
     );
 
-    return NextResponse.json(
-      {
-        clientSecret: paymentIntent.client_secret ?? null,
-        amount,
-        paymentIntentId: paymentIntent.id,
-      },
-      { status: 200 }
-    );
+    const payload: SuccessPayload = {
+      clientSecret: paymentIntent.client_secret ?? null,
+      amount,
+      paymentIntentId: paymentIntent.id,
+    };
+    return NextResponse.json(payload, { status: 200 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('create-payment-intent error:', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const exposeErrors = process.env.NEXT_PUBLIC_EXPOSE_SERVER_ERRORS === 'true' || process.env.NODE_ENV !== 'production';
+    const payload: ErrorPayload = { error: 'Unable to initialize payment. Please try again later.' };
+    if (exposeErrors) payload.serverLog = `create-payment-intent error: ${message}`;
+    return NextResponse.json(payload, { status: 500 });
   }
 }

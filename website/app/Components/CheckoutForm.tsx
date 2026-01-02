@@ -13,34 +13,32 @@ import { useRouter } from 'next/navigation';
 import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
 
 /*
-  Checkout form with automatic "we found your data" behavior: 
-  - When the user finishes typing an email or phone (debounced) or blurs those fields,
-    the component will automatically query /api/clients/find. 
-  - If a saved client is found, a subtle preview banner appears ("We found your saved details")
-    with actions "Apply" and "Ignore". 
-  - The previous manual "Autofill" button is removed in favor of this automatic behavior.
+  Updated to fix the TypeScript error where functional updaters could return `undefined`.
+  - All setState functional updaters now always return the correct typed value (no `undefined`).
+  - No explicit `any` usage remains.
+  - Per-field validation, UK phone/postcode checks, single-apply autofill preserved.
 */
 
 type Props = {
   total: number;
   clientSecret: string;
-  paymentIntentId?:  string | null;
+  paymentIntentId?: string | null;
 };
 
 type ShippingOption = {
   id: string;
   label: string;
-  detail?:  string;
+  detail?: string;
   amount: number;
 };
 
 type ShippingAddress = {
-  country?:  string;
+  country?: string;
   countryCode?: string;
   city?: string | null;
   administrativeArea?: string | null;
   postalCode?: string | null;
-  addressLine?:  (string | null)[] | null;
+  addressLine?: (string | null)[] | null;
   recipient?: string | null;
   organization?: string | null;
   phone?: string | null;
@@ -48,8 +46,8 @@ type ShippingAddress = {
 };
 
 type ShippingAddressChangeEvent = {
-  shippingAddress?:  ShippingAddress | null;
-  updateWith:  (options: {
+  shippingAddress?: ShippingAddress | null;
+  updateWith: (options: {
     status: 'success' | 'failure' | 'invalid_shipping_address';
     shippingOptions?: ShippingOption[];
     total?: { label: string; amount: number };
@@ -67,50 +65,50 @@ type WalletBillingAddress = {
 
 type WalletPaymentMethod = {
   id: string;
-  billing_details?:  {
-    name?:  string | null;
-    address?:  WalletBillingAddress | null;
+  billing_details?: {
+    name?: string | null;
+    address?: WalletBillingAddress | null;
   } | null;
 };
 
 type PaymentMethodEvent = {
-  paymentMethod:  WalletPaymentMethod;
+  paymentMethod: WalletPaymentMethod;
   payerName?: string | null;
   payerEmail?: string | null;
   payerPhone?: string | null;
   shippingAddress?: ShippingAddress | null;
-  complete:  (result: 'success' | 'fail' | 'unknown') => void;
+  complete: (result: 'success' | 'fail' | 'unknown') => void;
 };
 
 type PlacesModule = {
-  AutocompleteSessionToken:  new () => google.maps.places.AutocompleteSessionToken;
+  AutocompleteSessionToken: new () => google.maps.places.AutocompleteSessionToken;
   AutocompleteSuggestion: {
     fetchAutocompleteSuggestions: (req: {
       input: string;
       includedRegionCodes?: string[];
-      sessionToken?: google.maps.places. AutocompleteSessionToken;
+      sessionToken?: google.maps.places.AutocompleteSessionToken;
     }) => Promise<{
-      suggestions?:  Array<{
-        placePrediction?:  {
-          placeId?:  string;
-          text?: { text?:  string };
+      suggestions?: Array<{
+        placePrediction?: {
+          placeId?: string;
+          text?: { text?: string };
         };
       }>;
     }>;
   };
   Place: new (opts: { id: string }) => {
     fetchFields: (opts: {
-      fields:  string[];
+      fields: string[];
       sessionToken?: google.maps.places.AutocompleteSessionToken;
     }) => Promise<void>;
-    addressComponents?:  Array<{ types?:  string[]; longText?: string; long_name?: string }>;
+    addressComponents?: Array<{ types?: string[]; longText?: string; long_name?: string }>;
     formattedAddress?: string;
   };
 };
 
 declare global {
   interface Window {
-    google?:  typeof google;
+    google?: typeof google;
   }
 }
 
@@ -120,10 +118,32 @@ const SESSION_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes
 
 type LocalConfirmResult = {
   error?: { message?: string } | null;
-  paymentIntent?: { status?:  string } | null;
+  paymentIntent?: { status?: string } | null;
 };
 
-export default function CheckoutFormWithAutofill({ total, clientSecret, paymentIntentId:  paymentIntentIdProp }: Props): React.JSX.Element {
+type ClientAddress = {
+  firstName?: string;
+  lastName?: string;
+  line1?: string;
+  address?: string;
+  unit?: string;
+  city?: string;
+  postcode?: string;
+  country?: string;
+};
+
+type Client = {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: ClientAddress | null;
+};
+
+export default function CheckoutFormWithAutofill({
+  total,
+  clientSecret,
+  paymentIntentId: paymentIntentIdProp,
+}: Props): React.JSX.Element {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
@@ -150,18 +170,36 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
 
   const [billingSame, setBillingSame] = useState<boolean>(true);
 
-  const [postcodeError, setPostcodeError] = useState<string | null>(null);
-  const [billingPostcodeError, setBillingPostcodeError] = useState<string | null>(null);
+  // per-field errors
+  type FieldKey =
+    | 'firstName'
+    | 'lastName'
+    | 'email'
+    | 'phone'
+    | 'unit'
+    | 'address'
+    | 'city'
+    | 'postcode'
+    | 'country'
+    | 'billingFirstName'
+    | 'billingLastName'
+    | 'billingUnit'
+    | 'billingAddress'
+    | 'billingCity'
+    | 'billingPostcode'
+    | 'billingCountry';
+
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldKey, string | null>>>({});
 
   const addressRef = useRef<HTMLInputElement | null>(null);
-  const geocoderRef = useRef<google. maps.Geocoder | null>(null);
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
   const placesLibRef = useRef<PlacesModule | null>(null);
 
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justSelectedPredictionRef = useRef<boolean>(false);
 
-  type Prediction = { id: string; text: string; placeId?:  string; isGeocode?: boolean };
+  type Prediction = { id: string; text: string; placeId?: string; isGeocode?: boolean };
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [activePredictionIndex, setActivePredictionIndex] = useState<number>(-1);
   const [showPredictions, setShowPredictions] = useState<boolean>(false);
@@ -178,10 +216,10 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   // autofill states
   const [lookupLoading, setLookupLoading] = useState<boolean>(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
-  const [foundClient, setFoundClient] = useState<any | null>(null);
+  const [foundClient, setFoundClient] = useState<Client | null>(null);
   const [showAutofillPreview, setShowAutofillPreview] = useState<boolean>(false);
-  
-  // NEW: Track if user has already dismissed or applied autofill
+
+  // Track if user has already dismissed or applied autofill
   const hasHandledAutofillRef = useRef<boolean>(false);
 
   // used to cancel inflight lookup requests
@@ -235,29 +273,42 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   const isProbablyUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = value.trim().toUpperCase();
-    return /^[A-Z]{1,2}\d/. test(normalized);
+    return /^[A-Z]{1,2}\d/.test(normalized);
+  };
+
+  // Phone helpers: normalize to digits and validate typical UK formats:
+  const normalizePhoneDigits = (p?: string | null) => (p ? String(p).replace(/\D/g, '') : '');
+  const isValidUkPhone = (raw: string | undefined | null): boolean => {
+    const digits = normalizePhoneDigits(raw ?? '');
+    if (!digits) return false;
+    // 11 digits starting with 0 OR 12 digits starting with 44
+    return /^(0\d{10}|44\d{10})$/.test(digits);
   };
 
   const parsePlaceToFields = (place: google.maps.GeocoderResult): void => {
-    const components = place.address_components ??  [];
+    const components = place.address_components ?? [];
     const lookup = (type: string): string | null => {
       const comp = components.find((c) => (c.types || []).includes(type));
-      return comp ?  comp.long_name : null;
+      return comp ? (comp.long_name as string) : null;
     };
 
     const streetNumber = lookup('street_number');
     const route = lookup('route');
     const subpremise = lookup('subpremise');
-    const line1 = [streetNumber, route]. filter(Boolean).join(' ').trim();
-    const formattedAddress = place.formatted_address ??  line1 ??  '';
+    const line1 = [streetNumber, route].filter(Boolean).join(' ').trim();
+    const formattedAddress = place.formatted_address ?? line1 ?? '';
 
-    const locality = lookup('locality') || lookup('postal_town') || lookup('administrative_area_level_2') || '';
+    const locality =
+      lookup('locality') ||
+      lookup('postal_town') ||
+      lookup('administrative_area_level_2') ||
+      '';
     const postalCode = lookup('postal_code') || '';
 
     if (subpremise) setUnit(subpremise);
     setAddress(formattedAddress || line1);
     setCity(locality);
-    setPostcode(postalCode ?  normalizeUkPostcode(postalCode) : postcode);
+    setPostcode(postalCode ? normalizeUkPostcode(postalCode) : postcode);
     setCountry('GB');
   };
 
@@ -275,8 +326,14 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         geocoderRef.current = new g.maps.Geocoder();
 
         try {
-          const mod = await g.maps.importLibrary('places');
-          placesLibRef.current = mod as unknown as PlacesModule;
+          type MapsWithImport = typeof g.maps & {
+            importLibrary?: (name: string) => Promise<unknown>;
+          };
+          const mapsWithImport = g.maps as MapsWithImport;
+          if (typeof mapsWithImport.importLibrary === 'function') {
+            const mod = await mapsWithImport.importLibrary('places');
+            placesLibRef.current = mod as unknown as PlacesModule;
+          }
         } catch (err) {
           console.warn('[Places] importLibrary failed, new API may not be available:', err);
         }
@@ -288,7 +345,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     return () => {
       mounted = false;
       if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      if (sessionTimerRef. current) clearTimeout(sessionTimerRef.current);
+      if (sessionTimerRef.current) clearTimeout(sessionTimerRef.current);
       sessionTokenRef.current = null;
     };
   }, []);
@@ -297,103 +354,100 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
      Google Places helpers
   ----------------------------*/
   const startSession = (): void => {
-    if (! placesLibRef.current || !window.google?. maps?. places) return;
-    if (! sessionTokenRef.current) {
+    if (!placesLibRef.current || !window.google?.maps?.places) return;
+    if (!sessionTokenRef.current) {
       sessionTokenRef.current = new placesLibRef.current.AutocompleteSessionToken();
     }
     if (sessionTimerRef.current) {
       clearTimeout(sessionTimerRef.current);
     }
     sessionTimerRef.current = setTimeout(() => {
-      sessionTokenRef. current = null;
+      sessionTokenRef.current = null;
       sessionTimerRef.current = null;
     }, SESSION_EXPIRE_MS);
   };
 
   const clearSession = (): void => {
     if (sessionTimerRef.current) {
-      clearTimeout(sessionTimerRef. current);
+      clearTimeout(sessionTimerRef.current);
       sessionTimerRef.current = null;
     }
     sessionTokenRef.current = null;
   };
 
-  const fetchPredictions = useCallback(
-    async (inputValue: string): Promise<void> => {
-      const trimmed = inputValue.trim();
-      if (!trimmed || trimmed.length < MIN_AUTOCOMPLETE_CHARS) {
-        setPredictions([]);
-        setShowPredictions(false);
-        return;
+  const fetchPredictions = useCallback(async (inputValue: string): Promise<void> => {
+    const trimmed = inputValue.trim();
+    if (!trimmed || trimmed.length < MIN_AUTOCOMPLETE_CHARS) {
+      setPredictions([]);
+      setShowPredictions(false);
+      return;
+    }
+
+    startSession();
+
+    const placesLib = placesLibRef.current;
+    const results: Prediction[] = [];
+
+    if (placesLib) {
+      try {
+        const resp = await placesLib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+          input: trimmed,
+          includedRegionCodes: ['gb'],
+          sessionToken: sessionTokenRef.current ?? undefined,
+        });
+
+        const suggestions = resp.suggestions ?? [];
+        for (let i = 0; i < Math.min(suggestions.length, 6); i++) {
+          const s = suggestions[i];
+          const text = s.placePrediction?.text?.text || '';
+          const placeId = s.placePrediction?.placeId;
+          if (text && placeId) {
+            results.push({ id: `p-${placeId}`, text, placeId });
+          } else if (text) {
+            results.push({ id: `p-${i}`, text });
+          }
+        }
+      } catch (err) {
+        console.warn('[AutocompleteSuggestion] error', err);
       }
+    }
 
-      startSession();
-
-      const placesLib = placesLibRef.current;
-      const results:  Prediction[] = [];
-
-      if (placesLib) {
-        try {
-          const resp = await placesLib.AutocompleteSuggestion. fetchAutocompleteSuggestions({
-            input: trimmed,
-            includedRegionCodes: ['gb'],
-            sessionToken: sessionTokenRef.current ??  undefined,
-          });
-
-          const suggestions = resp.suggestions ??  [];
-          for (let i = 0; i < Math.min(suggestions.length, 6); i++) {
-            const s = suggestions[i];
-            const text = s.placePrediction?. text?. text || '';
-            const placeId = s.placePrediction?.placeId;
-            if (text && placeId) {
-              results.push({ id: `p-${placeId}`, text, placeId });
-            } else if (text) {
-              results. push({ id: `p-${i}`, text });
+    const wantGeocode = isProbablyUkPostcode(trimmed) || trimmed.length <= 7;
+    if (wantGeocode && geocoderRef.current) {
+      try {
+        geocoderRef.current.geocode(
+          { address: trimmed, componentRestrictions: { country: 'GB' } },
+          (geocodeResults, status) => {
+            if (status === 'OK' && geocodeResults && geocodeResults.length > 0) {
+              const geoPreds = geocodeResults.slice(0, 4).map((g, idx) => ({
+                id: `geo-${idx}-${g.place_id ?? g.formatted_address}`,
+                text: g.formatted_address ?? '',
+                isGeocode: true as const,
+              }));
+              const combined = [
+                ...results,
+                ...geoPreds.filter((gp) => !results.some((r) => r.text === gp.text)),
+              ];
+              setPredictions(combined);
+              setActivePredictionIndex(-1);
+              setShowPredictions(combined.length > 0);
+            } else {
+              setPredictions(results);
+              setActivePredictionIndex(-1);
+              setShowPredictions(results.length > 0);
             }
           }
-        } catch (err) {
-          console.warn('[AutocompleteSuggestion] error', err);
-        }
+        );
+        return;
+      } catch (err) {
+        console.warn('[Geocoder] error', err);
       }
+    }
 
-      const wantGeocode = isProbablyUkPostcode(trimmed) || trimmed.length <= 7;
-      if (wantGeocode && geocoderRef.current) {
-        try {
-          geocoderRef.current.geocode(
-            { address: trimmed, componentRestrictions: { country: 'GB' } },
-            (geocodeResults, status) => {
-              if (status === 'OK' && geocodeResults && geocodeResults.length > 0) {
-                const geoPreds = geocodeResults. slice(0, 4).map((g, idx) => ({
-                  id:  `geo-${idx}-${g.place_id ??  g.formatted_address}`,
-                  text: g.formatted_address ??  '',
-                  isGeocode: true as const,
-                }));
-                const combined = [
-                  ...results,
-                  ...geoPreds. filter((gp) => !results.some((r) => r.text === gp.text)),
-                ];
-                setPredictions(combined);
-                setActivePredictionIndex(-1);
-                setShowPredictions(combined.length > 0);
-              } else {
-                setPredictions(results);
-                setActivePredictionIndex(-1);
-                setShowPredictions(results.length > 0);
-              }
-            }
-          );
-          return;
-        } catch (err) {
-          console.warn('[Geocoder] error', err);
-        }
-      }
-
-      setPredictions(results);
-      setActivePredictionIndex(-1);
-      setShowPredictions(results.length > 0);
-    },
-    []
-  );
+    setPredictions(results);
+    setActivePredictionIndex(-1);
+    setShowPredictions(results.length > 0);
+  }, []);
 
   const scheduleFetchPredictions = useCallback(
     (inputValue: string) => {
@@ -408,13 +462,14 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   const handleAddressInput = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const value = e.target.value;
     setAddress(value);
+    setFieldErrors((prev) => ({ ...prev, address: null }));
 
     if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
 
     setPredictions([]);
     setShowPredictions(false);
 
-    if (! value || value.trim().length < MIN_AUTOCOMPLETE_CHARS) {
+    if (!value || value.trim().length < MIN_AUTOCOMPLETE_CHARS) {
       clearSession();
       return;
     }
@@ -430,6 +485,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     }, 400);
 
     setAddress(p.text);
+    setFieldErrors((prev) => ({ ...prev, address: null }));
     setPredictions([]);
     setShowPredictions(false);
 
@@ -451,7 +507,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     }
 
     try {
-      const place = new placesLib.Place({ id: p.placeId ??  '' });
+      const place = new placesLib.Place({ id: p.placeId ?? '' });
       await place.fetchFields({
         fields: ['addressComponents', 'formattedAddress'],
         sessionToken: sessionTokenRef.current ?? undefined,
@@ -459,11 +515,11 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
 
       const components = place.addressComponents ?? [];
       const lookup = (type: string): string | null => {
-        const comp = components.find((c) => (c.types ??  []).includes(type));
-        if (! comp) return null;
+        const comp = components.find((c) => (c.types ?? []).includes(type));
+        if (!comp) return null;
         const longText = (comp as { longText?: string }).longText;
         const long_name = (comp as { long_name?: string }).long_name;
-        return longText ??  long_name ??  null;
+        return longText ?? long_name ?? null;
       };
 
       const streetNumber = lookup('street_number');
@@ -472,7 +528,8 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       const line1 = [streetNumber, route].filter(Boolean).join(' ').trim();
       const formattedAddress = place.formattedAddress ?? line1 ?? '';
 
-      const locality = lookup('locality') || lookup('postal_town') || lookup('administrative_area_level_2') || '';
+      const locality =
+        lookup('locality') || lookup('postal_town') || lookup('administrative_area_level_2') || '';
       const postalCode = lookup('postal_code') || '';
 
       if (subpremise) setUnit(subpremise);
@@ -483,8 +540,8 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
 
       clearSession();
     } catch (err) {
-      console.warn('[Place. fetchFields] error, falling back to geocode', err);
-      await geocodeAddress(p. text);
+      console.warn('[Place.fetchFields] error, falling back to geocode', err);
+      await geocodeAddress(p.text);
       clearSession();
     }
   };
@@ -493,7 +550,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     const geocoder = geocoderRef.current;
     if (!geocoder || !value) return;
     try {
-      geocoder.geocode({ address: value, componentRestrictions: { country:  'GB' } }, (results, status) => {
+      geocoder.geocode({ address: value, componentRestrictions: { country: 'GB' } }, (results, status) => {
         if (status === 'OK' && results && results.length > 0) {
           parsePlaceToFields(results[0]);
         }
@@ -504,7 +561,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   };
 
   const handleAddressKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
-    if (! showPredictions || predictions.length === 0) {
+    if (!showPredictions || predictions.length === 0) {
       if (e.key === 'Enter' && isProbablyUkPostcode(address)) {
         e.preventDefault();
         void geocodeAddress(address);
@@ -532,20 +589,17 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     }
   };
 
-  // FIX: Use shorter timeout and clear predictions immediately on blur
+  // Use shorter timeout and clear predictions immediately on blur
   const handleAddressBlur = (): void => {
-    // Close predictions immediately
     setTimeout(() => {
       setShowPredictions(false);
       setPredictions([]);
     }, 100);
   };
 
-  // FIX: Add handler to close predictions when clicking outside
   const handleAddressFocus = (): void => {
     startSession();
-    // Only show predictions if we have them and address is long enough
-    if (predictions.length > 0 && address. trim().length >= MIN_AUTOCOMPLETE_CHARS) {
+    if (predictions.length > 0 && address.trim().length >= MIN_AUTOCOMPLETE_CHARS) {
       setShowPredictions(true);
     }
   };
@@ -583,32 +637,29 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       });
   }, [stripe, clientSecret, amountPence]);
 
-  const extractPaymentIntentId = (cs?:  string | null): string | null => {
+  const extractPaymentIntentId = (cs?: string | null): string | null => {
     if (!cs) return null;
     const parts = cs.split('_secret');
-    if (parts.length > 0 && parts[0]. startsWith('pi_')) return parts[0];
+    if (parts.length > 0 && parts[0].startsWith('pi_')) return parts[0];
     return null;
   };
 
   const paymentIntentId = useMemo(
-    () => paymentIntentIdProp ?? extractPaymentIntentId(clientSecret ??  null),
+    () => paymentIntentIdProp ?? extractPaymentIntentId(clientSecret ?? null),
     [paymentIntentIdProp, clientSecret]
   );
 
   /* ---------------------------
      Automatic client lookup (debounced + onBlur)
   ----------------------------*/
-  const normalizeEmail = (e?:  string | null) => (e ? String(e).trim().toLowerCase() : '');
-  const normalizePhoneDigits = (p?: string | null) => (p ? String(p).replace(/\D/g, '') : '');
+  const normalizeEmail = (e?: string | null) => (e ? String(e).trim().toLowerCase() : '');
 
   const performLookup = useCallback(
-    async (opts: { email?:  string | null; phone?: string | null }) => {
-      // FIX: Don't lookup if user already handled autofill
+    async (opts: { email?: string | null; phone?: string | null }) => {
       if (hasHandledAutofillRef.current) {
         return;
       }
 
-      // cancel previous
       lookupAbortRef.current?.abort();
       lookupAbortRef.current = new AbortController();
       setLookupError(null);
@@ -620,7 +671,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         const res = await fetch('/api/clients/find', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body:  JSON.stringify({ email: opts.email ??  undefined, phone: opts.phone ?? undefined }),
+          body: JSON.stringify({ email: opts.email ?? undefined, phone: opts.phone ?? undefined }),
           signal: lookupAbortRef.current.signal,
         });
 
@@ -633,13 +684,18 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         }
 
         if (!res.ok) {
-          const json = await res.json().catch(() => ({}));
-          setLookupError((json && (json. error || json.message)) || 'Lookup failed');
+          const json = await res.json().catch(() => ({} as Record<string, unknown>));
+          const message = (json && ((json as Record<string, unknown>)['error'] || (json as Record<string, unknown>)['message'])) || 'Lookup failed';
+          setLookupError(String(message));
           setLookupLoading(false);
           return;
         }
 
-        const data = await res.json();
+        const data = (await res.json().catch(() => ({} as Record<string, unknown>))) as {
+          found?: boolean;
+          client?: Client;
+        };
+
         if (data && data.found && data.client) {
           setFoundClient(data.client);
           setShowAutofillPreview(true);
@@ -648,9 +704,9 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
           setFoundClient(null);
           setShowAutofillPreview(false);
         }
-      } catch (err:  any) {
-        if (err?. name === 'AbortError') {
-          // aborted; ignore
+      } catch (err) {
+        if ((err as { name?: string }).name === 'AbortError') {
+          // ignored
         } else {
           console.error('client lookup error', err);
           setLookupError('Network error while looking up profile.');
@@ -662,12 +718,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     []
   );
 
-  // Debounced effect:  trigger lookup when email or phone changes and looks valid
+  // Debounced effect: trigger lookup when email or phone changes and looks valid
   useEffect(() => {
-    // Cancel pending debounced calls
     if (lookupDebounceRef.current) {
       clearTimeout(lookupDebounceRef.current);
       lookupDebounceRef.current = null;
+    }
+
+    if (hasHandledAutofillRef.current) {
+      return;
     }
 
     const emailNorm = normalizeEmail(email) || '';
@@ -676,9 +735,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
     const looksLikePhone = phoneDigits.length >= 7;
 
-    // only lookup if either looks valid
-    if (! looksLikeEmail && ! looksLikePhone) {
-      // nothing to do; hide preview
+    if (!looksLikeEmail && !looksLikePhone) {
       setFoundClient(null);
       setShowAutofillPreview(false);
       setLookupError(null);
@@ -686,75 +743,116 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
     }
 
     lookupDebounceRef.current = setTimeout(() => {
-      void performLookup({ email: looksLikeEmail ?  emailNorm : undefined, phone:  looksLikePhone ? phoneDigits : undefined });
+      void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits : undefined });
     }, DEBOUNCE_MS);
 
     return () => {
-      if (lookupDebounceRef. current) {
+      if (lookupDebounceRef.current) {
         clearTimeout(lookupDebounceRef.current);
         lookupDebounceRef.current = null;
       }
     };
   }, [email, phone, performLookup]);
 
-  // Also run lookup on blur immediately
   const handleEmailBlur = () => {
-    const emailNorm = normalizeEmail(email);
-    const phoneDigits = normalizePhoneDigits(phone);
-    const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
-    const looksLikePhone = phoneDigits.length >= 7;
-    if (! looksLikeEmail && ! looksLikePhone) return;
-    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits : undefined });
-  };
-
-  const handlePhoneBlur = () => {
+    if (hasHandledAutofillRef.current) return;
     const emailNorm = normalizeEmail(email);
     const phoneDigits = normalizePhoneDigits(phone);
     const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
     const looksLikePhone = phoneDigits.length >= 7;
     if (!looksLikeEmail && !looksLikePhone) return;
-    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits :  undefined });
+    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits : undefined });
   };
 
-  // FIX: Mark as handled when applying
+  const handlePhoneBlur = () => {
+    const digits = normalizePhoneDigits(phone);
+    if (!isValidUkPhone(digits)) {
+      setFieldErrors((prev) => ({ ...prev, phone: 'Please enter a valid UK phone number (e.g. 07700 900000 or +44 7700 900000).' }));
+    } else {
+      setFieldErrors((prev) => ({ ...prev, phone: null }));
+    }
+
+    if (hasHandledAutofillRef.current) return;
+    const emailNorm = normalizeEmail(email);
+    const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
+    const looksLikePhone = digits.length >= 7;
+    if (!looksLikeEmail && !looksLikePhone) return;
+    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? digits : undefined });
+  };
+
+  // Apply found client: ensure we cancel inflight lookups and prevent the preview from reappearing.
   const applyFoundClient = useCallback(() => {
-    if (! foundClient) return;
+    if (!foundClient) return;
+
+    hasHandledAutofillRef.current = true;
+
+    lookupAbortRef.current?.abort();
+    if (lookupDebounceRef.current) {
+      clearTimeout(lookupDebounceRef.current);
+      lookupDebounceRef.current = null;
+    }
+
     const name = foundClient.name ?? '';
-    const [f, ... rest] = (name || '').split(/\s+/);
+    const [f, ...rest] = (name || '').split(/\s+/);
     const l = rest.join(' ');
 
-    if (f) setFirstName(f);
-    if (l) setLastName(l);
-    if (foundClient.email) setEmail(foundClient.email);
-    if (foundClient.phone) setPhone(foundClient.phone);
+    if (f) {
+      setFirstName(() => f || '');
+      setFieldErrors((prev) => ({ ...prev, firstName: null }));
+    }
+    if (l) {
+      setLastName(() => l || '');
+      setFieldErrors((prev) => ({ ...prev, lastName: null }));
+    }
+    if (foundClient.email) {
+      setEmail(() => foundClient.email ?? '');
+      setFieldErrors((prev) => ({ ...prev, email: null }));
+    }
+    if (foundClient.phone) {
+      setPhone(() => foundClient.phone ?? '');
+      setFieldErrors((prev) => ({ ...prev, phone: null }));
+    }
 
-    const addr = foundClient.address ??  null;
+    const addr = foundClient.address ?? null;
     if (addr) {
       if (addr.firstName) {
         const [af, ...ar] = String(addr.firstName).split(/\s+/);
-        setFirstName((prev) => (prev ? prev :  af));
-        if (ar.length) setLastName((prev) => (prev ? prev : ar.join(' ')));
+        // ensure updater returns string (never undefined)
+        setFirstName((prev) => prev || af || '');
+        if (ar.length) setLastName((prev) => prev || ar.join(' ') || '');
       }
-      if (addr.lastName) setLastName((prev) => (prev || addr.lastName));
-      if ((addr.line1 as string) || (addr.address as string)) {
-        setAddress((addr.line1 as string) || (addr.address as string) || '');
+      // addr.lastName may be undefined; ensure string fallback
+      if (addr.lastName) setLastName((prev) => prev || addr.lastName || '');
+      if (addr.line1 || addr.address) {
+        setAddress(() => (addr.line1 ?? addr.address ?? '') as string);
+        setFieldErrors((prev) => ({ ...prev, address: null }));
       }
-      if (addr.unit) setUnit(addr.unit as string);
-      if (addr.city) setCity(addr.city as string);
-      if (addr.postcode) setPostcode(normalizeUkPostcode(String(addr.postcode)));
-      if (addr.country) setCountry(addr.country as string);
+      if (addr.unit) setUnit(() => addr.unit ?? '');
+      if (addr.city) {
+        setCity(() => addr.city ?? '');
+        setFieldErrors((prev) => ({ ...prev, city: null }));
+      }
+      if (addr.postcode) {
+        setPostcode(() => normalizeUkPostcode(String(addr.postcode ?? '')));
+        setFieldErrors((prev) => ({ ...prev, postcode: null }));
+      }
+      if (addr.country) setCountry(() => addr.country ?? 'GB');
     }
 
     setShowAutofillPreview(false);
-    hasHandledAutofillRef.current = true; // Mark as handled
+    setFoundClient(null);
   }, [foundClient]);
 
-  // FIX: Mark as handled when dismissing
   const discardFoundClient = useCallback(() => {
+    hasHandledAutofillRef.current = true;
+    lookupAbortRef.current?.abort();
+    if (lookupDebounceRef.current) {
+      clearTimeout(lookupDebounceRef.current);
+      lookupDebounceRef.current = null;
+    }
     setFoundClient(null);
     setShowAutofillPreview(false);
     setLookupError(null);
-    hasHandledAutofillRef. current = true; // Mark as handled
   }, []);
 
   /* ---------------------------
@@ -763,25 +861,25 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   const handleConfirmResult = useCallback(
     async (result: LocalConfirmResult): Promise<boolean> => {
       if (result.error) {
-        const msg = result.error.message ??  'Payment failed. ';
+        const msg = result.error.message ?? 'Payment failed. ';
         setError(msg);
         return false;
       }
 
-      const status = result.paymentIntent?.status ??  '';
+      const status = result.paymentIntent?.status ?? '';
 
       if (status === 'succeeded') {
         return true;
       }
 
       if (status === 'requires_action' || status === 'requires_confirmation') {
-        if (! stripe) {
+        if (!stripe) {
           setError('Stripe SDK not available to complete authentication.');
           return false;
         }
-        const next = (await stripe.confirmCardPayment(clientSecret)) as unknown as LocalConfirmResult;
+        const next = (await stripe.confirmCardPayment(clientSecret)) as LocalConfirmResult;
         if (next.error) {
-          setError(next.error.message ??  'Authentication required but failed.');
+          setError(next.error.message ?? 'Authentication required but failed.');
           return false;
         }
         if (next.paymentIntent?.status === 'succeeded') {
@@ -812,24 +910,24 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   ----------------------------*/
   const saveShipping = useCallback(
     async (opts: {
-      paymentIntentId?:  string | null;
-      shippingAddress:  Record<string, unknown> | null;
-      billingAddress?:  Record<string, unknown> | null;
-      client:  { name?:  string | null; email?: string | null; phone?: string | null } | null;
+      paymentIntentId?: string | null;
+      shippingAddress: Record<string, unknown> | null;
+      billingAddress?: Record<string, unknown> | null;
+      client: { name?: string | null; email?: string | null; phone?: string | null } | null;
     }) => {
       try {
         const res = await fetch('/api/save-shipping', {
-          method:  'POST',
-          headers:  { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paymentIntentId:  opts.paymentIntentId ??  undefined,
+            paymentIntentId: opts.paymentIntentId ?? undefined,
             shippingAddress: opts.shippingAddress,
-            billingAddress: opts. billingAddress ??  undefined,
-            client: opts. client,
+            billingAddress: opts.billingAddress ?? undefined,
+            client: opts.client,
           }),
         });
         if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
+          const body = await res.json().catch(() => ({} as Record<string, unknown>));
           const msg = (body as { message?: string })?.message ?? `Failed to save shipping (status ${res.status})`;
           throw new Error(msg);
         }
@@ -844,17 +942,36 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   );
 
   const finalizeOrder = useCallback(
-    async (opts: { paymentIntentId?: string | null }) => {
+    async (opts: { paymentIntentId?: string | null }): Promise<{ ok: boolean; status: number; body: unknown }> => {
       try {
-        await fetch('/api/complete-order', {
-          method:  'POST',
-          headers:  { 'Content-Type': 'application/json' },
+        const res = await fetch('/api/complete-order', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            paymentIntentId: opts. paymentIntentId ?? undefined,
+            paymentIntentId: opts.paymentIntentId ?? undefined,
           }),
         });
+
+        let body: unknown = null;
+        try {
+          body = await res.json().catch(() => null);
+        } catch {
+          body = null;
+        }
+
+        if (!res.ok) {
+          const message =
+            (body && ((body as Record<string, unknown>)['message'] || (body as Record<string, unknown>)['error'])) ||
+            res.statusText ||
+            `Request failed (${res.status})`;
+          return { ok: false, status: res.status, body: { message } };
+        }
+
+        return { ok: true, status: res.status, body };
       } catch (e) {
-        console.warn('finalizeOrder warning:', e);
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn('finalizeOrder network error:', message);
+        return { ok: false, status: 0, body: { message: message || 'Network error' } };
       }
     },
     []
@@ -868,13 +985,13 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
 
     const onShippingAddressChange = (ev: unknown) => {
       const event = ev as ShippingAddressChangeEvent;
-      const shippingOptions:  ShippingOption[] = [
+      const shippingOptions: ShippingOption[] = [
         { id: 'standard', label: 'Standard (3-5 days)', detail: 'Free over £30', amount: 0 },
       ];
       event.updateWith({
         status: 'success',
         shippingOptions,
-        total: { label: 'Order total', amount:  amountPence },
+        total: { label: 'Order total', amount: amountPence },
         displayItems: [],
       });
     };
@@ -883,29 +1000,31 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       const event = ev as PaymentMethodEvent;
       setError(null);
 
-      const payerNameVal = event.payerName ??  `${firstName} ${lastName}`.trim();
-      const payerEmailVal = event.payerEmail ??  email;
-      const payerPhoneVal = event.payerPhone ??  phone;
+      const payerNameVal = event.payerName ?? `${firstName} ${lastName}`.trim();
+      const payerEmailVal = event.payerEmail ?? email;
+      const payerPhoneVal = event.payerPhone ?? phone;
 
       const shippingAddressRaw = event.shippingAddress ?? null;
 
-      const recipient = (shippingAddressRaw?. recipient ?? payerNameVal ??  '')?. trim();
+      const recipient = (shippingAddressRaw?.recipient ?? payerNameVal ?? '')?.trim();
       let normalizedFirst = '';
       let normalizedLast = '';
       if (recipient) {
         const parts = recipient.split(/\s+/);
-        normalizedFirst = parts. shift() ?? '';
+        normalizedFirst = parts.shift() ?? '';
         normalizedLast = parts.length > 0 ? parts.join(' ') : '';
       }
 
-      const addressLine0 = shippingAddressRaw?.addressLine && shippingAddressRaw. addressLine. length > 0
-        ? (shippingAddressRaw. addressLine[0] ?? '')
-        : '';
-      const addressLine1 = shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 1
-        ?  (shippingAddressRaw.addressLine[1] ?? '')
-        : '';
+      const addressLine0 =
+        shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 0
+          ? shippingAddressRaw.addressLine[0] ?? ''
+          : '';
+      const addressLine1 =
+        shippingAddressRaw?.addressLine && shippingAddressRaw.addressLine.length > 1
+          ? shippingAddressRaw.addressLine[1] ?? ''
+          : '';
 
-      const cityVal = (shippingAddressRaw?. city ?? shippingAddressRaw?.administrativeArea ?? city) ?? '';
+      const cityVal = (shippingAddressRaw?.city ?? shippingAddressRaw?.administrativeArea ?? city) ?? '';
       const postcodeVal = (shippingAddressRaw?.postalCode ?? '') ?? '';
       const countryVal = (shippingAddressRaw?.country ?? shippingAddressRaw?.countryCode ?? country) ?? '';
 
@@ -913,20 +1032,20 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       const emailVal = payerEmailVal ?? null;
 
       const payer = {
-        name: (payerNameVal && payerNameVal.trim()) ? payerNameVal : (recipient || null),
-        email: emailVal ??  null,
+        name: payerNameVal && payerNameVal.trim() ? payerNameVal : recipient || null,
+        email: emailVal ?? null,
         phone: phoneVal ?? null,
       };
 
-      const shippingPayload:  Record<string, unknown> = {
+      const shippingPayload: Record<string, unknown> = {
         firstName: normalizedFirst || (firstName || ''),
         lastName: normalizedLast || (lastName || ''),
-        email: emailVal ??  email,
-        phone: phoneVal ??  phone,
+        email: emailVal ?? email,
+        phone: phoneVal ?? phone,
         unit: addressLine1 || '',
-        address: addressLine0 || (address || ''),
+        address: addressLine0 || address || '',
         city: cityVal || city,
-        postcode: postcodeVal ?  normalizeUkPostcode(String(postcodeVal)) : (postcode || ''),
+        postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : postcode || '',
         country: countryVal || country,
       };
 
@@ -945,16 +1064,16 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         const pm = event.paymentMethod;
         if (pm && pm.billing_details && pm.billing_details.address) {
           const addr = pm.billing_details.address;
-          const name = pm.billing_details.name ??  null;
-          const [bFirst, ... bRest] = (name || '').split(/\s+/);
+          const name = pm.billing_details.name ?? null;
+          const [bFirst, ...bRest] = (name || '').split(/\s+/);
           billingPayload = {
             firstName: bFirst || billingPayload.firstName,
-            lastName: bRest.length ?  bRest.join(' ') : billingPayload.lastName,
-            unit: addr.line2 ??  billingPayload.unit,
-            address: addr.line1 ??  billingPayload.address,
+            lastName: bRest.length ? bRest.join(' ') : billingPayload.lastName,
+            unit: addr.line2 ?? billingPayload.unit,
+            address: addr.line1 ?? billingPayload.address,
             city: addr.city ?? billingPayload.city,
-            postcode: addr.postal_code ?  normalizeUkPostcode(String(addr.postal_code)) : billingPayload.postcode,
-            country: addr.country ??  billingPayload.country,
+            postcode: addr.postal_code ? normalizeUkPostcode(String(addr.postal_code)) : billingPayload.postcode,
+            country: addr.country ?? billingPayload.country,
             sameAsShipping: false,
           };
         }
@@ -975,11 +1094,11 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
 
       setProcessing(true);
       try {
-        const result = await stripe! .confirmCardPayment(
+        const result = (await stripe.confirmCardPayment(
           clientSecret,
-          { payment_method: event.paymentMethod. id },
+          { payment_method: event.paymentMethod.id },
           { handleActions: false } as ConfirmCardPaymentOptions
-        ) as unknown as LocalConfirmResult;
+        )) as LocalConfirmResult;
 
         const status = result.paymentIntent?.status ?? '';
 
@@ -987,7 +1106,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
           try {
             event.complete('success');
           } catch {}
-          const authResult = await stripe!.confirmCardPayment(clientSecret) as unknown as LocalConfirmResult;
+          const authResult = (await stripe.confirmCardPayment(clientSecret)) as LocalConfirmResult;
 
           if (authResult.error) {
             setError(authResult.error.message ?? 'Authentication failed.');
@@ -1000,13 +1119,12 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
             setProcessing(false);
             return;
           }
-
         } else if (status === 'succeeded') {
           try {
             event.complete('success');
           } catch {}
         } else if (result.error) {
-          const msg = result.error.message ??  'Payment failed.';
+          const msg = result.error.message ?? 'Payment failed.';
           setError(msg);
           try {
             event.complete('fail');
@@ -1017,7 +1135,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
           const ok = await handleConfirmResult(result);
           if (!ok) {
             try {
-              event. complete('fail');
+              event.complete('fail');
             } catch {}
             setProcessing(false);
             return;
@@ -1027,10 +1145,19 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
           } catch {}
         }
 
-        await finalizeOrder({ paymentIntentId });
+        const finalizeResp = await finalizeOrder({ paymentIntentId });
+        if (!finalizeResp.ok) {
+          const serverMsg = (finalizeResp.body as Record<string, unknown>)?.message || `Order finalization failed (status ${finalizeResp.status})`;
+          setError(String(serverMsg));
+          try {
+            event.complete('fail');
+          } catch {}
+          setProcessing(false);
+          return;
+        }
+
         clearCart();
         router.push('/checkout/success');
-
       } catch (err) {
         try {
           event.complete && event.complete('fail');
@@ -1042,25 +1169,19 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       }
     };
 
-    (paymentRequest as unknown as { on: (evName: string, fn: unknown) => void }).on(
-      'shippingaddresschange',
-      onShippingAddressChange as unknown
-    );
-    (paymentRequest as unknown as { on: (evName: string, fn: unknown) => void }).on(
-      'paymentmethod',
-      onPaymentMethod as unknown
-    );
+    // attach listeners using the PaymentRequest API as provided by Stripe (guarded)
+    try {
+      paymentRequest.on('shippingaddresschange', (ev: unknown) => onShippingAddressChange(ev));
+      paymentRequest.on('paymentmethod', (ev: unknown) => onPaymentMethod(ev));
+    } catch {
+      // some runtimes may not support .on - swallow safely
+    }
 
     return () => {
       try {
-        (paymentRequest as unknown as { off?:  (evName: string, fn:  unknown) => void }).off?.(
-          'shippingaddresschange',
-          onShippingAddressChange as unknown
-        );
-        (paymentRequest as unknown as { off?: (evName: string, fn: unknown) => void }).off?.(
-          'paymentmethod',
-          onPaymentMethod as unknown
-        );
+        const prWithOff = paymentRequest as unknown as { off?: (evName: string, fn: (e: unknown) => void) => void };
+        prWithOff.off?.('shippingaddresschange', (ev: unknown) => onShippingAddressChange(ev));
+        prWithOff.off?.('paymentmethod', (ev: unknown) => onPaymentMethod(ev));
       } catch {}
     };
   }, [
@@ -1088,44 +1209,51 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
   /* ---------------------------
      Form submit
   ----------------------------*/
+  const clearAllFieldErrors = () => setFieldErrors({});
+
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
-    setPostcodeError(null);
-    setBillingPostcodeError(null);
+    clearAllFieldErrors();
 
     if (!stripe || !elements) {
       setError('Stripe is not loaded yet.');
       return;
     }
 
-    if (! email || !firstName || !lastName || !address || !city || !postcode || !phone) {
+    const newErrors: Partial<Record<FieldKey, string>> = {};
+
+    if (!firstName.trim()) newErrors.firstName = 'First name is required';
+    if (!lastName.trim()) newErrors.lastName = 'Last name is required';
+    if (!email.trim()) newErrors.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) newErrors.email = 'Please enter a valid email address';
+    if (!phone.trim()) newErrors.phone = 'Phone number is required';
+    else if (!isValidUkPhone(normalizePhoneDigits(phone))) newErrors.phone = 'Please enter a valid UK phone number (e.g. 07700 900000 or +44 7700 900000).';
+    if (!address.trim()) newErrors.address = 'Street address is required';
+    if (!city.trim()) newErrors.city = 'City is required';
+    if (!postcode.trim()) newErrors.postcode = 'Postcode is required';
+    else if (!isValidUkPostcode(postcode)) newErrors.postcode = 'Please enter a valid UK postcode (e.g. EC1A 1BB)';
+
+    if (!billingSame) {
+      if (!billingFirstName.trim()) newErrors.billingFirstName = 'Billing first name is required';
+      if (!billingLastName.trim()) newErrors.billingLastName = 'Billing last name is required';
+      if (!billingAddress.trim()) newErrors.billingAddress = 'Billing address is required';
+      if (!billingCity.trim()) newErrors.billingCity = 'Billing city is required';
+      if (!billingPostcode.trim()) newErrors.billingPostcode = 'Billing postcode is required';
+      else if (!isValidUkPostcode(billingPostcode)) newErrors.billingPostcode = 'Please enter a valid UK postcode for billing (e.g. EC1A 1BB).';
+    }
+
+    if (Object.keys(newErrors).length > 0) {
+      setFieldErrors((prev) => ({ ...prev, ...newErrors }));
       setError('Please fill in all required shipping fields.');
       return;
     }
 
-    if (! billingSame) {
-      if (!billingFirstName || !billingLastName || !billingAddress || !billingCity || !billingPostcode) {
-        setError('Please fill in all required billing fields.');
-        return;
-      }
-    }
-
     const normalizedPostcode = normalizeUkPostcode(postcode);
-    if (!isValidUkPostcode(normalizedPostcode)) {
-      setPostcodeError('Please enter a valid UK postcode (e.g.  EC1A 1BB or SW1A 1AA).');
-      return;
-    }
     setPostcode(normalizedPostcode);
 
-    let normalizedBillingPostcode = billingPostcode;
-    if (! billingSame) {
-      normalizedBillingPostcode = normalizeUkPostcode(billingPostcode);
-      if (!isValidUkPostcode(normalizedBillingPostcode)) {
-        setBillingPostcodeError('Please enter a valid UK postcode for billing (e.g. EC1A 1BB).');
-        return;
-      }
-      setBillingPostcode(normalizedBillingPostcode);
+    if (!billingSame) {
+      setBillingPostcode(normalizeUkPostcode(billingPostcode));
     }
 
     const cardElement = elements.getElement(CardElement);
@@ -1145,7 +1273,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         unit,
         address,
         city,
-        postcode:  normalizeUkPostcode(postcode),
+        postcode: normalizeUkPostcode(postcode),
         country,
       };
       const clientPayload = { name: `${firstName} ${lastName}`.trim(), email, phone };
@@ -1164,11 +1292,11 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         : {
             firstName: billingFirstName,
             lastName: billingLastName,
-            unit:  billingUnit,
-            address:  billingAddress,
-            city:  billingCity,
+            unit: billingUnit,
+            address: billingAddress,
+            city: billingCity,
             postcode: normalizeUkPostcode(billingPostcode),
-            country:  billingCountry,
+            country: billingCountry,
             sameAsShipping: false,
           };
 
@@ -1184,7 +1312,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       const billingDetails = billingSame
         ? {
             name: `${firstName} ${lastName}`.trim(),
-            email:  email || undefined,
+            email: email || undefined,
             phone: phone || undefined,
             address: {
               line1: address,
@@ -1201,18 +1329,18 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
             address: {
               line1: billingAddress,
               line2: billingUnit || undefined,
-              city:  billingCity,
+              city: billingCity,
               postal_code: normalizeUkPostcode(billingPostcode),
-              country:  billingCountry,
+              country: billingCountry,
             },
           };
 
-      const result = (await stripe. confirmCardPayment(clientSecret, {
+      const result = (await stripe.confirmCardPayment(clientSecret, {
         payment_method: {
           card: elements.getElement(CardElement)!,
-          billing_details:  billingDetails,
+          billing_details: billingDetails,
         },
-      })) as unknown as LocalConfirmResult;
+      })) as LocalConfirmResult;
 
       const ok = await handleConfirmResult(result);
 
@@ -1221,7 +1349,13 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         return;
       }
 
-      await finalizeOrder({ paymentIntentId });
+      const finalizeResp = await finalizeOrder({ paymentIntentId });
+      if (!finalizeResp.ok) {
+        const serverMsg = (finalizeResp.body as Record<string, unknown>)?.message || `Order finalization failed (status ${finalizeResp.status})`;
+        setError(String(serverMsg));
+        setProcessing(false);
+        return;
+      }
 
       clearCart();
       router.push('/checkout/success');
@@ -1244,6 +1378,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       invalid: { color: '#dc2626' },
     },
   };
+
+  /* ---------------------------
+     Render helpers
+  ----------------------------*/
+  const inputBaseClass =
+    'w-full px-3 sm:px-4 py-2 sm:py-3 text-base rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all border-2';
+
+  const errorBorder = 'border-red-400';
+  const normalBorder = 'border-gray-300';
 
   /* ---------------------------
      Render
@@ -1269,7 +1412,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       )}
 
       {/* Contact */}
-      <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm: p-6">
+      <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
         <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm:mb-4 flex items-center">
           <User className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
           Contact Information
@@ -1285,11 +1428,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
               autoComplete="given-name"
               type="text"
               value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
+              onChange={(e) => {
+                setFirstName(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, firstName: null }));
+              }}
               required
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+              className={`${inputBaseClass} ${fieldErrors.firstName ? errorBorder : normalBorder}`}
               placeholder="John"
             />
+            {fieldErrors.firstName && <div className="text-xs text-red-600 mt-1">{fieldErrors.firstName}</div>}
           </div>
 
           <div>
@@ -1301,11 +1448,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
               autoComplete="family-name"
               type="text"
               value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
+              onChange={(e) => {
+                setLastName(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, lastName: null }));
+              }}
               required
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+              className={`${inputBaseClass} ${fieldErrors.lastName ? errorBorder : normalBorder}`}
               placeholder="Doe"
             />
+            {fieldErrors.lastName && <div className="text-xs text-red-600 mt-1">{fieldErrors.lastName}</div>}
           </div>
 
           <div className="relative">
@@ -1313,23 +1464,27 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
               Email <span className="text-black">*</span>
             </label>
             <div className="relative">
-              <Mail className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm: h-5 text-gray-400" />
+              <Mail className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
               <input
                 name="email"
                 type="email"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target. value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, email: null }));
+                }}
                 onBlur={handleEmailBlur}
                 required
-                className="w-full pl-8 sm:pl-10 pr-3 sm:pr-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                className={`${inputBaseClass} pl-8 sm:pl-10 pr-3 sm:pr-4 ${fieldErrors.email ? errorBorder : normalBorder}`}
                 placeholder="you@example.com"
               />
             </div>
+            {fieldErrors.email && <div className="text-xs text-red-600 mt-1">{fieldErrors.email}</div>}
           </div>
 
           <div className="relative">
-            <label className="block text-base font-medium text-black mb-1 sm: mb-2">
+            <label className="block text-base font-medium text-black mb-1 sm:mb-2">
               Phone Number <span className="text-black">*</span>
             </label>
             <div className="relative">
@@ -1339,13 +1494,21 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 type="tel"
                 autoComplete="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
+                onChange={(e) => {
+                  setPhone(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, phone: null }));
+                }}
                 onBlur={handlePhoneBlur}
                 required
-                className="w-full pl-8 sm: pl-10 pr-3 sm:pr-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus: ring-black focus:border-black transition-all"
+                className={`${inputBaseClass} pl-8 sm:pl-10 pr-3 sm:pr-4 ${fieldErrors.phone ? errorBorder : normalBorder}`}
                 placeholder="+44 7700 900000"
               />
             </div>
+            {fieldErrors.phone ? (
+              <div className="text-xs text-red-600 mt-1">{fieldErrors.phone}</div>
+            ) : (
+              <div className="text-xs text-gray-500 mt-1">Enter a UK phone number (we will normalize it for you)</div>
+            )}
           </div>
 
           {lookupError && <div className="text-sm text-yellow-700 col-span-full mt-1">{lookupError}</div>}
@@ -1354,13 +1517,16 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
           {showAutofillPreview && foundClient && (
             <div className="col-span-full mt-2 p-3 bg-white border rounded-md flex items-start justify-between">
               <div>
-                <div className="text-sm font-semibold">{foundClient.name ??  foundClient.email}</div>
-                <div className="text-xs text-gray-600">{foundClient.email ??  ''} {foundClient.phone ?  `• ${foundClient.phone}` : ''}</div>
+                <div className="text-sm font-semibold">{foundClient.name ?? foundClient.email}</div>
+                <div className="text-xs text-gray-600">
+                  {foundClient.email ?? ''} {foundClient.phone ? `• ${foundClient.phone}` : ''}
+                </div>
                 {foundClient.address && (
                   <div className="text-xs text-gray-500 mt-1">
-                    {(foundClient.address.line1 || foundClient.address.address) ?? ''}<br />
-                    {foundClient.address.unit ?  `${foundClient.address.unit}<br/>` : null}
-                    {foundClient. address.city || ''} {foundClient.address.postcode ?  `• ${foundClient.address.postcode}` : ''}
+                    {(foundClient.address.line1 || foundClient.address.address) ?? ''}
+                    <br />
+                    {foundClient.address.unit ? `${foundClient.address.unit}<br/>` : null}
+                    {foundClient.address.city || ''} {foundClient.address.postcode ? `• ${foundClient.address.postcode}` : ''}
                   </div>
                 )}
               </div>
@@ -1401,8 +1567,11 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
               autoComplete="address-line2"
               type="text"
               value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              className="w-full px-3 sm:px-4 py-2 sm: py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+              onChange={(e) => {
+                setUnit(e.target.value);
+                setFieldErrors((prev) => ({ ...prev, unit: null }));
+              }}
+              className={`${inputBaseClass} ${fieldErrors.unit ? errorBorder : normalBorder}`}
               placeholder="Flat 4 / Apt 2B"
             />
             <div className="text-xs text-gray-500 mt-1">Optional — apartment, suite, unit or building name. </div>
@@ -1422,16 +1591,17 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
               onBlur={handleAddressBlur}
               onFocus={handleAddressFocus}
               required
-              className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+              className={`${inputBaseClass} ${fieldErrors.address ? errorBorder : normalBorder}`}
               placeholder="123 High Street or SW1A 1AA"
             />
+            {fieldErrors.address && <div className="text-xs text-red-600 mt-1">{fieldErrors.address}</div>}
             <div className="text-xs text-gray-500 mt-1">
-              💡 <strong>Tip:</strong> Enter your <strong>postcode first</strong> (e.g. SW1A 1AA or EC1 2NV) for faster results, or start typing your street name. 
+              💡 <strong>Tip:</strong> Enter your <strong>postcode first</strong> (e.g. SW1A 1AA or EC1 2NV) for faster results, or start typing your street name.
             </div>
 
             {showPredictions && predictions.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md max-h-60 overflow-auto text-sm shadow-lg">
-                {predictions. map((p, idx) => (
+                {predictions.map((p, idx) => (
                   <li
                     key={p.id}
                     onMouseDown={(ev) => {
@@ -1442,7 +1612,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                     onMouseEnter={() => setActivePredictionIndex(idx)}
                   >
                     {p.text}
-                    {p.isGeocode ?  <span className="text-xs text-gray-400 ml-2"> (postcode search)</span> : null}
+                    {p.isGeocode ? <span className="text-xs text-gray-400 ml-2"> (postcode search)</span> : null}
                   </li>
                 ))}
               </ul>
@@ -1457,11 +1627,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 autoComplete="address-level2"
                 type="text"
                 value={city}
-                onChange={(e) => setCity(e.target.value)}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, city: null }));
+                }}
                 required
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus: border-black transition-all"
+                className={`${inputBaseClass} ${fieldErrors.city ? errorBorder : normalBorder}`}
                 placeholder="London"
               />
+              {fieldErrors.city && <div className="text-xs text-red-600 mt-1">{fieldErrors.city}</div>}
             </div>
 
             <div>
@@ -1473,23 +1647,23 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 value={postcode}
                 onChange={(e) => {
                   setPostcode(e.target.value);
-                  setPostcodeError(null);
+                  setFieldErrors((prev) => ({ ...prev, postcode: null }));
                 }}
                 onBlur={() => {
                   const normalized = normalizeUkPostcode(postcode);
                   setPostcode(normalized);
-                  if (normalized && ! isValidUkPostcode(normalized)) {
-                    setPostcodeError('Please enter a valid UK postcode (e.g. EC1A 1BB or SW1A 1AA).');
+                  if (normalized && !isValidUkPostcode(normalized)) {
+                    setFieldErrors((prev) => ({ ...prev, postcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB or SW1A 1AA).' }));
                   } else {
-                    setPostcodeError(null);
+                    setFieldErrors((prev) => ({ ...prev, postcode: null }));
                   }
                 }}
                 required
-                className={`w-full px-3 sm:px-4 py-2 sm: py-3 text-base border-2 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all ${postcodeError ? 'border-red-400' : 'border-gray-300'}`}
+                className={`${inputBaseClass} ${fieldErrors.postcode ? errorBorder : normalBorder}`}
                 placeholder="SW1A 1AA"
               />
-              {postcodeError ?  (
-                <div className="text-xs text-red-600 mt-1">{postcodeError}</div>
+              {fieldErrors.postcode ? (
+                <div className="text-xs text-red-600 mt-1">{fieldErrors.postcode}</div>
               ) : (
                 <div className="text-xs text-gray-500 mt-1">Enter a UK postcode (we will normalize it for you)</div>
               )}
@@ -1501,12 +1675,16 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 name="country"
                 autoComplete="country"
                 value={country}
-                onChange={(e) => setCountry(e.target.value)}
+                onChange={(e) => {
+                  setCountry(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, country: null }));
+                }}
                 required
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                className={`${inputBaseClass} ${fieldErrors.country ? errorBorder : normalBorder}`}
               >
                 <option value="GB">United Kingdom</option>
               </select>
+              {fieldErrors.country && <div className="text-xs text-red-600 mt-1">{fieldErrors.country}</div>}
             </div>
           </div>
 
@@ -1516,7 +1694,7 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 type="checkbox"
                 checked={billingSame}
                 onChange={(e) => setBillingSame(e.target.checked)}
-                className="h-4 w-4 text-black rounded border-gray-300 focus: ring-black"
+                className="h-4 w-4 text-black rounded border-gray-300 focus:ring-black"
               />
               <span>Billing address same as shipping</span>
             </label>
@@ -1525,9 +1703,9 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
         </div>
       </div>
 
-      {! billingSame && (
+      {!billingSame && (
         <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
-          <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm: mb-4 flex items-center">
+          <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm:mb-4 flex items-center">
             <Lock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
             Billing Address
           </h2>
@@ -1541,11 +1719,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                   autoComplete="billing given-name"
                   type="text"
                   value={billingFirstName}
-                  onChange={(e) => setBillingFirstName(e.target.value)}
+                  onChange={(e) => {
+                    setBillingFirstName(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, billingFirstName: null }));
+                  }}
                   required
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus: ring-black focus:border-black transition-all"
+                  className={`${inputBaseClass} ${fieldErrors.billingFirstName ? errorBorder : normalBorder}`}
                   placeholder="John"
                 />
+                {fieldErrors.billingFirstName && <div className="text-xs text-red-600 mt-1">{fieldErrors.billingFirstName}</div>}
               </div>
 
               <div>
@@ -1555,11 +1737,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                   autoComplete="billing family-name"
                   type="text"
                   value={billingLastName}
-                  onChange={(e) => setBillingLastName(e.target.value)}
+                  onChange={(e) => {
+                    setBillingLastName(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, billingLastName: null }));
+                  }}
                   required
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                  className={`${inputBaseClass} ${fieldErrors.billingLastName ? errorBorder : normalBorder}`}
                   placeholder="Doe"
                 />
+                {fieldErrors.billingLastName && <div className="text-xs text-red-600 mt-1">{fieldErrors.billingLastName}</div>}
               </div>
             </div>
 
@@ -1570,8 +1756,11 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 autoComplete="billing address-line2"
                 type="text"
                 value={billingUnit}
-                onChange={(e) => setBillingUnit(e.target.value)}
-                className="w-full px-3 sm: px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus: ring-2 focus:ring-black focus:border-black transition-all"
+                onChange={(e) => {
+                  setBillingUnit(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, billingUnit: null }));
+                }}
+                className={`${inputBaseClass} ${fieldErrors.billingUnit ? errorBorder : normalBorder}`}
                 placeholder="Flat 4 / Apt 2B"
               />
             </div>
@@ -1583,11 +1772,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                 autoComplete="billing address-line1"
                 type="text"
                 value={billingAddress}
-                onChange={(e) => setBillingAddress(e. target.value)}
+                onChange={(e) => {
+                  setBillingAddress(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, billingAddress: null }));
+                }}
                 required
-                className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus: border-black transition-all"
+                className={`${inputBaseClass} ${fieldErrors.billingAddress ? errorBorder : normalBorder}`}
                 placeholder="123 High Street"
               />
+              {fieldErrors.billingAddress && <div className="text-xs text-red-600 mt-1">{fieldErrors.billingAddress}</div>}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -1598,11 +1791,15 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                   autoComplete="billing address-level2"
                   type="text"
                   value={billingCity}
-                  onChange={(e) => setBillingCity(e.target.value)}
+                  onChange={(e) => {
+                    setBillingCity(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, billingCity: null }));
+                  }}
                   required
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all"
+                  className={`${inputBaseClass} ${fieldErrors.billingCity ? errorBorder : normalBorder}`}
                   placeholder="London"
                 />
+                {fieldErrors.billingCity && <div className="text-xs text-red-600 mt-1">{fieldErrors.billingCity}</div>}
               </div>
 
               <div>
@@ -1614,23 +1811,23 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                   value={billingPostcode}
                   onChange={(e) => {
                     setBillingPostcode(e.target.value);
-                    setBillingPostcodeError(null);
+                    setFieldErrors((prev) => ({ ...prev, billingPostcode: null }));
                   }}
                   onBlur={() => {
                     const normalized = normalizeUkPostcode(billingPostcode);
                     setBillingPostcode(normalized);
-                    if (normalized && ! isValidUkPostcode(normalized)) {
-                      setBillingPostcodeError('Please enter a valid UK postcode (e.g. EC1A 1BB).');
+                    if (normalized && !isValidUkPostcode(normalized)) {
+                      setFieldErrors((prev) => ({ ...prev, billingPostcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB).' }));
                     } else {
-                      setBillingPostcodeError(null);
+                      setFieldErrors((prev) => ({ ...prev, billingPostcode: null }));
                     }
                   }}
                   required
-                  className={`w-full px-3 sm:px-4 py-2 sm: py-3 text-base border-2 rounded-lg focus: ring-2 focus:ring-black focus:border-black transition-all ${billingPostcodeError ? 'border-red-400' : 'border-gray-300'}`}
+                  className={`${inputBaseClass} ${fieldErrors.billingPostcode ? errorBorder : normalBorder}`}
                   placeholder="EC1A 1BB"
                 />
-                {billingPostcodeError ?  (
-                  <div className="text-xs text-red-600 mt-1">{billingPostcodeError}</div>
+                {fieldErrors.billingPostcode ? (
+                  <div className="text-xs text-red-600 mt-1">{fieldErrors.billingPostcode}</div>
                 ) : (
                   <div className="text-xs text-gray-500 mt-1">Enter a UK postcode (we will normalize it for you)</div>
                 )}
@@ -1642,12 +1839,16 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
                   name="billing-country"
                   autoComplete="billing country"
                   value={billingCountry}
-                  onChange={(e) => setBillingCountry(e.target.value)}
+                  onChange={(e) => {
+                    setBillingCountry(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, billingCountry: null }));
+                  }}
                   required
-                  className="w-full px-3 sm:px-4 py-2 sm:py-3 text-base border-2 border-gray-300 rounded-lg focus:ring-2 focus: ring-black focus:border-black transition-all"
+                  className={`${inputBaseClass} ${fieldErrors.billingCountry ? errorBorder : normalBorder}`}
                 >
                   <option value="GB">United Kingdom</option>
                 </select>
+                {fieldErrors.billingCountry && <div className="text-xs text-red-600 mt-1">{fieldErrors.billingCountry}</div>}
               </div>
             </div>
           </div>
@@ -1655,8 +1856,8 @@ export default function CheckoutFormWithAutofill({ total, clientSecret, paymentI
       )}
 
       {/* Payment */}
-      <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm: p-6">
-        <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm: mb-4 flex items-center">
+      <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6">
+        <h2 className="text-base sm:text-lg font-bold text-black mb-3 sm:mb-4 flex items-center">
           <Lock className="w-4 h-4 sm:w-5 sm:h-5 mr-2" />
           Payment Information
         </h2>

@@ -9,16 +9,22 @@ import Link from "next/link";
 import { ShoppingBag, Package, CreditCard } from "lucide-react";
 import Image from "next/image";
 import { getCloudinaryUrl } from "@/app/utils/cloudinary";
+import { useRouter } from "next/navigation";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
 );
+
+type Shortage = { id: string; name: string; requested: number; available: number; source: string };
 
 export default function CheckoutPage() {
   // Subscribe to the cart store, but don't derive render-critical values
   // from it synchronously to avoid SSR/CSR mismatches.
   const items = useCart((s) => s.items);
   const getTotalPrice = useCart((s) => s.getTotalPrice);
+
+  // Add cart drawer opener
+  const openCart = useCart((s) => s.open);
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -27,6 +33,12 @@ export default function CheckoutPage() {
   // We will only use the cart values for rendering after mount to ensure
   // the server-rendered HTML matches the initial client render.
   const [mounted, setMounted] = useState(false);
+
+  const router = useRouter();
+
+  // Shortage modal state
+  const [shortages, setShortages] = useState<Shortage[] | null>(null);
+  const [showShortageModal, setShowShortageModal] = useState<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
@@ -53,13 +65,24 @@ export default function CheckoutPage() {
           body: JSON.stringify({ items: visibleItems }),
         });
 
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+
         if (res.ok) {
           setClientSecret(data.clientSecret);
+          // Clear any prior shortage state if present
+          setShortages(null);
+          setShowShortageModal(false);
         } else {
-          setClientSecret(null);
+          // If server indicates shortages (structured response, HTTP 409), show modal here
+          if (res.status === 409 && data && Array.isArray(data.shortages)) {
+            setShortages(data.shortages as Shortage[]);
+            setShowShortageModal(true);
+          } else {
+            // other failures - keep clientSecret null (disable payment)
+            setClientSecret(null);
+          }
         }
-      } catch {
+      } catch (err) {
         setClientSecret(null);
       } finally {
         setLoading(false);
@@ -79,6 +102,11 @@ export default function CheckoutPage() {
       return idOrUrl;
     }
     return getCloudinaryUrl(idOrUrl, preset);
+  };
+
+  const closeShortageModal = () => {
+    setShowShortageModal(false);
+    setShortages(null);
   };
 
   return (
@@ -225,7 +253,7 @@ export default function CheckoutPage() {
               </div>
             ) : loading ? (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
-                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <div className="flex flex-col sm:flex-row items=center justify-center gap-4">
                   <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-black"></div>
                   <span className="text-base sm:text-lg text-gray-600">Preparing secure payment…</span>
                 </div>
@@ -234,6 +262,34 @@ export default function CheckoutPage() {
               <Elements stripe={stripePromise} options={{ clientSecret }}>
                 <CheckoutForm total={total} clientSecret={clientSecret} />
               </Elements>
+            ) : showShortageModal ? (
+              // If we have shortages, encourage the user to edit the cart. The modal will be shown; also render a hint card here.
+              <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 sm:p-8">
+                <p className="text-base sm:text-lg text-yellow-800 mb-4">
+                  Some items in your cart are unavailable. Please review the details in the popup and update your cart.
+                </p>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => {
+                      closeShortageModal();
+                      // open the cart drawer instead of navigating away
+                      openCart();
+                    }}
+                    className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
+                  >
+                    Edit Cart
+                  </button>
+                  <button
+                    onClick={() => {
+                      closeShortageModal();
+                      // Attempt to re-create the intent by re-running effect (visibleItems unchanged) — user should edit cart first.
+                    }}
+                    className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             ) : (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
                 <p className="text-base sm:text-lg text-red-600">
@@ -263,7 +319,56 @@ export default function CheckoutPage() {
             </div>
           </div>
         </div>
-      </div> 
+      </div>
+
+      {/* Shortage Modal */}
+      {showShortageModal && shortages && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50">
+          <div className="w-full max-w-2xl mx-4 bg-white rounded-lg shadow-lg border p-6">
+            <h3 className="text-lg font-semibold mb-3">Some items are unavailable</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              One or more items in your cart are out of stock or have insufficient quantity. Please update your cart before continuing.
+            </p>
+
+            <div className="space-y-3 mb-4">
+              {shortages.map((s) => (
+                <div key={s.id} className="flex items-center justify-between p-3 border rounded">
+                  <div>
+                    <div className="font-medium">{s.name}</div>
+                    <div className="text-xs text-gray-600">Requested: {s.requested} • Available: {s.available}</div>
+                  </div>
+                  <div className="text-xs text-gray-500">{s.source}</div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  // Open the right cart drawer so user can edit quantities / remove items
+                  closeShortageModal();
+                  openCart();
+                }}
+                className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
+              >
+                Edit Cart
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  // Close modal and leave user on checkout to make adjustments (they may need to edit cart in a separate tab)
+                  closeShortageModal();
+                }}
+                className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800"
+              >
+                Close & Edit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
