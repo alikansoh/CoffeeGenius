@@ -14,11 +14,13 @@ import mongoose from "mongoose";
  * - Falls back to query param `id`
  * - Falls back to JSON body { id }
  *
- * This makes the route tolerant to small changes in Next.js / runtime shapes.
+ * This version types the context param to accept both synchronous params
+ * and params-as-Promise without using `any`.
  */
 
 async function resolveParamToString(maybe: unknown): Promise<string | undefined> {
   if (maybe == null) return undefined;
+
   // If it's a promise-like object, await it.
   if (typeof maybe === 'object' && maybe !== null && 'then' in maybe && typeof (maybe as { then: unknown }).then === 'function') {
     try {
@@ -31,9 +33,12 @@ async function resolveParamToString(maybe: unknown): Promise<string | undefined>
       return undefined;
     }
   }
+
   if (typeof maybe === "string") return maybe;
   if (Array.isArray(maybe)) return maybe.length > 0 ? String(maybe[0]) : undefined;
-  return String(maybe);
+  // if it's some other primitive, convert to string
+  if (typeof maybe === "number" || typeof maybe === "boolean") return String(maybe);
+  return undefined;
 }
 
 async function extractIdFromRequest(request: NextRequest, paramsCandidate?: unknown) {
@@ -55,9 +60,7 @@ async function extractIdFromRequest(request: NextRequest, paramsCandidate?: unkn
     const pathname = new URL(request.url).pathname;
     const parts = pathname.split("/").filter(Boolean);
     if (parts.length > 0) {
-      // last part is id if path ends with it and not 'route' etc.
       const last = parts[parts.length - 1];
-      // ensure last is not 'api' or 'bookings'
       if (last && !["api", "bookings"].includes(last.toLowerCase())) {
         return decodeURIComponent(last);
       }
@@ -70,7 +73,7 @@ async function extractIdFromRequest(request: NextRequest, paramsCandidate?: unkn
   try {
     const clone = request.clone();
     const body = await clone.json().catch(() => null);
-    if (body && (body.id || body._id)) return String(body.id ?? body._id);
+    if (body && (body.id || body._id)) return String((body as { id?: unknown; _id?: unknown }).id ?? (body as { id?: unknown; _id?: unknown })._id);
   } catch {
     // ignore
   }
@@ -78,7 +81,10 @@ async function extractIdFromRequest(request: NextRequest, paramsCandidate?: unkn
   return undefined;
 }
 
-export async function DELETE(request: NextRequest, { params }: { params?: { id?: string | Promise<string> | string[] } }) {
+export async function DELETE(
+  request: NextRequest,
+  context?: { params?: { id?: string | string[] } | Promise<{ id: string }> }
+) {
   // require auth for deletion
   const auth = await verifyAuthForApi(request);
   if (auth instanceof NextResponse) return auth;
@@ -86,7 +92,7 @@ export async function DELETE(request: NextRequest, { params }: { params?: { id?:
   try {
     await dbConnect();
 
-    const id = await extractIdFromRequest(request, params?.id);
+    const id = await extractIdFromRequest(request, context?.params);
     if (!id) {
       return NextResponse.json({ success: false, message: "Missing id" }, { status: 400 });
     }
