@@ -1,22 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Client from '@/models/Client';
 import Order from '@/models/Order';
 import mongoose from 'mongoose';
 
-/**
- * GET / PATCH / DELETE for a single client
- * - robustly extracts id from params if present, otherwise from URL path
- * - returns Promise<NextResponse> (async)
- *
- * PATCH body: { name?, email?, phone?, address?, isSubscribed? }
- * DELETE: unsets clientId on orders, then deletes client doc
- */
+type MaybeParams =
+  | { params?: { id?: string } }
+  | { params: Promise<{ id: string }> }
+  | undefined;
 
-function extractId(req: Request, params?: { id?: string }) {
-  // Use params first (App Router passes { params })
-  if (params?.id) return params.id;
-  // Fallback: parse from URL
+function extractIdFromUrl(req: Request | NextRequest): string | undefined {
   const url = new URL(req.url);
   const segments = url.pathname.split('/').filter(Boolean); // ['api','admin','clients','<id>']
   const clientsIdx = segments.findIndex((s) => s === 'clients');
@@ -24,9 +17,38 @@ function extractId(req: Request, params?: { id?: string }) {
   return undefined;
 }
 
-export async function GET(req: Request, { params }: { params?: { id?: string } } = { params: undefined }) {
+function isPromise<T>(value: T | Promise<T> | undefined): value is Promise<T> {
+  return !!value && typeof (value as Promise<T>).then === 'function';
+}
+
+async function resolveId(req: Request | NextRequest, context?: MaybeParams): Promise<string | undefined> {
+  if (!context) return extractIdFromUrl(req);
+
+  // context may be { params?: { id?: string } } or { params: Promise<{ id: string }> }
+  const paramsField = (context as { params?: { id?: string } }).params;
+  if (paramsField === undefined) return extractIdFromUrl(req);
+
+  if (isPromise(paramsField)) {
+    const resolved = await paramsField;
+    return resolved?.id ?? extractIdFromUrl(req);
+  }
+
+  // synchronous params object
+  return paramsField.id ?? extractIdFromUrl(req);
+}
+
+/**
+ * GET / PATCH / DELETE for a single client
+ * - robustly extracts id from context.params (sync or Promise) or URL path
+ * - returns NextResponse
+ *
+ * PATCH body: { name?, email?, phone?, address?, isSubscribed? }
+ * DELETE: unsets clientId on orders, then deletes client doc
+ */
+
+export async function GET(req: NextRequest, context?: MaybeParams) {
   try {
-    const id = extractId(req, params);
+    const id = await resolveId(req, context);
     if (!id) return NextResponse.json({ error: 'Missing client id' }, { status: 400 });
     if (!mongoose.Types.ObjectId.isValid(id)) return NextResponse.json({ error: 'Invalid client id' }, { status: 400 });
 
@@ -41,20 +63,24 @@ export async function GET(req: Request, { params }: { params?: { id?: string } }
   }
 }
 
-export async function PATCH(req: Request, { params }: { params?: { id?: string } } = { params: undefined }) {
+export async function PATCH(req: NextRequest, context?: MaybeParams) {
   try {
-    const id = extractId(req, params);
+    const id = await resolveId(req, context);
     if (!id) return NextResponse.json({ error: 'Missing client id' }, { status: 400 });
     if (!mongoose.Types.ObjectId.isValid(id)) return NextResponse.json({ error: 'Invalid client id' }, { status: 400 });
 
-    const body = await req.json().catch(() => ({}));
-    const update: Record<string, unknown> = {};
+    const rawBody = await req.json().catch(() => ({})) as unknown;
 
-    if (typeof body.name === 'string') update.name = body.name.trim();
-    if (typeof body.email === 'string') update.email = body.email.trim();
-    if (typeof body.phone === 'string') update.phone = body.phone.trim();
-    if (body.address && typeof body.address === 'object') update.address = body.address;
-    if (typeof body.isSubscribed === 'boolean') update.isSubscribed = body.isSubscribed;
+    const update: Record<string, unknown> = {};
+    if (rawBody && typeof rawBody === 'object' && !Array.isArray(rawBody)) {
+      const body = rawBody as Record<string, unknown>;
+
+      if (typeof body.name === 'string') update.name = body.name.trim();
+      if (typeof body.email === 'string') update.email = body.email.trim();
+      if (typeof body.phone === 'string') update.phone = body.phone.trim();
+      if (body.address && typeof body.address === 'object') update.address = body.address;
+      if (typeof body.isSubscribed === 'boolean') update.isSubscribed = body.isSubscribed;
+    }
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
@@ -72,16 +98,16 @@ export async function PATCH(req: Request, { params }: { params?: { id?: string }
   }
 }
 
-export async function DELETE(req: Request, { params }: { params?: { id?: string } } = { params: undefined }) {
+export async function DELETE(req: NextRequest, context?: MaybeParams) {
   try {
-    const id = extractId(req, params);
+    const id = await resolveId(req, context);
     if (!id) return NextResponse.json({ error: 'Missing client id' }, { status: 400 });
     if (!mongoose.Types.ObjectId.isValid(id)) return NextResponse.json({ error: 'Invalid client id' }, { status: 400 });
 
     await dbConnect();
 
     // Unset clientId on related orders (so orders are retained but no longer linked)
-    await Order.updateMany({ clientId: id }, { $unset: { clientId: "" } }).exec();
+    await Order.updateMany({ clientId: id }, { $unset: { clientId: '' } }).exec();
 
     // Delete client document
     const result = await Client.deleteOne({ _id: id }).exec();
