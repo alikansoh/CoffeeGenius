@@ -6,7 +6,14 @@ import dbConnect from '@/lib/dbConnect';
 import CoffeeVariant from '@/models/CoffeeVariant';
 import Coffee from '@/models/Coffee';
 import Equipment from '@/models/Equipment';
+import Settings from '@/models/Settings';
 import mongoose from 'mongoose';
+
+interface SettingsDoc {
+  deliveryPricePence?: number;
+  freeDeliveryEnabled?: boolean;
+  freeDeliveryThresholdPence?: number;
+}
 
 type ClientItem = { id: string; name: string; price: number; quantity: number };
 type VerifiedItem = { id: string; name: string; quantity: number; clientPrice: number; storedPrice: number; source: 'variant' | 'coffee' | 'equipment' };
@@ -227,8 +234,38 @@ export async function POST(req: Request) {
 
     // Compute totals (use storedPrice)
     const subtotal = verifiedItems.reduce((sum, it) => sum + it.storedPrice * it.quantity, 0);
-    const shipping = subtotal > 30 ? 0 : 4.99;
-    const total = subtotal + shipping;
+
+    // --- NEW: compute shipping from Settings (preferred) with a safe fallback ---
+    let shipping = 0;
+    try {
+      const settingsDoc = await Settings.findOne({}).lean() as SettingsDoc | null;
+      if (settingsDoc && typeof settingsDoc.deliveryPricePence === 'number') {
+        const deliveryPricePence = settingsDoc.deliveryPricePence ?? 0;
+        const freeEnabled = !!settingsDoc.freeDeliveryEnabled;
+        const freeThresholdPence = settingsDoc.freeDeliveryThresholdPence ?? 0;
+
+        const deliveryPrice = Number((deliveryPricePence / 100).toFixed(2));
+        const freeThreshold = Number((freeThresholdPence / 100).toFixed(2));
+
+        if (freeEnabled && subtotal >= freeThreshold) {
+          shipping = 0;
+        } else {
+          shipping = deliveryPrice;
+        }
+
+        console.log(`Shipping computed from Settings: £${shipping.toFixed(2)} (freeEnabled=${freeEnabled}, threshold=${freeThreshold.toFixed(2)})`);
+      } else {
+        // fallback to previous simple rule if settings not present
+        shipping = subtotal > 30 ? 0 : 4.99;
+        console.log(`Settings not found - fallback shipping rule used: £${shipping.toFixed(2)}`);
+      }
+    } catch (settingsErr) {
+      console.warn('Failed to load settings; falling back to default shipping rule', settingsErr);
+      shipping = subtotal > 30 ? 0 : 4.99;
+    }
+    // --- END NEW SHIPPING LOGIC ---
+
+    const total = Number((subtotal + shipping).toFixed(2));
     const amount = Math.round(total * 100);
 
     // Build order items for metadata (compact)
@@ -297,7 +334,7 @@ export async function POST(req: Request) {
       paymentIntentId: paymentIntent.id,
     };
     return NextResponse.json(payload, { status: 200 });
-  } catch (err: unknown) {
+  } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('create-payment-intent error:', message);
     const exposeErrors = process.env.NEXT_PUBLIC_EXPOSE_SERVER_ERRORS === 'true' || process.env.NODE_ENV !== 'production';

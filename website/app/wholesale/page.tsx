@@ -1,22 +1,28 @@
-"use client";
+'use client';
+
 import React, { useRef, useState } from "react";
 
 /**
- * SimpleWholesaleEnquirySteps.tsx
+ * SimpleWholesaleEnquirySteps.tsx (static options)
  *
- * - Monochrome, professional two-column layout (description + compact 3-step enquiry).
- * - Improved segmented control for contact preference.
- * - More top margin (larger spacing above the section).
- * - Fixed mobile action button that scrolls to and focuses the form (visible on small screens).
- *
- * Usage: drop into a Next.js page (client component). Replace simulateSubmit with your API call.
+ * This version uses a static list of interest options (no runtime fetch).
+ * It posts enquiries to /api/enquiry (the API you already added).
  */
+
+type ContactPref = "email" | "phone";
+
+const INTEREST_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "roasted", label: "Roasted beans" },
+  { value: "green", label: "Green beans" },
+  { value: "equipment", label: "Equipment" },
+  { value: "training", label: "Training" },
+];
 
 export default function SimpleWholesaleEnquirySteps() {
   const [step, setStep] = useState(1);
   const [business, setBusiness] = useState("");
   const [contact, setContact] = useState("");
-  const [contactPref, setContactPref] = useState<"email" | "phone">("email");
+  const [contactPref, setContactPref] = useState<ContactPref>("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [interest, setInterest] = useState("");
@@ -54,11 +60,10 @@ export default function SimpleWholesaleEnquirySteps() {
     resetErrors();
     if (validateStep(step)) {
       setStep((s) => Math.min(3, s + 1));
-      // focus next logical field
       setTimeout(() => {
         if (step === 1) {
-          if (emailInputRef.current && contactPref === "email") emailInputRef.current.focus();
-          if (phoneInputRef.current && contactPref === "phone") phoneInputRef.current.focus();
+          if (contactPref === "email") emailInputRef.current?.focus();
+          if (contactPref === "phone") phoneInputRef.current?.focus();
         }
       }, 120);
     }
@@ -71,13 +76,10 @@ export default function SimpleWholesaleEnquirySteps() {
       if (step === 2) {
         businessInputRef.current?.focus();
       } else if (step === 3) {
-        if (contactInputRef.current) contactInputRef.current.focus();
+        contactInputRef.current?.focus();
       }
     }, 120);
   };
-
-  const simulateSubmit = () =>
-    new Promise<void>((resolve) => setTimeout(() => resolve(), 800));
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -98,11 +100,44 @@ export default function SimpleWholesaleEnquirySteps() {
 
     setSubmitting(true);
     try {
-      // Replace simulateSubmit() with your API call
-      await simulateSubmit();
-      setSent(true);
+      const payload = {
+        business: business.trim(),
+        contact: contact.trim(),
+        contactPref,
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+        interest: interest || undefined,
+        message: message.trim() || undefined,
+      };
 
-      // clear form for fresh state
+      const resp = await fetch("/api/enquiry", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        // Attempt to parse structured validation errors
+        if (json && Array.isArray(json.errors)) {
+          const serverErrors: Record<string, string> = {};
+          for (const err of json.errors) {
+            if (err.field && err.message) serverErrors[err.field] = err.message;
+          }
+          setErrors(serverErrors);
+        } else {
+          setErrors({ server: json.message || "Submission failed. Please try again later." });
+        }
+        window.scrollTo({ top: formRef.current?.getBoundingClientRect().top ?? 0, behavior: "smooth" });
+        return;
+      }
+
+      // success
+      setSent(true);
+      setStep(1);
+
+      // optionally reset fields (or keep them — here we clear)
       setBusiness("");
       setContact("");
       setContactPref("email");
@@ -110,9 +145,12 @@ export default function SimpleWholesaleEnquirySteps() {
       setPhone("");
       setInterest("");
       setMessage("");
-      setStep(1);
 
+      // hide message after 6s
       setTimeout(() => setSent(false), 6000);
+    } catch (err) {
+      console.error("Enquiry submit error:", err);
+      setErrors({ server: "Network error. Please try again." });
     } finally {
       setSubmitting(false);
     }
@@ -128,7 +166,7 @@ export default function SimpleWholesaleEnquirySteps() {
   };
 
   return (
-    <section className="bg-white pt-32 pb-16"> {/* increased top margin (pt-32) */}
+    <section className="bg-white pt-32 pb-16">
       <div className="max-w-6xl mx-auto px-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
           {/* Left: description */}
@@ -175,7 +213,14 @@ export default function SimpleWholesaleEnquirySteps() {
                 </div>
               </div>
 
-              <form ref={formRef} onSubmit={handleSubmit} className="px-6 py-6" aria-label="Wholesale enquiry form">
+              <form ref={formRef} onSubmit={handleSubmit} className="px-6 py-6" aria-label="Wholesale enquiry form" noValidate>
+                {/* Server error */}
+                {errors.server && (
+                  <div className="mb-4 text-sm text-rose-600">
+                    {errors.server}
+                  </div>
+                )}
+
                 {/* Step 1 */}
                 {step === 1 && (
                   <div className="space-y-4">
@@ -289,10 +334,11 @@ export default function SimpleWholesaleEnquirySteps() {
                         className="w-full rounded-md border px-3 py-2 text-slate-900 border-slate-200 bg-white"
                       >
                         <option value="">Choose an option (optional)</option>
-                        <option value="roasted">Roasted beans</option>
-                        <option value="green">Green beans</option>
-                        <option value="equipment">Equipment</option>
-                        <option value="training">Training</option>
+                        {INTEREST_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
                       </select>
                     </div>
                   </div>
@@ -320,7 +366,7 @@ export default function SimpleWholesaleEnquirySteps() {
                         <div><strong>Contact:</strong> {contact || "—"}</div>
                         <div><strong>Contact preference:</strong> {contactPref === "email" ? "Email" : "Phone"}</div>
                         <div><strong>{contactPref === "email" ? "Email" : "Phone"}:</strong> {contactPref === "email" ? (email || "—") : (phone || "—")}</div>
-                        <div><strong>Interest:</strong> {interest || "—"}</div>
+                        <div><strong>Interest:</strong> {interest ? INTEREST_OPTIONS.find(o => o.value === interest)?.label ?? interest : "—"}</div>
                       </div>
                     </div>
                   </div>

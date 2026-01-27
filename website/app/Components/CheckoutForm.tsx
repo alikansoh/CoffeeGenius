@@ -17,12 +17,15 @@ import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
   - All setState functional updaters now always return the correct typed value (no `undefined`).
   - No explicit `any` usage remains.
   - Per-field validation, UK phone/postcode checks, single-apply autofill preserved.
+  - Added optional `shippingPence` prop so parent checkout page can pass it without TS errors.
 */
 
 type Props = {
   total: number;
   clientSecret: string;
   paymentIntentId?: string | null;
+  // added so CheckoutPage can pass shippingPence without changing the checkout page
+  shippingPence?: number;
 };
 
 type ShippingOption = {
@@ -143,6 +146,7 @@ export default function CheckoutFormWithAutofill({
   total,
   clientSecret,
   paymentIntentId: paymentIntentIdProp,
+  shippingPence,
 }: Props): React.JSX.Element {
   const stripe = useStripe();
   const elements = useElements();
@@ -1870,6 +1874,10 @@ export default function CheckoutFormWithAutofill({
           <Lock className="w-3 h-3 mr-1" />
           Your payment information is encrypted and secure
         </p>
+        {/* If parent passes shippingPence we optionally show it here as a small helper (non-required) */}
+        {typeof shippingPence === 'number' && (
+          <div className="text-xs text-gray-500 mt-2">Shipping: £{(shippingPence / 100).toFixed(2)}</div>
+        )}
       </div>
 
       {error && <div className="bg-red-50 border-2 border-red-200 rounded-lg p-3 sm:p-4 text-red-800">{error}</div>}

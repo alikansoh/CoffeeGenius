@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
@@ -174,6 +174,14 @@ export default function AdminLayout({
       href: "/admin/admins",
       category: "settings",
     },
+    // Delivery settings link
+    {
+      id: "delivery-settings",
+      label: "settings",
+      icon: <FaBolt size={20} />,
+      href: "/admin/settings/",
+      category: "settings",
+    },
   ];
 
   const isActive = (href: string) => pathname === href;
@@ -330,12 +338,15 @@ export default function AdminLayout({
             </div>
           )}
 
-          {/* Settings Section */}
+          {/* Settings Section with Cog Icon */}
           {groupedMenuItems.settings.length > 0 && (
             <div>
-              <p className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                Configuration
-              </p>
+              <div className="px-4 mb-3 flex items-center gap-2">
+                <FaCog size={14} className="text-gray-500" />
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Configuration
+                </p>
+              </div>
               {groupedMenuItems.settings.map((item) => (
                 <Link
                   key={item.id}

@@ -111,6 +111,31 @@ function formatAddress(addr: InvoiceAddress | null | undefined, clientName?: str
   return lines.filter(Boolean);
 }
 
+// Helper to wrap text to fit within a maximum width
+function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let currentLine = '';
+
+  for (const word of words) {
+    const testLine = currentLine + (currentLine ? ' ' : '') + word;
+    const testWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+    if (testWidth > maxWidth && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = testLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+}
+
 /* ----------------------- PDF generation ------------------------------- */
 export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyInfo): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
@@ -156,6 +181,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   let pageWidth = page.getWidth();
   let pageHeight = page.getHeight();
   const margin = 50;
+  const sectionGap = 25; // Gap between major sections
   let cursorY = pageHeight - margin;
 
   // Clean color scheme
@@ -192,8 +218,8 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
 
     if (maybeImage) {
       const dims = maybeImage.scale(1);
-      const maxLogoWidth = 200;
-      const maxLogoHeight = 80;
+      const maxLogoWidth = 180;
+      const maxLogoHeight = 70;
       const scale = Math.min(maxLogoWidth / dims.width, maxLogoHeight / dims.height, 1);
       const logoW = dims.width * scale;
       const logoH = dims.height * scale;
@@ -205,17 +231,29 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
         width: logoW,
         height: logoH,
       });
+
+      cursorY -= logoH + 15;
     } else {
       const companyName = company.name || 'Your Company';
-      drawText(companyName, margin, cursorY, 20, darkText, boldFont);
+      const companyNameLines = wrapText(companyName, boldFont, 20, 250);
+      for (const line of companyNameLines) {
+        drawText(line, margin, cursorY, 20, darkText, boldFont);
+        cursorY -= 25;
+      }
+      cursorY -= 5;
     }
   } else {
     const companyName = company.name || 'Your Company';
-    drawText(companyName, margin, cursorY, 20, darkText, boldFont);
+    const companyNameLines = wrapText(companyName, boldFont, 20, 250);
+    for (const line of companyNameLines) {
+      drawText(line, margin, cursorY, 20, darkText, boldFont);
+      cursorY -= 25;
+    }
+    cursorY -= 5;
   }
 
-  // Company details on the left
-  let companyY = cursorY - 90;
+  // Company details on the left (with width constraint)
+  const companyDetailsStartY = cursorY;
   const companyDetails = [
     company.address,
     [company.city, company.postcode].filter(Boolean).join(' '),
@@ -225,24 +263,44 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     company.vatNumber ? `VAT: ${company.vatNumber}` : undefined,
   ].filter((l): l is string => Boolean(l));
 
+  let companyY = companyDetailsStartY;
+  const maxCompanyWidth = 250;
+  
   for (const line of companyDetails) {
-    drawText(line, margin, companyY, 9, lightText);
-    companyY -= 13;
+    const wrappedLines = wrapText(line, font, 9, maxCompanyWidth);
+    for (const wrappedLine of wrappedLines) {
+      drawText(wrappedLine, margin, companyY, 9, lightText);
+      companyY -= 13;
+    }
   }
 
-  // Invoice title and details on the right
-  const rightColX = pageWidth - margin - 150;
-  drawText('INVOICE', rightColX, cursorY, 24, accentBlue, boldFont);
+  // Invoice title and details on the right (ensure no overlap)
+  const rightColX = pageWidth - margin - 180;
+  const rightColStartY = companyDetailsStartY + 10;
+  
+  drawText('INVOICE', rightColX, rightColStartY, 24, accentBlue, boldFont);
 
-  let rightY = cursorY - 30;
+  let rightY = rightColStartY - 35;
   drawText('Invoice Number', rightColX, rightY, 9, lightText);
-  drawText(invoice.orderNumber, rightColX, rightY - 14, 11, darkText, boldFont);
+  
+  // Wrap invoice number if too long
+  const invoiceNumLines = wrapText(invoice.orderNumber, boldFont, 11, 180);
+  rightY -= 14;
+  for (const line of invoiceNumLines) {
+    drawText(line, rightColX, rightY, 11, darkText, boldFont);
+    rightY -= 14;
+  }
 
-  rightY -= 40;
+  rightY -= 8;
   drawText('Order ID', rightColX, rightY, 9, lightText);
-  drawText(invoice.orderId, rightColX, rightY - 14, 10, darkText);
+  const orderIdLines = wrapText(invoice.orderId, font, 10, 180);
+  rightY -= 14;
+  for (const line of orderIdLines) {
+    drawText(line, rightColX, rightY, 10, darkText);
+    rightY -= 12;
+  }
 
-  rightY -= 35;
+  rightY -= 8;
   const paidDate = typeof invoice.paidAt === 'string' ? new Date(invoice.paidAt) : invoice.paidAt;
   drawText('Date', rightColX, rightY, 9, lightText);
   drawText(
@@ -252,57 +310,94 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     10,
     darkText
   );
+  rightY -= 30;
 
-  cursorY = pageHeight - 240;
+  // Set cursor to the lower of the two columns plus section gap
+  cursorY = Math.min(companyY, rightY) - sectionGap;
 
   // ============= ADDRESSES SECTION =============
-  // Billing address
+  const addressStartY = cursorY;
+  
+  // Bill To (left side, constrained width)
   drawText('BILL TO', margin, cursorY, 10, lightText, boldFont);
   cursorY -= 18;
 
+  const maxAddressWidth = 220;
   const billing = invoice.billingAddress ?? invoice.shippingAddress;
   const billLines = formatAddress(billing ?? null, invoice.client.name);
+  
   if (billLines.length > 0) {
-    drawText(billLines[0], margin, cursorY, 11, darkText, boldFont);
-    cursorY -= 14;
+    // First line (name) in bold, wrapped if needed
+    const nameLines = wrapText(billLines[0], boldFont, 11, maxAddressWidth);
+    for (const line of nameLines) {
+      drawText(line, margin, cursorY, 11, darkText, boldFont);
+      cursorY -= 14;
+    }
+    
+    // Rest of address lines
     for (let i = 1; i < billLines.length; i++) {
-      drawText(billLines[i], margin, cursorY, 9, lightText);
-      cursorY -= 12;
+      const wrappedLines = wrapText(billLines[i], font, 9, maxAddressWidth);
+      for (const line of wrappedLines) {
+        drawText(line, margin, cursorY, 9, lightText);
+        cursorY -= 12;
+      }
     }
   } else {
-    drawText(invoice.client.name, margin, cursorY, 11, darkText, boldFont);
-    cursorY -= 14;
+    const nameLines = wrapText(invoice.client.name, boldFont, 11, maxAddressWidth);
+    for (const line of nameLines) {
+      drawText(line, margin, cursorY, 11, darkText, boldFont);
+      cursorY -= 14;
+    }
   }
 
   if (invoice.client.email) {
     cursorY -= 3;
-    drawText(invoice.client.email, margin, cursorY, 9, lightText);
-    cursorY -= 12;
+    const emailLines = wrapText(invoice.client.email, font, 9, maxAddressWidth);
+    for (const line of emailLines) {
+      drawText(line, margin, cursorY, 9, lightText);
+      cursorY -= 12;
+    }
   }
+  
   if (invoice.client.phone) {
-    drawText(invoice.client.phone, margin, cursorY, 9, lightText);
+    const phoneLines = wrapText(invoice.client.phone, font, 9, maxAddressWidth);
+    for (const line of phoneLines) {
+      drawText(line, margin, cursorY, 9, lightText);
+      cursorY -= 12;
+    }
   }
 
-  // Shipping address
-  const shipX = pageWidth / 2 + 20;
-  let shipY = pageHeight - 240;
+  // Ship To (right side, constrained width)
+  const shipX = pageWidth / 2 + 30;
+  let shipY = addressStartY;
 
   drawText('SHIP TO', shipX, shipY, 10, lightText, boldFont);
   shipY -= 18;
 
   const shipLines = formatAddress(invoice.shippingAddress, invoice.client.name);
   if (shipLines.length > 0) {
-    drawText(shipLines[0], shipX, shipY, 11, darkText, boldFont);
-    shipY -= 14;
+    // First line (name) in bold, wrapped
+    const shipNameLines = wrapText(shipLines[0], boldFont, 11, maxAddressWidth);
+    for (const line of shipNameLines) {
+      drawText(line, shipX, shipY, 11, darkText, boldFont);
+      shipY -= 14;
+    }
+    
+    // Rest of shipping address
     for (let i = 1; i < shipLines.length; i++) {
-      drawText(shipLines[i], shipX, shipY, 9, lightText);
-      shipY -= 12;
+      const wrappedLines = wrapText(shipLines[i], font, 9, maxAddressWidth);
+      for (const line of wrappedLines) {
+        drawText(line, shipX, shipY, 9, lightText);
+        shipY -= 12;
+      }
     }
   } else {
     drawText('Same as billing', shipX, shipY, 9, lightText);
+    shipY -= 12;
   }
 
-  cursorY = Math.min(cursorY, shipY) - 40;
+  // Move cursor below both address blocks
+  cursorY = Math.min(cursorY, shipY) - sectionGap;
 
   // ============= ITEMS TABLE =============
   const tableStartY = cursorY;
@@ -321,6 +416,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   const colQtyX = pageWidth - margin - 230;
   const colPriceX = pageWidth - margin - 150;
   const colTotalX = pageWidth - margin - 70;
+  const descriptionMaxWidth = colQtyX - colDescX - 20;
 
   const headerY = tableStartY - 22;
   drawText('Description', colDescX, headerY, 10, darkText, boldFont);
@@ -328,14 +424,18 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   drawText('Price', colPriceX, headerY, 10, darkText, boldFont);
   drawText('Amount', colTotalX, headerY, 10, darkText, boldFont);
 
-  cursorY = tableStartY - headerHeight - 5;
+  cursorY = tableStartY - headerHeight - 10;
 
-  // Table rows
-  const rowHeight = 35;
+  // Table rows with dynamic height based on content
+  const baseRowHeight = 35;
   const minBottomMargin = 200;
 
   for (let i = 0; i < invoice.items.length; i++) {
     const item = invoice.items[i];
+
+    // Calculate wrapped lines for item name
+    const itemNameLines = wrapText(item.name, font, 10, descriptionMaxWidth);
+    const rowHeight = Math.max(baseRowHeight, itemNameLines.length * 14 + 15);
 
     if (cursorY - rowHeight < minBottomMargin) {
       // New page (use the same tuple-typed pageSize)
@@ -358,7 +458,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       drawText('Price', colPriceX, cursorY - 22, 10, darkText, boldFont);
       drawText('Amount', colTotalX, cursorY - 22, 10, darkText, boldFont);
 
-      cursorY -= headerHeight + 5;
+      cursorY -= headerHeight + 10;
     }
 
     // Row separator line
@@ -369,23 +469,18 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       color: borderGray,
     });
 
-    const rowY = cursorY - 20;
-
-    // Item name
-    let itemName = item.name;
-    if (itemName.length > 50) {
-      itemName = itemName.slice(0, 47) + '...';
+    // Draw item name (wrapped)
+    let itemY = cursorY - 18;
+    for (const line of itemNameLines) {
+      drawText(line, colDescX, itemY, 10, darkText);
+      itemY -= 14;
     }
-    drawText(itemName, colDescX, rowY, 10, darkText);
 
-    // Quantity
-    drawText(String(item.qty), colQtyX, rowY, 10, darkText);
-
-    // Unit price
-    drawText(`£${Number(item.unitPrice ?? 0).toFixed(2)}`, colPriceX, rowY, 10, lightText);
-
-    // Total
-    drawText(`£${Number(item.totalPrice ?? 0).toFixed(2)}`, colTotalX, rowY, 10, darkText, boldFont);
+    // Draw quantity, price, and total (aligned to first line)
+    const firstLineY = cursorY - 18;
+    drawText(String(item.qty), colQtyX, firstLineY, 10, darkText);
+    drawText(`£${Number(item.unitPrice ?? 0).toFixed(2)}`, colPriceX, firstLineY, 10, lightText);
+    drawText(`£${Number(item.totalPrice ?? 0).toFixed(2)}`, colTotalX, firstLineY, 10, darkText, boldFont);
 
     cursorY -= rowHeight;
   }
@@ -398,7 +493,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     color: borderGray,
   });
 
-  cursorY -= 40;
+  cursorY -= sectionGap + 15;
 
   // ============= TOTALS SECTION =============
   const totalsX = pageWidth - margin - 200;

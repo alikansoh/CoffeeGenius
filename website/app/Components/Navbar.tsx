@@ -19,32 +19,35 @@ import EspressoMachinesIcon from "../../public/EspressoMachinesIcon";
 import CartDrawer from "./CartDrawer";
 import useCart from "../store/CartStore";
 
-/**
- * Performance improvements summary (what I changed):
- * - Replaced React state updates per-character with direct DOM writes to a span via a ref.
- *   This avoids frequent re-renders during typing/deleting and significantly reduces jank.
- * - Replaced JS caret blinking with a small CSS animation so there's no JS interval toggling.
- * - Added visibility check (document.hidden) to pause typing when the tab is backgrounded.
- * - Kept timers but reduced the number of React updates and ensured robust cleanup.
- *
- * These changes should noticeably smooth the announcement typing animation, especially on mobile.
- */
-
 const COLORS = {
   primary: "#111827",
   accent: "#6b7280",
   black: "#000000",
 };
 
-  const DEFAULT_OFFERS = [
-    "☕ Free delivery on orders above £30 — Order now",
-    "🥤 Buy 1 Get 1 Free on selected coffees!",
-    "🎉 10% off your first order with code WELCOME10",
-    "📦 Next-day delivery available for orders placed before 3 PM",
-  ];
+const DEFAULT_OFFERS = [
+  "☕ Free delivery on orders above £30 — Order now",
+  "🥤 Buy 1 Get 1 Free on selected coffees!",
+  "🎉 10% off your first order with code WELCOME10",
+  "📦 Next-day delivery available for orders placed before 3 PM",
+];
 
 const logoSrc = "/logo.png";
 const PLACEHOLDER_TEXT = "Search coffee, beans, equipment...";
+
+interface SearchItem {
+  id: string;
+  collection: string;
+  title: string;
+  subtitle: string;
+  url: string;
+}
+
+interface SearchGroup {
+  collection: string;
+  label: string;
+  items: SearchItem[];
+}
 
 export default function Navbar() {
   const router = useRouter();
@@ -54,8 +57,11 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchGroup[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
   const desktopInputRef = useRef<HTMLInputElement | null>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Typing placeholder refs/timers (for search input animation)
   const typingIntervalRef = useRef<number | null>(null);
@@ -141,8 +147,45 @@ export default function Navbar() {
       setPlaceholderText("", false);
     } else {
       startLoopTyping();
+      setSearchResults([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query]);
+
+  // Search API on query change
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setSearchResults(data.groups || []);
+      } catch (err) {
+        console.error("Search error:", err);
+        setSearchResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [query]);
 
   function clearTypingTimers() {
@@ -233,14 +276,13 @@ export default function Navbar() {
     return undefined as unknown as string;
   }
 
-  function handleSearchSubmit(e?: React.FormEvent, closeMenu = false) {
-    e?.preventDefault();
-    const trimmed = query.trim();
-    if (!trimmed) return;
-    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    if (closeMenu) setMobileOpen(false);
+  function handleResultClick(url: string) {
+    setQuery("");
+    setSearchResults([]);
+    setMobileOpen(false);
     setMobileSearchOpen(false);
     setSearchOpen(false);
+    router.push(url);
   }
 
   const navLinks = [
@@ -311,6 +353,8 @@ export default function Navbar() {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape" && searchOpen) {
         setSearchOpen(false);
+        setQuery("");
+        setSearchResults([]);
       }
       if (
         e.key === "/" &&
@@ -352,7 +396,6 @@ export default function Navbar() {
           offersRef.current = DEFAULT_OFFERS;
         }
       } catch (err) {
-        // fallback silently to defaults
         offersRef.current = DEFAULT_OFFERS;
       }
     }
@@ -378,7 +421,6 @@ export default function Navbar() {
   }
 
   function startOffersTypingLoop() {
-    // Respect prefers-reduced-motion
     if (typeof window !== "undefined") {
       const prefersReduced =
         window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -399,7 +441,6 @@ export default function Navbar() {
     const pauseAfterDeleted = 300;
 
     function typeStep() {
-      // pause when page hidden to avoid doing work in background tabs
       if (typeof document !== "undefined" && document.hidden) {
         offerTypingTimer.current = window.setTimeout(typeStep, 1000);
         return;
@@ -413,11 +454,9 @@ export default function Navbar() {
 
       if (chIdx < line.length) {
         charIndexRef.current = chIdx + 1;
-        // Direct DOM update (no React state changes)
         announcementEl.current.textContent = line.slice(0, charIndexRef.current);
         offerTypingTimer.current = window.setTimeout(typeStep, typingSpeed);
       } else {
-        // fully typed: pause then start deleting
         offerPauseTimer.current = window.setTimeout(() => {
           offerTypingTimer.current = window.setTimeout(deleteStep, deletingSpeed);
         }, pauseAfterTyped);
@@ -440,7 +479,6 @@ export default function Navbar() {
         announcementEl.current.textContent = line.slice(0, charIndexRef.current);
         offerTypingTimer.current = window.setTimeout(deleteStep, deletingSpeed);
       } else {
-        // deleted -> move to next
         offerPauseTimer.current = window.setTimeout(() => {
           offerIndexRef.current = (offerIndexRef.current + 1) % Math.max(1, offersRef.current.length);
           charIndexRef.current = 0;
@@ -449,12 +487,10 @@ export default function Navbar() {
       }
     }
 
-    // start typing first line
     offerTypingTimer.current = window.setTimeout(typeStep, 300);
   }
 
   useEffect(() => {
-    // start typing loop once (offersRef will be populated by fetch effect).
     const t = window.setTimeout(() => startOffersTypingLoop(), 400);
     return () => {
       window.clearTimeout(t);
@@ -462,8 +498,6 @@ export default function Navbar() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /* Helpers continue... */
 
   function normalizePath(p: string) {
     if (!p) return "/";
@@ -478,10 +512,10 @@ export default function Navbar() {
     return cp === nh || cp.startsWith(nh + "/");
   }
 
-  /* UI render (announcement bar + nav) */
+  const hasResults = searchResults.length > 0;
+
   return (
     <>
-      {/* Small CSS for caret blinking using CSS animation (no JS interval) */}
       <style>{`
         @keyframes caretBlink {
           0% { opacity: 1; }
@@ -519,9 +553,8 @@ export default function Navbar() {
         {/* MAIN NAV */}
         <div className="border-b border-gray-200">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-            {/* MOBILE / TABLET HEADER (visible up to lg) */}
+            {/* MOBILE / TABLET HEADER */}
             <div className="relative flex lg:hidden items-center justify-between w-full h-25">
-              {/* Burger (left) */}
               <button
                 type="button"
                 onClick={() => {
@@ -545,7 +578,6 @@ export default function Navbar() {
                 )}
               </button>
 
-              {/* Centered Logo */}
               <Link
                 href="/"
                 className="absolute left-1/2 top-1/2 transform -translate-x-1/2 -translate-y-1/2 flex items-center"
@@ -629,47 +661,164 @@ export default function Navbar() {
           </div>
         </div>
 
-        {/* SEARCH ROW */}
+        {/* DESKTOP SEARCH ROW */}
         {searchOpen && (
-          <div className="hidden lg:flex justify-center border-b border-gray-200 bg-white transition-all duration-200">
-            <div className="w-full max-w-4xl px-4 sm:px-6 lg:px-8 py-3">
-              <form onSubmit={(e) => handleSearchSubmit(e)} className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-4 py-3 shadow-sm" role="search" aria-label="Site search">
-                <Search size={18} className="text-gray-500 mr-3" />
-                <input ref={desktopInputRef} type="search" name="q" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={getPlaceholderWithCaret()} aria-label="Search" className="bg-transparent placeholder-gray-400 text-sm w-full outline-none" />
-                {query ? (
-                  <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); desktopInputRef.current?.focus(); }} className="ml-3 text-gray-500 hover:text-gray-700">
-                    <X size={16} />
-                  </button>
-                ) : null}
-                <button type="submit" className="ml-3 bg-black text-white px-4 py-2 rounded-full font-semibold hover:opacity-95" aria-label="Search">
-                  Search
-                </button>
-              </form>
+          <div className="hidden lg:block border-b border-gray-200 bg-white transition-all duration-200">
+            <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8 py-3">
+              <div className="relative">
+                <div className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-4 py-3 shadow-sm">
+                  <Search size={18} className="text-gray-500 mr-3" />
+                  <input
+                    ref={desktopInputRef}
+                    type="search"
+                    name="q"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={getPlaceholderWithCaret()}
+                    aria-label="Search"
+                    className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      aria-label="Clear search"
+                      onClick={() => {
+                        setQuery("");
+                        desktopInputRef.current?.focus();
+                      }}
+                      className="ml-3 text-gray-500 hover:text-gray-700"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Desktop Search Results */}
+                {query && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
+                    {isSearching ? (
+                      <div className="p-4 text-center text-gray-500">Searching...</div>
+                    ) : hasResults ? (
+                      <div className="py-2">
+                        {searchResults.map((group) => (
+                          <div key={group.collection} className="mb-4 last:mb-0">
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                              {group.label}
+                            </div>
+                            {group.items.map((item) => (
+                              <button
+                                key={item.id}
+                                onClick={() => handleResultClick(item.url)}
+                                className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors duration-150"
+                              >
+                                <div className="font-medium text-gray-900">{item.title}</div>
+                                {item.subtitle && (
+                                  <div className="text-sm text-gray-500 mt-1 line-clamp-1">{item.subtitle}</div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-gray-500">No results found</div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* MOBILE SEARCH OVERLAY */}
-        <div className={`fixed inset-0 z-50 lg:hidden bg-black/40 transition-opacity ${mobileSearchOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`} aria-hidden={!mobileSearchOpen} onClick={() => setMobileSearchOpen(false)}>
-          <div className="absolute left-0 right-0 top-0 p-4" onClick={(e) => e.stopPropagation()}>
-            <form onSubmit={(e) => handleSearchSubmit(e)} className="mx-auto max-w-3xl flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-2 shadow" role="search" aria-label="Mobile search form">
-              <Search size={18} className="text-gray-500" />
-              <input ref={mobileInputRef} type="search" name="q" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={getPlaceholderWithCaret()} aria-label="Search" className="bg-transparent placeholder-gray-400 text-sm w-full outline-none" />
-              {query ? (
-                <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); mobileInputRef.current?.focus(); }} className="text-gray-500 hover:text-gray-700">
-                  <X size={18} />
-                </button>
-              ) : (
-                <button type="button" aria-label="Close search" onClick={() => setMobileSearchOpen(false)} className="text-gray-500 hover:text-gray-700">
-                  <X size={18} />
-                </button>
+        <div
+          className={`fixed inset-0 z-50 lg:hidden bg-black/40 transition-opacity ${
+            mobileSearchOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+          }`}
+          aria-hidden={!mobileSearchOpen}
+          onClick={() => setMobileSearchOpen(false)}
+        >
+          <div className="absolute left-0 right-0 top-0 p-4 max-h-screen overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="mx-auto max-w-3xl">
+              <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-full px-3 py-2 shadow">
+                <Search size={18} className="text-gray-500" />
+                <input
+                  ref={mobileInputRef}
+                  type="search"
+                  name="q"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder={getPlaceholderWithCaret()}
+                  aria-label="Search"
+                  className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+                />
+                {query ? (
+                  <button
+                    type="button"
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setQuery("");
+                      mobileInputRef.current?.focus();
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <X size={18} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    aria-label="Close search"
+                    onClick={() => setMobileSearchOpen(false)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
+
+              {/* Mobile Search Results */}
+              {query && (
+                <div className="mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-[70vh] overflow-y-auto">
+                  {isSearching ? (
+                    <div className="p-4 text-center text-gray-500">Searching...</div>
+                  ) : hasResults ? (
+                    <div className="py-2">
+                      {searchResults.map((group) => (
+                        <div key={group.collection} className="mb-4 last:mb-0">
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                            {group.label}
+                          </div>
+                          {group.items.map((item) => (
+                            <button
+                              key={item.id}
+                              onClick={() => handleResultClick(item.url)}
+                              className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors duration-150"
+                            >
+                              <div className="font-medium text-gray-900">{item.title}</div>
+                              {item.subtitle && (
+                                <div className="text-sm text-gray-500 mt-1 line-clamp-2">{item.subtitle}</div>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-gray-500">No results found</div>
+                  )}
+                </div>
               )}
-            </form>
+            </div>
           </div>
         </div>
 
         {/* MOBILE / TABLET MENU */}
-        <div className={`absolute left-0 right-0 top-full z-40 lg:hidden transform transition-all duration-200 bg-white shadow-lg ${mobileOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"}`} aria-hidden={!mobileOpen}>
+        <div
+          className={`absolute left-0 right-0 top-full z-40 lg:hidden transform transition-all duration-200 bg-white shadow-lg ${
+            mobileOpen ? "opacity-100 translate-y-0 pointer-events-auto" : "opacity-0 -translate-y-2 pointer-events-none"
+          }`}
+          aria-hidden={!mobileOpen}
+        >
           <div className="flex flex-col p-4 pb-6 max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
               <div className="flex items-center gap-3">
@@ -679,26 +828,75 @@ export default function Navbar() {
                 </div>
               </div>
 
-              <button type="button" onClick={() => setMobileOpen(false)} className="p-2 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" aria-label="Close menu">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="p-2 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                aria-label="Close menu"
+              >
                 <X size={24} color={COLORS.primary} aria-hidden={false} />
               </button>
             </div>
 
-            <form onSubmit={(e) => handleSearchSubmit(e, true)} className="flex items-center gap-2 w-full text-left py-3 px-2 rounded-lg font-medium transition-colors duration-150" style={{ color: COLORS.primary }} role="search" aria-label="Mobile menu search">
-              <div className="flex items-center flex-1 bg-gray-50 border border-gray-200 rounded-full px-3 py-2">
-                <Search size={18} className="text-gray-500 mr-2" />
-                <input ref={mobileInputRef} type="search" name="q" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={getPlaceholderWithCaret()} aria-label="Search" className="bg-transparent placeholder-gray-400 text-sm w-full outline-none" />
+            <div className="mb-4">
+              <div className="relative">
+                <div className="flex items-center bg-gray-50 border border-gray-200 rounded-full px-3 py-2">
+                  <Search size={18} className="text-gray-500 mr-2" />
+                  <input
+                    type="search"
+                    name="q"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder={getPlaceholderWithCaret()}
+                    aria-label="Search"
+                    className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      aria-label="Clear search"
+                      onClick={() => setQuery("")}
+                      className="ml-2 text-gray-500 hover:text-gray-700"
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Mobile Menu Search Results */}
                 {query && (
-                  <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); mobileInputRef.current?.focus(); }} className="ml-2 text-gray-500 hover:text-gray-700">
-                    <X size={16} />
-                  </button>
+                  <div className="mt-2 bg-white border border-gray-200 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    {isSearching ? (
+                      <div className="p-4 text-center text-gray-500 text-sm">Searching...</div>
+                    ) : hasResults ? (
+                      <div className="py-2">
+                        {searchResults.map((group) => (
+                          <div key={group.collection} className="mb-3 last:mb-0">
+                            <div className="px-3 py-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                              {group.label}
+                            </div>
+                            {group.items.map((item) => (
+                              <button
+                                key={item.id}
+                                onClick={() => handleResultClick(item.url)}
+                                className="w-full text-left px-3 py-2 hover:bg-gray-50 transition-colors duration-150"
+                              >
+                                <div className="font-medium text-gray-900 text-sm">{item.title}</div>
+                                {item.subtitle && (
+                                  <div className="text-xs text-gray-500 mt-1 line-clamp-1">{item.subtitle}</div>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="p-4 text-center text-gray-500 text-sm">No results found</div>
+                    )}
+                  </div>
                 )}
               </div>
-
-              <button type="submit" className="ml-2 bg-black text-white px-4 py-2 rounded-full font-semibold hover:opacity-95" aria-label="Search">
-                Search
-              </button>
-            </form>
+            </div>
 
             <div className="mt-2 space-y-1">
               {navLinks.map((link) => {
@@ -709,7 +907,9 @@ export default function Navbar() {
                     href={link.href}
                     onClick={() => setMobileOpen(false)}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-3 w-full text-left py-3 px-4 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150 ${active ? "bg-gray-100 font-semibold" : ""}`}
+                    className={`flex items-center gap-3 w-full text-left py-3 px-4 rounded-lg font-medium hover:bg-gray-100 transition-colors duration-150 ${
+                      active ? "bg-gray-100 font-semibold" : ""
+                    }`}
                     style={{ color: COLORS.primary }}
                   >
                     {link.icon}

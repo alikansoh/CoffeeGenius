@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
-export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'failed' | 'cancelled';
+export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'failed' | 'cancelled' | 'refunded';
 
 export interface IOrderItem {
   id: string;
@@ -11,6 +11,23 @@ export interface IOrderItem {
   source?: string;
 }
 
+export type ShipmentProvider =
+  | 'royal-mail'
+  | 'dpd'
+  | 'evri'
+  | 'ups'
+  | 'dhl'
+  | 'fedex'
+  | 'parcelforce'
+  | 'yodel';
+
+export interface IShipment {
+  provider: ShipmentProvider;
+  trackingCode?: string | null;
+  shippedAt?: Date | null;
+  estimatedDelivery?: Date | null;
+}
+
 export interface IOrder extends Document {
   items: IOrderItem[];
   subtotal: number;
@@ -19,9 +36,7 @@ export interface IOrder extends Document {
   currency: string;
   status: OrderStatus;
   paymentIntentId?: string | null;
-  // New: optional reference to the Client document
   clientId?: mongoose.Types.ObjectId | string | null;
-  // Embedded snapshot (keep for historical integrity)
   client?: {
     name?: string;
     email?: string;
@@ -52,6 +67,7 @@ export interface IOrder extends Document {
     country?: string;
     sameAsShipping?: boolean;
   } | null;
+  shipment?: IShipment | null;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
@@ -66,6 +82,20 @@ const OrderItemSchema = new Schema<IOrderItem>(
   { _id: false }
 );
 
+const ShipmentSchema = new Schema<IShipment>(
+  {
+    provider: {
+      type: String,
+      enum: ['royal-mail', 'dpd', 'evri', 'ups', 'dhl', 'fedex', 'parcelforce', 'yodel'],
+      required: true,
+    },
+    trackingCode: { type: String, default: null },
+    shippedAt: { type: Date, default: null },
+    estimatedDelivery: { type: Date, default: null },
+  },
+  { _id: false }
+);
+
 const OrderSchema = new Schema<IOrder>(
   {
     items: { type: [OrderItemSchema], required: true },
@@ -75,15 +105,14 @@ const OrderSchema = new Schema<IOrder>(
     currency: { type: String, default: 'gbp' },
     status: {
       type: String,
-      enum: ['pending', 'paid', 'shipped', 'failed', 'cancelled'],
+      enum: ['pending', 'paid', 'shipped', 'failed', 'cancelled', 'refunded'],
       default: 'pending',
+      index: true,
     },
-    paymentIntentId: { type: String, index: true, sparse: true },
+    paymentIntentId: { type: String, required: false },
 
-    // New reference field
     clientId: { type: Schema.Types.ObjectId, ref: 'Client', index: true, required: false },
 
-    // Keep the embedded snapshot
     client: {
       name: String,
       email: String,
@@ -101,6 +130,7 @@ const OrderSchema = new Schema<IOrder>(
       postcode: String,
       country: String,
     },
+
     billingAddress: {
       firstName: String,
       lastName: String,
@@ -111,11 +141,22 @@ const OrderSchema = new Schema<IOrder>(
       country: String,
       sameAsShipping: Boolean,
     },
+
     metadata: { type: Schema.Types.Mixed },
     paidAt: { type: Date, default: null },
+
+    shipment: { type: ShipmentSchema, default: null },
   },
   { timestamps: true }
 );
+
+// DB-level uniqueness to prevent duplicate orders for the same Stripe PaymentIntent.
+// sparse allows documents without paymentIntentId to exist.
+OrderSchema.index({ paymentIntentId: 1 }, { unique: true, sparse: true });
+
+// Optional: prevent the same webhook event being inserted more than once.
+// Sparse so it only applies when metadata.webhookEventId is present.
+OrderSchema.index({ 'metadata.webhookEventId': 1 }, { unique: true, sparse: true });
 
 const Order: Model<IOrder> = (mongoose.models.Order as Model<IOrder>) || mongoose.model<IOrder>('Order', OrderSchema);
 export default Order;

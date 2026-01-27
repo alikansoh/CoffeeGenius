@@ -1,88 +1,109 @@
 'use client';
 
-import React, { useEffect, useState } from "react";
-import { loadStripe } from "@stripe/stripe-js";
-import { Elements } from "@stripe/react-stripe-js";
-import CheckoutForm from "@/app/Components/CheckoutForm";
-import useCart from "@/app/store/CartStore";
-import Link from "next/link";
-import { ShoppingBag, Package, CreditCard } from "lucide-react";
-import Image from "next/image";
-import { getCloudinaryUrl } from "@/app/utils/cloudinary";
-import { useRouter } from "next/navigation";
+import React, { useEffect, useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements } from '@stripe/react-stripe-js';
+import CheckoutForm from '@/app/Components/CheckoutForm';
+import useCart from '@/app/store/CartStore';
+import Link from 'next/link';
+import { ShoppingBag, Package, CreditCard } from 'lucide-react';
+import Image from 'next/image';
+import { getCloudinaryUrl } from '@/app/utils/cloudinary';
+import { useRouter } from 'next/navigation';
+import { computeShippingPence } from '@/lib/shipping';
+import { penceToPounds } from '@/lib/currency';
 
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ""
-);
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 
 type Shortage = { id: string; name: string; requested: number; available: number; source: string };
 
 export default function CheckoutPage() {
-  // Subscribe to the cart store, but don't derive render-critical values
-  // from it synchronously to avoid SSR/CSR mismatches.
   const items = useCart((s) => s.items);
   const getTotalPrice = useCart((s) => s.getTotalPrice);
-
-  // Add cart drawer opener
   const openCart = useCart((s) => s.open);
 
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Track whether we're on the client and mounted.
-  // We will only use the cart values for rendering after mount to ensure
-  // the server-rendered HTML matches the initial client render.
   const [mounted, setMounted] = useState(false);
-
   const router = useRouter();
 
-  // Shortage modal state
   const [shortages, setShortages] = useState<Shortage[] | null>(null);
   const [showShortageModal, setShowShortageModal] = useState<boolean>(false);
+
+  // settings (pence)
+  const [deliveryPence, setDeliveryPence] = useState<number>(499);
+  const [thresholdPence, setThresholdPence] = useState<number>(3000);
+  const [freeEnabled, setFreeEnabled] = useState<boolean>(true);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Derive visible values only after mount to prevent hydration mismatch.
+  // Load settings on client
+  useEffect(() => {
+    let active = true;
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/admin/settings');
+        if (!res.ok) throw new Error('Failed to load settings');
+        const json = await res.json();
+        if (!active) return;
+        setDeliveryPence(Number(json.deliveryPricePence ?? 499));
+        setThresholdPence(Number(json.freeDeliveryThresholdPence ?? 3000));
+        setFreeEnabled(Boolean(json.freeDeliveryEnabled ?? true));
+      } catch (err) {
+        console.error('Failed to load settings', err);
+      }
+    }
+    loadSettings();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Derived values (only after mount to avoid hydration mismatch)
   const visibleItems = mounted ? items : [];
-  const subtotal = mounted ? getTotalPrice() : 0;
-  const shipping = mounted ? (subtotal > 30 ? 0 : 4.99) : 0;
-  // VAT removed entirely
+  const subtotal = mounted ? getTotalPrice() : 0; // in pounds
+  const subtotalPence = Math.round(subtotal * 100);
+  const shippingPence = computeShippingPence(subtotalPence, {
+    deliveryPricePence: deliveryPence,
+    freeDeliveryThresholdPence: thresholdPence,
+    freeDeliveryEnabled: freeEnabled,
+  });
+  const shipping = penceToPounds(shippingPence);
   const total = mounted ? Math.round((subtotal + shipping) * 100) / 100 : 0;
 
   useEffect(() => {
-    // Only create a payment intent when we are on the client and have items.
     if (!mounted) return;
-    async function createIntent() {
-      if (!visibleItems || visibleItems.length === 0) return;
+    if (!visibleItems || visibleItems.length === 0) return;
 
+    async function createIntent() {
       setLoading(true);
       try {
-        const res = await fetch("/api/create-payment-intent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ items: visibleItems }),
+        // Include shippingPence so the server can create a PaymentIntent for the full amount
+        const res = await fetch('/api/create-payment-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: visibleItems, shippingPence }),
         });
 
         const data = await res.json().catch(() => null);
 
         if (res.ok) {
           setClientSecret(data.clientSecret);
-          // Clear any prior shortage state if present
           setShortages(null);
           setShowShortageModal(false);
         } else {
-          // If server indicates shortages (structured response, HTTP 409), show modal here
           if (res.status === 409 && data && Array.isArray(data.shortages)) {
             setShortages(data.shortages as Shortage[]);
             setShowShortageModal(true);
           } else {
-            // other failures - keep clientSecret null (disable payment)
             setClientSecret(null);
           }
         }
       } catch (err) {
+        console.error('createIntent failed', err);
         setClientSecret(null);
       } finally {
         setLoading(false);
@@ -90,15 +111,11 @@ export default function CheckoutPage() {
     }
 
     createIntent();
-  }, [mounted, visibleItems]);
+  }, [mounted, visibleItems, shippingPence]);
 
-  const getImageSrc = (idOrUrl?: string, preset: "thumbnail" | "medium" = "thumbnail") => {
-    if (!idOrUrl) return "/test.webp";
-    if (
-      idOrUrl.startsWith("http://") ||
-      idOrUrl.startsWith("https://") ||
-      idOrUrl.startsWith("/")
-    ) {
+  const getImageSrc = (idOrUrl?: string, preset: 'thumbnail' | 'medium' = 'thumbnail') => {
+    if (!idOrUrl) return '/test.webp';
+    if (idOrUrl.startsWith('http://') || idOrUrl.startsWith('https://') || idOrUrl.startsWith('/')) {
       return idOrUrl;
     }
     return getCloudinaryUrl(idOrUrl, preset);
@@ -127,14 +144,14 @@ export default function CheckoutPage() {
               </div>
               <span className="ml-1 sm:ml-2 text-sm sm:text-base font-medium text-black whitespace-nowrap">Cart</span>
             </div>
-            <div className="w-8 sm:w-16 h-0.5 bg-black"></div>
+            <div className="w-8 sm:w-16 h-0.5 bg-black" />
             <div className="flex items-center">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-black text-white rounded-full flex items-center justify-center font-semibold text-base sm:text-base">
                 2
               </div>
               <span className="ml-1 sm:ml-2 text-sm sm:text-base font-medium text-black whitespace-nowrap">Checkout</span>
             </div>
-            <div className="w-8 sm:w-16 h-0.5 bg-gray-300"></div>
+            <div className="w-8 sm:w-16 h-0.5 bg-gray-300" />
             <div className="flex items-center">
               <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gray-300 text-gray-600 rounded-full flex items-center justify-center font-semibold text-base sm:text-base">
                 3
@@ -144,9 +161,8 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Layout: mobile/tablet -> summary first, form second; desktop -> form left, summary right */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
-          {/* Order Summary (shows first on mobile/tablet via order utilities) */}
+          {/* Order Summary */}
           <aside className="order-1 lg:order-2 lg:col-span-1">
             <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-4 sm:p-6 lg:sticky lg:top-4">
               <h2 className="text-xl sm:text-xl font-bold mb-4 flex items-center text-black">
@@ -160,42 +176,25 @@ export default function CheckoutPage() {
                   <div key={it.id} className="flex gap-2 sm:gap-3 pb-3 border-b border-gray-200">
                     <div className="w-12 h-12 sm:w-16 sm:h-16 bg-white border border-gray-200 rounded-lg flex-shrink-0 overflow-hidden">
                       {it.img ? (
-                        <Image
-                          src={getImageSrc(it.img, "thumbnail")}
-                          alt={it.name}
-                          width={64}
-                          height={64}
-                          className="object-cover w-full h-full"
-                        />
+                        <Image src={getImageSrc(it.img, 'thumbnail')} alt={it.name} width={64} height={64} className="object-cover w-full h-full" />
                       ) : (
                         <div className="w-full h-full bg-gray-200" />
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm sm:text-base text-black truncate">
-                        {it.name}
-                      </h3>
+                      <h3 className="font-medium text-sm sm:text-base text-black truncate">{it.name}</h3>
                       <p className="text-sm sm:text-sm text-gray-500 mt-1">
-                        {it.size
-                          ? `${it.size}${it.grind ? ` • ${it.grind}` : ""}`
-                          : it.metadata?.brand}
+                        {it.size ? `${it.size}${it.grind ? ` • ${it.grind}` : ''}` : it.metadata?.brand}
                       </p>
                       <p className="text-sm sm:text-sm text-gray-400 mt-1">Qty: {it.quantity}</p>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className="font-semibold text-sm sm:text-base text-black">
-                        £{(it.price * it.quantity).toFixed(2)}
-                      </p>
+                      <p className="font-semibold text-sm sm:text-base text-black">£{(it.price * it.quantity).toFixed(2)}</p>
                     </div>
                   </div>
                 ))}
-                {/* If not mounted we intentionally show nothing here (to match server render) */}
-                {!mounted && visibleItems.length === 0 && (
-                  <div className="text-sm text-gray-500">Loading items…</div>
-                )}
-                {mounted && visibleItems.length === 0 && (
-                  <div className="text-sm text-gray-500">No items in your cart.</div>
-                )}
+                {!mounted && visibleItems.length === 0 && <div className="text-sm text-gray-500">Loading items…</div>}
+                {mounted && visibleItems.length === 0 && <div className="text-sm text-gray-500">No items in your cart.</div>}
               </div>
 
               {/* Price Breakdown */}
@@ -206,95 +205,61 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-sm sm:text-base">
                   <span className="text-gray-600">Shipping</span>
-                  <span className="font-medium text-black">
-                    {shipping === 0 ? (
-                      <span className="text-black">FREE</span>
-                    ) : (
-                      `£${shipping.toFixed(2)}`
-                    )}
-                  </span>
+                  <span className="font-medium text-black">{shippingPence === 0 ? <span className="text-black">FREE</span> : `£${shipping.toFixed(2)}`}</span>
                 </div>
-                {/* VAT removed */}
               </div>
 
               {/* Total */}
               <div className="pt-3 sm:pt-4 border-t-2 border-gray-300">
                 <div className="flex justify-between items-center">
                   <span className="text-base sm:text-lg font-bold text-black">Total</span>
-                  <span className="text-xl sm:text-2xl font-bold text-black">
-                    £{total.toFixed(2)}
-                  </span>
+                  <span className="text-xl sm:text-2xl font-bold text-black">£{total.toFixed(2)}</span>
                 </div>
               </div>
 
-              {/* Free Shipping Notice: only show after mount to avoid SSR/CSR mismatch */}
-              {mounted && subtotal < 30 && (
+              {mounted && subtotal < penceToPounds(thresholdPence) && (
                 <div className="mt-3 sm:mt-4 p-2 sm:p-3 bg-black text-white rounded-lg text-center">
                   <p className="text-sm sm:text-base">
-                    Add <strong>£{(30 - subtotal).toFixed(2)}</strong> more for free shipping!
+                    Add <strong>£{(penceToPounds(thresholdPence) - subtotal).toFixed(2)}</strong> more for free shipping!
                   </p>
                 </div>
               )}
             </div>
           </aside>
 
-          {/* Forms (shows second on mobile/tablet via order utilities) */}
+          {/* Form / Payment */}
           <div className="order-2 lg:order-1 lg:col-span-2 space-y-4 sm:space-y-6">
             {!mounted || visibleItems.length === 0 ? (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8 text-center">
                 <ShoppingBag className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-lg sm:text-lg text-gray-600 mb-4">Your cart is empty.</p>
-                <Link
-                  href="/coffee"
-                  className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm sm:text-base"
-                >
+                <Link href="/coffee" className="inline-flex items-center px-4 sm:px-6 py-2 sm:py-3 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors font-medium text-sm sm:text-base">
                   Browse Coffee
                 </Link>
               </div>
             ) : loading ? (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
-                <div className="flex flex-col sm:flex-row items=center justify-center gap-4">
-                  <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-black"></div>
+                <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                  <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-black" />
                   <span className="text-base sm:text-lg text-gray-600">Preparing secure payment…</span>
                 </div>
               </div>
             ) : clientSecret ? (
               <Elements stripe={stripePromise} options={{ clientSecret }}>
-                <CheckoutForm total={total} clientSecret={clientSecret} />
+                {/* pass shippingPence to CheckoutForm so server-side flow can use it if needed */}
+                <CheckoutForm total={total} clientSecret={clientSecret} shippingPence={shippingPence} />
               </Elements>
             ) : showShortageModal ? (
-              // If we have shortages, encourage the user to edit the cart. The modal will be shown; also render a hint card here.
               <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6 sm:p-8">
-                <p className="text-base sm:text-lg text-yellow-800 mb-4">
-                  Some items in your cart are unavailable. Please review the details in the popup and update your cart.
-                </p>
+                <p className="text-base sm:text-lg text-yellow-800 mb-4">Some items in your cart are unavailable. Please review the details in the popup and update your cart.</p>
                 <div className="flex items-center justify-center gap-3">
-                  <button
-                    onClick={() => {
-                      closeShortageModal();
-                      // open the cart drawer instead of navigating away
-                      openCart();
-                    }}
-                    className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
-                  >
-                    Edit Cart
-                  </button>
-                  <button
-                    onClick={() => {
-                      closeShortageModal();
-                      // Attempt to re-create the intent by re-running effect (visibleItems unchanged) — user should edit cart first.
-                    }}
-                    className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800"
-                  >
-                    Close
-                  </button>
+                  <button onClick={() => { closeShortageModal(); openCart(); }} className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50">Edit Cart</button>
+                  <button onClick={() => closeShortageModal()} className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800">Close</button>
                 </div>
               </div>
             ) : (
               <div className="bg-gray-50 border-2 border-gray-200 rounded-lg p-6 sm:p-8">
-                <p className="text-base sm:text-lg text-red-600">
-                  Unable to initialize payment. Please try again later.
-                </p>
+                <p className="text-base sm:text-lg text-red-600">Unable to initialize payment. Please try again later.</p>
               </div>
             )}
 
@@ -326,9 +291,7 @@ export default function CheckoutPage() {
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50">
           <div className="w-full max-w-2xl mx-4 bg-white rounded-lg shadow-lg border p-6">
             <h3 className="text-lg font-semibold mb-3">Some items are unavailable</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              One or more items in your cart are out of stock or have insufficient quantity. Please update your cart before continuing.
-            </p>
+            <p className="text-sm text-gray-600 mb-4">One or more items in your cart are out of stock or have insufficient quantity. Please update your cart before continuing.</p>
 
             <div className="space-y-3 mb-4">
               {shortages.map((s) => (
@@ -343,28 +306,8 @@ export default function CheckoutPage() {
             </div>
 
             <div className="flex items-center justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => {
-                  // Open the right cart drawer so user can edit quantities / remove items
-                  closeShortageModal();
-                  openCart();
-                }}
-                className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50"
-              >
-                Edit Cart
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  // Close modal and leave user on checkout to make adjustments (they may need to edit cart in a separate tab)
-                  closeShortageModal();
-                }}
-                className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800"
-              >
-                Close & Edit
-              </button>
+              <button type="button" onClick={() => { closeShortageModal(); openCart(); }} className="px-4 py-2 bg-white border rounded text-sm hover:bg-gray-50">Edit Cart</button>
+              <button type="button" onClick={() => { closeShortageModal(); }} className="px-4 py-2 bg-black text-white rounded text-sm hover:bg-gray-800">Close & Edit</button>
             </div>
           </div>
         </div>

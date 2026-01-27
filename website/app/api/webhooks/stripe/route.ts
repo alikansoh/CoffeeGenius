@@ -9,6 +9,7 @@ import CoffeeVariant from '@/models/CoffeeVariant';
 import Coffee from '@/models/Coffee';
 import Equipment from '@/models/Equipment';
 import Invoice from '@/models/Invoice';
+import Settings from '@/models/Settings';
 import mongoose from 'mongoose';
 import { processInvoice } from '@/lib/invoiceService';
 import { sendAdminNotification } from '@/lib/notificationService';
@@ -42,7 +43,7 @@ interface Address {
 
 interface OrderDocument extends mongoose.Document {
   _id: mongoose.Types.ObjectId;
-  items?: unknown[];
+  items?: Item[];
   status?: string;
   paymentIntentId?: string;
   paidAt?: Date | null;
@@ -73,6 +74,13 @@ interface ClientDocument extends mongoose.Document {
 
 interface InvoiceDocument extends mongoose.Document {
   _id: mongoose.Types.ObjectId;
+  [k: string]: unknown;
+}
+
+interface SettingsDocument {
+  deliveryPricePence?: number;
+  freeDeliveryEnabled?: boolean;
+  freeDeliveryThresholdPence?: number;
   [k: string]: unknown;
 }
 
@@ -145,8 +153,30 @@ const MAX_COMMIT_TIME = 10000;
 const MAX_TX_RETRIES = parseInt(process.env.MAX_TX_RETRIES || '3', 10);
 const TX_BASE_BACKOFF_MS = 50;
 
-// ============ Helper Functions ============
+// ============ Error helpers ============
 
+// Safely extract a human-readable message from unknown
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  try {
+    return JSON.stringify(err, Object.getOwnPropertyNames(err));
+  } catch {
+    return String(err);
+  }
+}
+
+// Safely extract numeric code if present
+function getErrorCode(err: unknown): number | undefined {
+  if (!err || typeof err !== 'object') return undefined;
+  const maybe = err as Record<string, unknown>;
+  const val = maybe.code ?? maybe.errno ?? maybe.statusCode;
+  if (typeof val === 'number') return val;
+  if (typeof val === 'string' && /^\d+$/.test(val)) return Number(val);
+  return undefined;
+}
+
+// ============ Helper Functions ============
 function asStringOrUndefined(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
@@ -245,22 +275,22 @@ function validateItems(parsed: unknown): Item[] {
       
     if (!idCandidate) throw new Error(`Item at index ${idx} missing id`);
     if (!nameCandidate) throw new Error(`Item at index ${idx} missing name`);
-    if (!Number.isFinite(qtyCandidate as number) || (qtyCandidate as number) <= 0) {
+    if (!Number.isFinite(qtyCandidate) || (qtyCandidate as number) <= 0) {
       throw new Error(`Item at index ${idx} has invalid qty`);
     }
-    if (!Number.isFinite(unitPriceCandidate as number) || (unitPriceCandidate as number) < 0) {
+    if (!Number.isFinite(unitPriceCandidate) || (unitPriceCandidate as number) < 0) {
       throw new Error(`Item at index ${idx} has invalid unitPrice`);
     }
-    if (!Number.isFinite(totalPriceCandidate as number) || (totalPriceCandidate as number) < 0) {
+    if (!Number.isFinite(totalPriceCandidate) || (totalPriceCandidate as number) < 0) {
       throw new Error(`Item at index ${idx} has invalid totalPrice`);
     }
     
     const item: Item = {
       id: idCandidate,
       name: nameCandidate,
-      qty: Number(qtyCandidate),
-      unitPrice: Number(unitPriceCandidate),
-      totalPrice: Number(totalPriceCandidate),
+      qty: qtyCandidate as number,
+      unitPrice: unitPriceCandidate as number,
+      totalPrice: totalPriceCandidate as number,
     };
     
     if (sourceCandidate) item.source = sourceCandidate;
@@ -569,7 +599,7 @@ async function processInvoiceAsync(
         }).exec(),
       ]);
       
-      console.log(`✅ Invoice email sent for ${invoiceDoc._id.toString()}`);
+      console.log(`✅ Invoice email sent for ${invoiceDoc._1?.toString() ?? invoiceDoc._id.toString()}`);
     } catch (sendErr) {
       console.error('⚠️ Failed to send invoice email:', sendErr);
       
@@ -1010,8 +1040,8 @@ export async function POST(req: Request) {
   try {
     event = stripe.webhooks.constructEvent(buf, sig, webhookSecret);
     console.log('✅ Signature verified');
-  } catch (err) {
-    console.error('❌ Signature verification failed:', err);
+  } catch (err: unknown) {
+    console.error('❌ Signature verification failed:', getErrorMessage(err));
     return new Response('Invalid signature', { status: 400 });
   }
   
@@ -1045,19 +1075,20 @@ export async function POST(req: Request) {
             ).exec();
           }
         }
-      } catch (e) {
-        console.warn('Failed to sync refund/charge event:', e);
+      } catch (e: unknown) {
+        console.warn('Failed to sync refund/charge event:', getErrorMessage(e));
       }
     }
     
     console.log('Event type not handled:', event.type);
     return NextResponse.json({ received: true }, { status: 200 });
     
-  } catch (err) {
-    console.error('❌ Webhook handler error:', err);
+  } catch (err: unknown) {
+    console.error('❌ Webhook handler error:', getErrorMessage(err));
     
     // Check circuit breaker message
-    if (err instanceof Error && err.message.includes('Circuit breaker is OPEN')) {
+    const errMsgLower = getErrorMessage(err).toLowerCase();
+    if (errMsgLower.includes('circuit breaker is open')) {
       return new Response('System temporarily unavailable', { status: 503 });
     }
     
@@ -1083,25 +1114,41 @@ async function handlePaymentIntentSucceeded(
   console.log('✅ DB connected');
   
   // Step 1: Create or claim order atomically
-  const existingOrderRaw = await Order.findOneAndUpdate(
-    { paymentIntentId },
-    {
-      $setOnInsert: {
-        paymentIntentId,
-        status: 'processing',
-        createdAt: new Date(),
-        metadata: {
-          webhookEventId: event.id,
-          processingStarted: new Date().toISOString(),
+  // Defensive: catch duplicate-key races (E11000) where another process inserts at the same time
+  let existingOrderRaw: unknown = null;
+  try {
+    existingOrderRaw = await Order.findOneAndUpdate(
+      { paymentIntentId },
+      {
+        $setOnInsert: {
+          paymentIntentId,
+          status: 'processing',
+          createdAt: new Date(),
+          metadata: {
+            webhookEventId: event.id,
+            processingStarted: new Date().toISOString(),
+          },
         },
       },
-    },
-    {
-      upsert: true,
-      new: true,
-      setDefaultsOnInsert: true,
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+      }
+    ).exec();
+  } catch (err: unknown) {
+    // If a concurrent insert happened you may get a duplicate-key error.
+    // In that case, re-fetch the existing order.
+    const code = getErrorCode(err);
+    const msg = getErrorMessage(err).toLowerCase();
+    if (code === 11000 || code === 11001 || msg.includes('duplicate key')) {
+      console.warn('⚠️ Duplicate-key on upsert — reloading existing order for paymentIntentId:', paymentIntentId, 'err:', msg);
+      existingOrderRaw = await Order.findOne({ paymentIntentId }).exec();
+    } else {
+      // Unexpected error: rethrow so caller can handle/log it
+      throw err;
     }
-  ).exec();
+  }
   
   const existingOrder = existingOrderRaw as unknown as OrderDocument | null;
   
@@ -1130,50 +1177,111 @@ async function handlePaymentIntentSucceeded(
   try {
     latestPI = await stripe.paymentIntents.retrieve(paymentIntentId);
     console.log('✅ Retrieved latest PI');
-  } catch (err) {
-    console.warn('⚠️ Failed to retrieve latest PI:', err);
+  } catch (err: unknown) {
+    console.warn('⚠️ Failed to retrieve latest PI:', getErrorMessage(err));
     latestPI = pi;
   }
   
   const metadata = (latestPI.metadata ?? {}) as Record<string, string>;
   console.log('Metadata keys:', Object.keys(metadata));
   
-  // Step 3: Parse and validate data
+  // Step 3: Parse financials from metadata (but shipping will be determined from Stripe first, then settings fallback)
   const itemsJson = metadata.items ?? '[]';
   const subtotal = parseFloat(metadata.subtotal ?? '') || 0;
-  const shipping = parseFloat(metadata.shipping ?? '') || 0;
-  const total = parseFloat(metadata.total ?? '') || 0;
+  const metadataShipping = parseFloat(metadata.shipping ?? '') || 0;
+  const metadataTotal = parseFloat(metadata.total ?? '') || 0;
   
-  console.log('Totals - Subtotal:', subtotal, 'Shipping:', shipping, 'Total:', total);
+  console.log('Parsed totals from metadata - Subtotal:', subtotal, 'Shipping(metadata):', metadataShipping, 'Total(metadata):', metadataTotal);
   
-  // Validate financials
+  // Use Stripe PaymentIntent amount (if available) as authoritative "actual" total.
+  // latestPI.amount is in the smallest currency unit (pence), convert to pounds.
+  const stripeTotal = typeof latestPI.amount === 'number'
+    ? Number((latestPI.amount / 100).toFixed(2))
+    : NaN;
+  
+  let shipping: number;
+  let shippingSource: 'stripe' | 'settings' | 'metadata' | 'unknown' = 'unknown';
+  
+  if (Number.isFinite(stripeTotal)) {
+    // Derive shipping from what Stripe actually charged
+    const derived = Number((stripeTotal - subtotal).toFixed(2));
+    if (derived < -0.01) {
+      const err = new Error(
+        `Invalid amounts: Stripe total (${stripeTotal.toFixed(2)}) is less than subtotal (${subtotal.toFixed(2)})`
+      );
+      console.error('❌', err.message);
+      await saveFailedOrder(existingOrder._id, err, event.id);
+      return NextResponse.json({ error: 'Invalid financial data' }, { status: 400 });
+    }
+    shipping = Math.max(0, derived);
+    shippingSource = 'stripe';
+    console.log(`Shipping derived from Stripe: ${shipping.toFixed(2)} (stripeTotal ${stripeTotal.toFixed(2)} - subtotal ${subtotal.toFixed(2)})`);
+  } else {
+    // Fallback: compute from Settings if available, otherwise use metadata
+    try {
+      const settingsDoc = await Settings.findOne({}).lean() as SettingsDocument | null;
+      if (settingsDoc && typeof settingsDoc.deliveryPricePence === 'number') {
+        const deliveryPrice = (settingsDoc.deliveryPricePence / 100);
+        const freeEnabled = !!(settingsDoc.freeDeliveryEnabled);
+        const freeThreshold = ((settingsDoc.freeDeliveryThresholdPence ?? 0) / 100);
+        if (freeEnabled && subtotal >= freeThreshold) {
+          shipping = 0;
+        } else {
+          shipping = deliveryPrice;
+        }
+        shippingSource = 'settings';
+        console.log(`Shipping computed from settings: ${shipping.toFixed(2)}`);
+      } else {
+        shipping = metadataShipping;
+        shippingSource = 'metadata';
+        console.log(`Shipping fallback to metadata: ${shipping.toFixed(2)}`);
+      }
+    } catch (settingsErr: unknown) {
+      console.warn('Failed to load settings; falling back to metadata shipping', getErrorMessage(settingsErr));
+      shipping = metadataShipping;
+      shippingSource = 'metadata';
+    }
+  }
+  
+  console.log('Final shipping used for validation:', shipping);
+  
+  // Determine actual total we'll validate/store: prefer Stripe total if present, else metadata total
+  const actualTotalToUse = Number.isFinite(stripeTotal) ? stripeTotal : metadataTotal;
+  
+  // Validate financials using subtotal + shipping vs the authoritative total (Stripe PI if present)
   try {
-    validateFinancials(subtotal, shipping, total);
-    console.log('✅ Financial validation passed');
-  } catch (err) {
-    console.error('❌ Financial validation failed:', err);
+    validateFinancials(subtotal, shipping, actualTotalToUse);
+    console.log('✅ Financial validation passed (using shipping and Stripe/metadata total)');
+  } catch (err: unknown) {
+    console.error('❌ Financial validation failed:', getErrorMessage(err));
     await saveFailedOrder(existingOrder._id, err, event.id);
     return NextResponse.json({ error: 'Invalid financial data' }, { status: 400 });
   }
   
-  // Parse addresses
+  // Parse addresses — prefer addresses saved on the order in the database, fall back to PaymentIntent metadata
   let shippingAddressRaw: unknown = null;
-  if (metadata.shippingAddress) {
+  if (existingOrder.shippingAddress) {
+    shippingAddressRaw = existingOrder.shippingAddress;
+    console.log('✅ Loaded shipping address from DB (order record)');
+  } else if (metadata.shippingAddress) {
     try {
       shippingAddressRaw = JSON.parse(metadata.shippingAddress);
-      console.log('✅ Parsed shipping address');
-    } catch (err) {
-      console.warn('⚠️ Failed to parse shippingAddress:', err);
+      console.log('✅ Parsed shipping address from metadata');
+    } catch (err: unknown) {
+      console.warn('⚠️ Failed to parse shippingAddress from metadata:', getErrorMessage(err));
     }
   }
   
   let billingAddressRaw: unknown = null;
-  if (metadata.billingAddress) {
+  if (existingOrder.billingAddress) {
+    billingAddressRaw = existingOrder.billingAddress;
+    console.log('✅ Loaded billing address from DB (order record)');
+  } else if (metadata.billingAddress) {
     try {
       billingAddressRaw = JSON.parse(metadata.billingAddress);
-      console.log('✅ Parsed billing address');
-    } catch (err) {
-      console.warn('⚠️ Failed to parse billingAddress:', err);
+      console.log('✅ Parsed billing address from metadata');
+    } catch (err: unknown) {
+      console.warn('⚠️ Failed to parse billingAddress from metadata:', getErrorMessage(err));
     }
   }
   
@@ -1188,8 +1296,8 @@ async function handlePaymentIntentSucceeded(
         client = parsedClient as Record<string, unknown>;
         console.log('✅ Parsed client info');
       }
-    } catch (err) {
-      console.warn('⚠️ Failed to parse client:', err);
+    } catch (err: unknown) {
+      console.warn('⚠️ Failed to parse client:', getErrorMessage(err));
     }
   }
   
@@ -1203,8 +1311,8 @@ async function handlePaymentIntentSucceeded(
         { $set: { clientId: clientDoc._id } }
       ).exec();
       console.log('[Order] Attached clientId to order');
-    } catch (err) {
-      console.warn('[Order] Failed to attach clientId (non-fatal):', err);
+    } catch (err: unknown) {
+      console.warn('[Order] Failed to attach clientId (non-fatal):', getErrorMessage(err));
     }
   }
   
@@ -1214,8 +1322,8 @@ async function handlePaymentIntentSucceeded(
     const parsedRaw = JSON.parse(itemsJson) as unknown;
     items = validateItems(parsedRaw);
     console.log('✅ Parsed', items.length, 'items');
-  } catch (err) {
-    console.error('❌ Failed to parse items:', err);
+  } catch (err: unknown) {
+    console.error('❌ Failed to parse items:', getErrorMessage(err));
     await saveFailedOrder(existingOrder._id, err, event.id);
     return NextResponse.json({ error: 'Invalid items metadata' }, { status: 500 });
   }
@@ -1234,14 +1342,14 @@ async function handlePaymentIntentSucceeded(
   try {
     await validateStockAvailability(items);
     console.log('✅ Stock availability confirmed (pre-check)');
-  } catch (stockErr) {
-    console.error('❌ Stock validation failed:', stockErr);
-
+  } catch (stockErr: unknown) {
+    console.error('❌ Stock validation failed:', getErrorMessage(stockErr));
+  
     const clientEmail =
       (client && typeof client.email === 'string' ? client.email : '') ||
       shippingAddress?.email ||
       '';
-
+  
     // Initiate refund (idempotent) and notify client/admin
     try {
       const refundResult = await refundPaymentDueToStockIssue(
@@ -1251,9 +1359,9 @@ async function handlePaymentIntentSucceeded(
         stockErr instanceof Error ? stockErr.message : String(stockErr),
         clientEmail
       );
-
+  
       await saveFailedOrder(existingOrder._id, stockErr, event.id);
-
+  
       return NextResponse.json(
         {
           received: true,
@@ -1265,49 +1373,49 @@ async function handlePaymentIntentSucceeded(
         },
         { status: 200 }
       );
-    } catch (e) {
-      console.error('❌ Error while attempting refund:', e);
+    } catch (e: unknown) {
+      console.error('❌ Error while attempting refund:', getErrorMessage(e));
       await saveFailedOrder(existingOrder._id, e, event.id);
       return NextResponse.json({ error: 'Processing error during refund' }, { status: 500 });
     }
   }
-
+  
   // ================= TRANSACTIONAL DECREMENT WITH RETRIES =================
   console.log('Starting transaction (transactional decrement with retries)...');
   const conn = mongoose.connection;
-
+  
   let finalTxError: unknown = null;
   let session: mongoose.ClientSession | null = null;
   let committed = false;
-
+  
   for (let attempt = 1; attempt <= MAX_TX_RETRIES; attempt++) {
     try {
       session = await conn.startSession();
       registerSession(session, paymentIntentId);
-
+  
       session.startTransaction({
         readConcern: { level: 'snapshot' },
         writeConcern: { w: 'majority' },
         maxCommitTimeMS: MAX_COMMIT_TIME,
       });
-
+  
       // Create timeout wrapper for the transactional work
       const transactionalWork = (async () => {
         const stockChanges: StockChange[] = [];
-
+  
         console.log(`[TX attempt ${attempt}] Decrementing stock...`);
         for (const item of items) {
           const change = await decrementOneAtomic(session, item);
           stockChanges.push(change);
           console.log(`✅ ${item.name}: ${change.before} → ${change.after}`);
         }
-
+  
         console.log(`[TX attempt ${attempt}] Updating order...`);
         const updatePayload: Record<string, unknown> = {
           items,
           subtotal: Number(subtotal.toFixed(2)),
           shipping: Number(shipping.toFixed(2)),
-          total: Number(total.toFixed(2)),
+          total: Number(actualTotalToUse.toFixed(2)),
           currency: 'gbp',
           status: 'paid',
           paidAt: new Date(),
@@ -1317,27 +1425,28 @@ async function handlePaymentIntentSucceeded(
             stockDecremented: true,
             pricedAt: new Date().toISOString(),
             shippingConfirmed: !!shippingAddress,
+            shippingSource,
             webhookEventId: event.id,
             processedAt: new Date().toISOString(),
           },
         };
-
+  
         if (shippingAddress) updatePayload.shippingAddress = shippingAddress;
         if (billingAddress) updatePayload.billingAddress = billingAddress;
         if (clientDoc) updatePayload.clientId = clientDoc._id;
-
+  
         await Order.updateOne(
           { _id: existingOrder._id },
           { $set: updatePayload },
           { session }
         ).exec();
-
+  
         console.log(`[TX attempt ${attempt}] Committing transaction...`);
         await session!.commitTransaction();
         console.log(`[TX attempt ${attempt}] Transaction committed`);
         committed = true;
       })();
-
+  
       // Race against transaction timeout
       await Promise.race([
         transactionalWork,
@@ -1345,26 +1454,26 @@ async function handlePaymentIntentSucceeded(
           setTimeout(() => reject(new Error('Transaction timeout')), TRANSACTION_TIMEOUT)
         ),
       ]);
-
+  
       // If we reach here and committed is true, break loop
       if (committed) {
         break;
       }
     } catch (txErr: unknown) {
       finalTxError = txErr;
-      console.error(`[TX attempt ${attempt}] Transaction failed:`, txErr);
-
+      console.error(`[TX attempt ${attempt}] Transaction failed:`, getErrorMessage(txErr));
+  
       // Abort current transaction/session
       if (session) {
         try {
           await safeAbortTransaction(session);
-        } catch (abortErr) {
-          console.error(`[TX attempt ${attempt}] Abort failed:`, abortErr);
+        } catch (abortErr: unknown) {
+          console.error(`[TX attempt ${attempt}] Abort failed:`, getErrorMessage(abortErr));
         }
       }
-
+  
       const transient = isTransientMongoError(txErr);
-
+  
       if (transient) {
         console.warn(`[TX attempt ${attempt}] Detected transient error. ${attempt < MAX_TX_RETRIES ? 'Retrying...' : 'Max retries reached.'}`);
         if (attempt < MAX_TX_RETRIES) {
@@ -1380,7 +1489,7 @@ async function handlePaymentIntentSucceeded(
         // Non-transient -> record as final failure
         console.error(`[TX attempt ${attempt}] Non-transient transaction failure, will mark order failed.`);
       }
-
+  
       // If reached here (either non-transient or out of retries), break the loop to mark failure
       break;
     } finally {
@@ -1388,7 +1497,7 @@ async function handlePaymentIntentSucceeded(
       session = null;
     }
   } // end retry loop
-
+  
   if (!committed) {
     console.error('❌ All transaction attempts failed.');
     // Don't mark transient errors as failed until we've exhausted retries.
@@ -1396,9 +1505,9 @@ async function handlePaymentIntentSucceeded(
     await saveFailedOrder(existingOrder._id, finalTxError ?? new Error('Unknown transaction failure'), event.id);
     return NextResponse.json({ error: 'Processing error' }, { status: 500 });
   }
-
+  
   // ===================== POST-PROCESS: INVOICE + ADMIN NOTIFICATIONS =====================
-
+  
   const companyInfo: CompanyInfo = {
     name: process.env.COMPANY_NAME || 'Your Company Name',
     address: process.env.COMPANY_ADDRESS || '123 Business Street',
@@ -1448,7 +1557,7 @@ async function handlePaymentIntentSucceeded(
     })),
     subtotal: Number(subtotal.toFixed(2)),
     shipping: Number(shipping.toFixed(2)),
-    total: Number(total.toFixed(2)),
+    total: Number(actualTotalToUse.toFixed(2)),
     client: invoiceClient,
     shippingAddress: shippingAddress
       ? {
@@ -1486,15 +1595,15 @@ async function handlePaymentIntentSucceeded(
     existingOrder._id,
     paymentIntentId,
     event.id
-  ).catch((err) => console.error('Background invoice processing failed:', err));
+  ).catch((err: unknown) => console.error('Background invoice processing failed:', getErrorMessage(err)));
   
   sendAdminNotificationAsync(
     existingOrder._id,
     orderNumber,
     invoiceData,
-    total,
+    Number(actualTotalToUse.toFixed(2)),
     event.id
-  ).catch((err) => console.error('Background admin notification failed:', err));
+  ).catch((err: unknown) => console.error('Background admin notification failed:', getErrorMessage(err)));
   
   console.log('========== SUCCESS ==========\n');
   
