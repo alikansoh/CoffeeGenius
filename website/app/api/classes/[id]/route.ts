@@ -1,16 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/dbConnect";
 import Course from "@/models/Class";
 
-/**
- * GET /api/classes/:id
- * PATCH /api/classes/:id
- * DELETE /api/classes/:id
- *
- * This file has been hardened so route handlers will still work even if the
- * `params` bag is unexpectedly undefined. We also extract the id from the
- * request URL as a fallback (useful when certain runtimes or proxies omit params).
- */
+type ContextLike = { params?: { id?: string | string[] } | Promise<{ id: string }> } | undefined;
 
 async function findByIdOrSlug(idOrSlug: string | undefined) {
   if (!idOrSlug) return null;
@@ -23,31 +15,47 @@ async function findByIdOrSlug(idOrSlug: string | undefined) {
   return Course.findOne({ slug: idOrSlug }).lean();
 }
 
-function extractId(request: Request, context: { params?: { id?: string } } = {}) {
-  // Prefer Next.js-provided params
-  let id = context?.params?.id;
+function isThenable<T>(v: T | Promise<T> | undefined): v is Promise<T> {
+  return !!v && typeof (v as Promise<T>).then === "function";
+}
 
-  if (!id) {
-    try {
-      const url = new URL(request.url);
-      // path like /api/classes/<id> or /api/classes/<id>/
-      const parts = url.pathname.split("/").filter(Boolean);
-      // last segment should be the id
-      id = parts[parts.length - 1];
-      if (id) id = decodeURIComponent(id);
-    } catch (err) {
-      // ignore - we'll handle missing id below
+async function resolveId(request: NextRequest, context?: ContextLike): Promise<string | undefined> {
+  // 1) try params (may be sync object or a Promise<{id: string}>)
+  if (context && context.params !== undefined) {
+    const p = context.params;
+    if (isThenable(p)) {
+      try {
+        const resolved = await p;
+        if (resolved?.id) return resolved.id;
+      } catch {
+        // fallthrough to other methods
+      }
+    } else {
+      const idField = p.id;
+      if (typeof idField === "string" && idField.trim() !== "") return idField;
+      if (Array.isArray(idField) && idField.length > 0) return String(idField[0]);
     }
   }
 
-  // Normalise empty string -> undefined
-  if (typeof id === "string" && id.trim() === "") id = undefined;
-  return id;
+  // 2) try parse from URL path /api/classes/<id>
+  try {
+    const url = new URL(request.url);
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length > 0) {
+      const last = parts[parts.length - 1];
+      if (last && !["api", "classes"].includes(last.toLowerCase())) return decodeURIComponent(last);
+    }
+  } catch {
+    // ignore
+  }
+
+  return undefined;
 }
 
-export async function GET(request: Request, context: { params?: { id?: string } } = {}) {
+/* GET */
+export async function GET(request: NextRequest, context?: ContextLike) {
   await connect();
-  const id = extractId(request, context);
+  const id = await resolveId(request, context);
   if (!id) {
     return NextResponse.json({ success: false, message: "Missing id parameter" }, { status: 400 });
   }
@@ -66,15 +74,16 @@ export async function GET(request: Request, context: { params?: { id?: string } 
   }
 }
 
-export async function PATCH(request: Request, context: { params?: { id?: string } } = {}) {
+/* PATCH */
+export async function PATCH(request: NextRequest, context?: ContextLike) {
   await connect();
-  const id = extractId(request, context);
+  const id = await resolveId(request, context);
   if (!id) {
     return NextResponse.json({ success: false, message: "Missing id parameter" }, { status: 400 });
   }
 
   try {
-    const body = await request.json().catch(() => ({}));
+    const raw = await request.json().catch(() => ({})) as unknown;
 
     const updatable = [
       "slug",
@@ -95,23 +104,31 @@ export async function PATCH(request: Request, context: { params?: { id?: string 
       "thingsToNote",
       "furtherInformation",
       "location",
-    ];
+    ] as const;
 
     const update: Record<string, unknown> = {};
-    for (const key of updatable) {
-      if (body[key] !== undefined) {
-        if (key === "sessions") {
-          update.sessions = (body.sessions || []).map((s: unknown) => {
-            const sess = s as { start?: string; end?: string };
-            return {
-              start: sess.start ? new Date(sess.start) : undefined,
-              end: sess.end ? new Date(sess.end) : undefined,
-            };
-          });
-        } else if (key === "slug") {
-          update.slug = String(body.slug).toLowerCase().trim();
-        } else {
-          update[key] = body[key];
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      const body = raw as Record<string, unknown>;
+      for (const key of updatable) {
+        if (Object.prototype.hasOwnProperty.call(body, key) && body[key] !== undefined) {
+          if (key === "sessions") {
+            const input = body.sessions as unknown;
+            if (Array.isArray(input)) {
+              update.sessions = input.map((s) => {
+                const sess = s as { start?: string; end?: string };
+                return {
+                  start: sess.start ? new Date(sess.start) : undefined,
+                  end: sess.end ? new Date(sess.end) : undefined,
+                };
+              });
+            } else {
+              update.sessions = [];
+            }
+          } else if (key === "slug") {
+            update.slug = String(body.slug ?? "").toLowerCase().trim();
+          } else {
+            update[key] = body[key];
+          }
         }
       }
     }
@@ -126,8 +143,8 @@ export async function PATCH(request: Request, context: { params?: { id?: string 
     return NextResponse.json({ success: true, data: patched }, { status: 200 });
   } catch (err) {
     console.error("PATCH /api/classes/[id] error:", err);
-    if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
-      const errorMessage = err && typeof err === 'object' && 'message' in err ? (err as { message: string }).message : 'Unknown error';
+    if (err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === 11000) {
+      const errorMessage = (err && typeof err === "object" && "message" in err) ? (err as { message: string }).message : "Duplicate key";
       return NextResponse.json({ success: false, message: "Duplicate key", error: errorMessage }, { status: 409 });
     }
     const message = err instanceof Error ? err.message : String(err);
@@ -138,9 +155,10 @@ export async function PATCH(request: Request, context: { params?: { id?: string 
   }
 }
 
-export async function DELETE(request: Request, context: { params?: { id?: string } } = {}) {
+/* DELETE */
+export async function DELETE(request: NextRequest, context?: ContextLike) {
   await connect();
-  const id = extractId(request, context);
+  const id = await resolveId(request, context);
   if (!id) {
     return NextResponse.json({ success: false, message: "Missing id parameter" }, { status: 400 });
   }
