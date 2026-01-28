@@ -1,6 +1,13 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
 
-export type OrderStatus = 'pending' | 'paid' | 'shipped' | 'failed' | 'cancelled' | 'refunded';
+export type OrderStatus =
+  | 'pending'
+  | 'processing'
+  | 'paid'
+  | 'shipped'
+  | 'failed'
+  | 'cancelled'
+  | 'refunded';
 
 export interface IOrderItem {
   id: string;
@@ -98,17 +105,24 @@ const ShipmentSchema = new Schema<IShipment>(
 
 const OrderSchema = new Schema<IOrder>(
   {
-    items: { type: [OrderItemSchema], required: true },
-    subtotal: { type: Number, required: true },
-    shipping: { type: Number, required: true },
-    total: { type: Number, required: true },
+    // items: required but default to empty array so upserts/inserts don't fail
+    items: { type: [OrderItemSchema], required: true, default: [] },
+
+    // required numeric fields with safe defaults
+    subtotal: { type: Number, required: true, default: 0 },
+    shipping: { type: Number, required: true, default: 0 },
+    total: { type: Number, required: true, default: 0 },
+
     currency: { type: String, default: 'gbp' },
+
+    // include 'processing' in enum
     status: {
       type: String,
-      enum: ['pending', 'paid', 'shipped', 'failed', 'cancelled', 'refunded'],
+      enum: ['pending', 'processing', 'paid', 'shipped', 'failed', 'cancelled', 'refunded'],
       default: 'pending',
       index: true,
     },
+
     paymentIntentId: { type: String, required: false },
 
     clientId: { type: Schema.Types.ObjectId, ref: 'Client', index: true, required: false },
