@@ -181,52 +181,57 @@ function asStringOrUndefined(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() !== '' ? v : undefined;
 }
 
+// ======= Corrected normalizeAddress (only sets real string fields) =======
 function normalizeAddress(raw: unknown): Address | null {
   if (!raw || typeof raw !== 'object') return null;
-  
-  const rawObj = raw as Record<string, unknown>;
-  const possibleStreetKeys = [
-    'line1', 'address', 'address1', 'street', 
-    'street1', 'street_address'
-  ];
-  
-  let line1: string | undefined;
-  for (const k of possibleStreetKeys) {
-    const v = rawObj[k];
-    if (typeof v === 'string' && v.trim() !== '') {
-      line1 = v.trim();
-      break;
+  const obj = raw as Record<string, unknown>;
+
+  const getStr = (keys: string[]) => {
+    for (const k of keys) {
+      const v = obj[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+      if (v && typeof v === 'object') {
+        const nested = v as Record<string, unknown>;
+        for (const nk of ['value', 'text', 'line1', 'address1']) {
+          const nv = nested[nk];
+          if (typeof nv === 'string' && nv.trim()) return nv.trim();
+        }
+      }
     }
-  }
-  
+    return undefined;
+  };
+
   const out: Address = {};
-  
-  // Name fields
-  if (typeof rawObj.firstName === 'string') out.firstName = rawObj.firstName;
-  if (typeof rawObj.first_name === 'string') out.firstName = rawObj.first_name;
-  if (typeof rawObj.firstname === 'string') out.firstName = rawObj.firstname;
-  if (typeof rawObj.lastName === 'string') out.lastName = rawObj.lastName;
-  if (typeof rawObj.last_name === 'string') out.lastName = rawObj.last_name;
-  if (typeof rawObj.lastname === 'string') out.lastName = rawObj.lastname;
-  
-  // Contact fields
-  if (typeof rawObj.email === 'string') out.email = rawObj.email;
-  if (typeof rawObj.phone === 'string') out.phone = rawObj.phone;
-  
-  // Address fields
-  if (typeof rawObj.unit === 'string') out.unit = rawObj.unit;
-  if (typeof rawObj.flat === 'string') out.unit = rawObj.flat;
-  if (typeof rawObj.apartment === 'string') out.unit = rawObj.apartment;
+
+  const line1 = getStr([
+    'line1', 'line_1', 'address', 'address1', 'address_line1',
+    'street', 'street1', 'street_address', 'address_line_1', 'address_line'
+  ]);
+  const firstName = getStr(['firstName', 'first_name', 'firstname', 'given_name', 'name', 'fullName']);
+  const lastName = getStr(['lastName', 'last_name', 'lastname', 'family_name']);
+  const email = getStr(['email', 'email_address', 'emailAddress']);
+  const phone = getStr(['phone', 'phoneNumber', 'phone_number', 'telephone', 'mobile']);
+  const unit = getStr(['unit', 'flat', 'apartment', 'apt', 'suite']);
+  const city = getStr(['city', 'town', 'locality']);
+  const postcode = getStr(['postcode', 'postalCode', 'postal_code', 'zip', 'zip_code']);
+  const country = getStr(['country', 'country_code', 'countryCode', 'countryName']);
+
+  if (firstName) out.firstName = firstName;
+  if (lastName) out.lastName = lastName;
+  if (email) out.email = email;
+  if (phone) out.phone = phone;
+  if (unit) out.unit = unit;
   if (line1) out.line1 = line1;
-  if (typeof rawObj.city === 'string') out.city = rawObj.city;
-  
-  // Postal code
-  if (typeof rawObj.postcode === 'string') out.postcode = rawObj.postcode;
-  if (typeof rawObj.postalCode === 'string') out.postcode = rawObj.postalCode;
-  if (typeof rawObj.postal_code === 'string') out.postcode = rawObj.postal_code;
-  
-  if (typeof rawObj.country === 'string') out.country = rawObj.country;
-  
+  if (city) out.city = city;
+  if (postcode) out.postcode = postcode;
+  if (country) out.country = country;
+
+  // Final fallback: single-field formatted address
+  if (!out.line1) {
+    const possibleCompound = getStr(['address_line', 'formatted_address', 'full_address', 'address_text']);
+    if (possibleCompound) out.line1 = possibleCompound;
+  }
+
   return Object.keys(out).length ? out : null;
 }
 
@@ -521,6 +526,33 @@ function isTransientMongoError(err: unknown): boolean {
     // ignore detection errors
   }
   return false;
+}
+
+// ================= Bounded retries & timeout helpers =================
+
+// Simple sleep
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Retry function with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  baseDelay = 500
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const backoff = baseDelay * Math.pow(2, i - 1);
+      console.warn(`Retry ${i}/${attempts} failed: ${getErrorMessage(err)} — backing off ${backoff}ms`);
+      if (i < attempts) await sleep(backoff);
+    }
+  }
+  throw lastErr;
 }
 
 // ================= Invoice / Admin / Client Upsert Helpers =================
@@ -1410,7 +1442,7 @@ async function handlePaymentIntentSucceeded(
           console.log(`✅ ${item.name}: ${change.before} → ${change.after}`);
         }
   
-        console.log(`[TX attempt ${attempt}] Updating order...`);
+        console.log(`[TX attempt ${attempt}] Preparing order update payload...`);
         const updatePayload: Record<string, unknown> = {
           items,
           subtotal: Number(subtotal.toFixed(2)),
@@ -1430,7 +1462,11 @@ async function handlePaymentIntentSucceeded(
             processedAt: new Date().toISOString(),
           },
         };
-  
+
+        // Debug: log addresses that will be included in the transactional update
+        console.log('[TX] shippingAddress (to include):', shippingAddress);
+        console.log('[TX] billingAddress (to include):', billingAddress);
+
         if (shippingAddress) updatePayload.shippingAddress = shippingAddress;
         if (billingAddress) updatePayload.billingAddress = billingAddress;
         if (clientDoc) updatePayload.clientId = clientDoc._id;
@@ -1506,6 +1542,33 @@ async function handlePaymentIntentSucceeded(
     return NextResponse.json({ error: 'Processing error' }, { status: 500 });
   }
   
+  // ===================== POST-COMMIT: ensure addresses persisted & debug =====================
+  // Only persist addresses if they contain at least one defined key
+  function hasAddressData(addr: Address | null): boolean {
+    if (!addr) return false;
+    return Object.values(addr).some((v) => typeof v === 'string' && v.trim() !== '');
+  }
+
+  try {
+    console.log('Persisting addresses to order (post-commit) -- debug step');
+    const addrPayload: Record<string, unknown> = {};
+    if (hasAddressData(shippingAddress)) addrPayload['shippingAddress'] = shippingAddress;
+    if (hasAddressData(billingAddress)) addrPayload['billingAddress'] = billingAddress;
+
+    if (Object.keys(addrPayload).length) {
+      await Order.findByIdAndUpdate(existingOrder._id, { $set: addrPayload }).exec();
+      const reloaded = await Order.findById(existingOrder._id).lean().exec();
+      console.log('Order after saving addresses (post-commit):', {
+        shippingAddress: reloaded?.shippingAddress,
+        billingAddress: reloaded?.billingAddress,
+      });
+    } else {
+      console.log('No address payload to persist (both normalized to null or empty)');
+    }
+  } catch (err) {
+    console.warn('Failed to persist addresses after commit (debug):', getErrorMessage(err));
+  }
+
   // ===================== POST-PROCESS: INVOICE + ADMIN NOTIFICATIONS =====================
   
   const companyInfo: CompanyInfo = {
@@ -1588,23 +1651,97 @@ async function handlePaymentIntentSucceeded(
     paymentIntentId,
   };
   
-  // Fire-and-forget invoice processing and admin notification
-  processInvoiceAsync(
-    invoiceData,
-    companyInfo,
-    existingOrder._id,
-    paymentIntentId,
-    event.id
-  ).catch((err: unknown) => console.error('Background invoice processing failed:', getErrorMessage(err)));
-  
-  sendAdminNotificationAsync(
-    existingOrder._id,
-    orderNumber,
-    invoiceData,
-    Number(actualTotalToUse.toFixed(2)),
-    event.id
-  ).catch((err: unknown) => console.error('Background admin notification failed:', getErrorMessage(err)));
-  
+  // ==== Reliable inline attempt (bounded + retries) ====
+  // This replaces the previous fire-and-forget calls. It is a best-effort inline approach
+  // that retries transient failures and waits up to a configured timeout before returning.
+  const BG_TIMEOUT_MS = parseInt(process.env.WEBHOOK_NOTIFY_TIMEOUT_MS || '8000', 10); // default 8s
+  const NOTIF_RETRIES = parseInt(process.env.WEBHOOK_NOTIFY_RETRIES || '3', 10); // default 3 attempts
+
+  // Mark that we've queued/tried notifications (persist flag for reconcilers)
+  try {
+    await Order.findByIdAndUpdate(existingOrder._id, {
+      $set: {
+        'metadata.notificationQueued': true,
+        'metadata.notificationQueuedAt': new Date().toISOString(),
+        'metadata.notificationMethod': 'inline-webhook-with-retries',
+      },
+    }).exec();
+  } catch (err) {
+    console.warn('Failed to mark notificationQueued on order (non-fatal):', getErrorMessage(err));
+  }
+
+  const notificationWork = (async () => {
+    try {
+      // 1) generate & send invoice (retryable)
+      await retryWithBackoff(
+        () => processInvoiceAsync(invoiceData, companyInfo, existingOrder._id, paymentIntentId, event.id),
+        NOTIF_RETRIES,
+        500
+      );
+
+      // 2) admin notification (retryable)
+      await retryWithBackoff(
+        () => sendAdminNotificationAsync(existingOrder._id, orderNumber, invoiceData, Number(actualTotalToUse.toFixed(2)), event.id),
+        NOTIF_RETRIES,
+        500
+      );
+
+      // 3) mark success in DB
+      try {
+        await Order.findByIdAndUpdate(existingOrder._id, {
+          $set: {
+            'metadata.adminNotified': true,
+            'metadata.adminNotifiedAt': new Date().toISOString(),
+            'metadata.notificationLastAttemptStatus': 'success',
+          },
+        }).exec();
+      } catch (updateErr) {
+        console.warn('Failed to persist notification success metadata:', getErrorMessage(updateErr));
+      }
+
+      console.log('✅ Invoice & admin notification completed inline');
+    } catch (err) {
+      console.error('⚠️ Notification work failed:', getErrorMessage(err));
+      // Persist failure info so it can be retried later by a reconciler
+      try {
+        await Order.findByIdAndUpdate(existingOrder._id, {
+          $set: {
+            'metadata.adminNotified': false,
+            'metadata.adminNotificationError': getErrorMessage(err),
+            'metadata.notificationLastAttemptAt': new Date().toISOString(),
+            'metadata.notificationLastAttemptStatus': 'failed',
+          },
+        }).exec();
+      } catch (updateErr) {
+        console.warn('Failed to persist notification failure metadata:', getErrorMessage(updateErr));
+      }
+      // rethrow so outer timeout handler can detect
+      throw err;
+    }
+  })();
+
+  try {
+    await Promise.race([
+      notificationWork,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Notification timeout')), BG_TIMEOUT_MS)
+      ),
+    ]);
+  } catch (err) {
+    // If the work timed out or failed, we already recorded metadata above (or we record minimal metadata here).
+    console.warn('Notification did not finish before timeout or failed:', getErrorMessage(err));
+    try {
+      await Order.findByIdAndUpdate(existingOrder._id, {
+        $set: {
+          'metadata.notificationTimedOutAt': new Date().toISOString(),
+        },
+      }).exec();
+    } catch (updateErr) {
+      console.warn('Failed to persist notification timeout metadata:', getErrorMessage(updateErr));
+    }
+    // Intentional: do not block webhook longer; return success to Stripe.
+  }
+
   console.log('========== SUCCESS ==========\n');
   
   return NextResponse.json(
