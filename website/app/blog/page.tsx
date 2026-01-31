@@ -1,86 +1,12 @@
 import React from "react";
 import type { Metadata } from "next";
 import AllPostsClient from "./BlogClient";
-import { notFound } from "next/navigation";
+import { getPosts } from "@/lib/posts";
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || `http://localhost:${process.env.PORT ?? 3000}`).replace(/\/$/, "");
 
-/** Server mapping similar to client mapping */
-type RawPost = {
-  _id?: string;
-  id?: string;
-  title?: string;
-  slug?: string;
-  description?: string;
-  content?: string;
-  date?: string;
-  imagePublicId?: string;
-  imageFormat?: string;
-  tags?: unknown;
-  updatedAt?: string;
-  createdAt?: string;
-};
-
-type BlogPost = {
-  id: string;
-  title: string;
-  slug: string;
-  description: string;
-  date: string;
-  image?: string;
-  tags?: string[];
-};
-
-function isObject(v: unknown): v is Record<string, unknown> {
-  return typeof v === "object" && v !== null;
-}
-
-function toString(v: unknown, fallback = ""): string {
-  if (typeof v === "string") return v;
-  if (typeof v === "number" || typeof v === "boolean") return String(v);
-  return fallback;
-}
-
-function toStringArray(v: unknown): string[] {
-  if (Array.isArray(v)) return v.map((x) => toString(x)).filter(Boolean);
-  return [];
-}
-
-function getCloudinaryUrl(publicId?: string, format?: string) {
-  if (!publicId || !format) return undefined;
-  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "drjpzgjn7";
-  return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,c_limit,q_auto:good,f_auto,dpr_auto/${publicId}.${format}`;
-}
-
-async function fetchPostsServer(limit = 50): Promise<BlogPost[]> {
-  try {
-    const res = await fetch(`${SITE_URL}/api/posts?limit=${limit}`, { next: { revalidate: 300 } });
-    if (!res.ok) return [];
-    const json: unknown = await res.json().catch(() => null);
-    const arr: unknown[] = Array.isArray(json)
-      ? json
-      : isObject(json) && Array.isArray(json.data)
-      ? (json.data as unknown[])
-      : [];
-
-    return arr.map((post, idx) => {
-      const rec = isObject(post) ? post : ({} as Record<string, unknown>);
-      const id = toString(rec._id ?? rec.id ?? `anon-${idx}`);
-      const title = toString(rec.title ?? "Untitled post");
-      const slug = toString(rec.slug ?? id);
-      const description = toString(rec.description ?? rec.content ?? "");
-      const date = toString(rec.date ?? rec.updatedAt ?? rec.createdAt ?? new Date().toISOString());
-      const image = getCloudinaryUrl(toString(rec.imagePublicId), toString(rec.imageFormat)) ?? undefined;
-      const tags = toStringArray(rec.tags);
-      return { id, title, slug, description, date, image, tags } as BlogPost;
-    });
-  } catch {
-    return [];
-  }
-}
-
 export async function generateMetadata(): Promise<Metadata> {
-  const posts = await fetchPostsServer(10); // fetch a few to populate OG, description
+  const posts = await getPosts(10);
   const title = "Blog — Coffee Genius";
   const description = posts.length
     ? `Latest posts: ${posts.slice(0, 3).map((p) => p.title).join(" • ")}`
@@ -114,8 +40,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page() {
-  const posts = await fetchPostsServer(100); // fetch posts server-side to include in JSON-LD and hydrate client
-  if (!posts) return notFound();
+  const posts = await getPosts(100);
 
   const pageUrl = `${SITE_URL}/blog`;
   const ogImage = posts.find((p) => p.image)?.image ?? `${SITE_URL}/og-image.JPG`;

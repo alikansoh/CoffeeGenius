@@ -2,32 +2,10 @@ import React from "react";
 import type { Metadata } from "next";
 import EquipmentClient from "./EquipmentClient";
 import { notFound } from "next/navigation";
+import { getEquipmentById, type ApiEquipment } from "@/lib/equipment";
 
 const SITE_URL: string = process.env.NEXT_PUBLIC_SITE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
-
-interface ApiEquipment {
-  _id: string;
-  slug: string;
-  name: string;
-  brand?: string;
-  category?: string;
-  features?: string[];
-  notes?: string;
-  description?: string;
-  specs?: Record<string, unknown>;
-  pricePence?: number;
-  price?: number;
-  minPrice?: number;
-  minPricePence?: number;
-  imgPublicId?: string;
-  imgUrl?: string;
-  imagesPublicIds?: string[];
-  imagesUrls?: string[];
-  totalStock?: number;
-  createdAt?: string;
-  updatedAt?: string;
-}
 
 /** Helper to map a Cloudinary public id to an absolute image URL */
 function cloudinaryImageUrl(publicId: string): string {
@@ -43,32 +21,10 @@ function cloudinaryVideoUrl(publicId: string): string {
   return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/video/upload/${publicId}`;
 }
 
-async function fetchEquipmentFromApi(slug: string): Promise<ApiEquipment | null> {
-  const base = SITE_URL.replace(/\/$/, "");
-  const url1 = `${base}/api/equipment/${encodeURIComponent(slug)}`;
-  const url2 = `${base}/api/equipment?search=${encodeURIComponent(slug)}`;
-
-  try {
-    let res = await fetch(url1, { next: { revalidate: 60 } });
-    if (!res.ok) {
-      // fallback to search endpoint
-      res = await fetch(url2, { next: { revalidate: 60 } });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const found = (json.data ?? [])[0];
-      return (found as ApiEquipment) ?? null;
-    }
-    const json = await res.json();
-    return (json.data as ApiEquipment) ?? (json as ApiEquipment) ?? null;
-  } catch (err) {
-    console.error("fetchEquipmentFromApi failed", err);
-    return null;
-  }
-}
-
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const product = await fetchEquipmentFromApi(slug);
+  const product = await getEquipmentById(slug);
+  
   if (!product) {
     return {
       title: "Equipment not found — Coffee Genius",
@@ -105,7 +61,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       url: `${SITE_URL}/equipment/${encodeURIComponent(slug)}`,
       siteName: "Coffee Genius",
       images: images.map((url) => ({ url, width: 1200, height: 630 })),
-      // Next.js expects a supported OG type; "website" is safe.
       type: "website",
       locale: "en_GB",
     },
@@ -120,7 +75,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const product = await fetchEquipmentFromApi(slug);
+  const product = await getEquipmentById(slug);
+  
   if (!product) return notFound();
 
   const productUrl = `${SITE_URL}/equipment/${encodeURIComponent(slug)}`;
@@ -130,7 +86,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
     product.imagesUrls && product.imagesUrls.length > 0
       ? product.imagesUrls
       : product.imagesPublicIds && product.imagesPublicIds.length > 0
-      ? product.imagesPublicIds.map((id) => cloudinaryImageUrl(id))
+      ? product.imagesPublicIds.map((id: string) => cloudinaryImageUrl(id))
       : product.imgUrl
       ? [product.imgUrl]
       : product.imgPublicId

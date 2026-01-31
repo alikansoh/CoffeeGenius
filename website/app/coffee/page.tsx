@@ -1,97 +1,13 @@
 import React from "react";
 import type { Metadata } from "next";
 import CoffeeClient from "./CoffeeClient";
-import type { Product } from "../Components/ProductCard";
+import { getCoffees, mapApiCoffeesToProducts, type Product } from "@/lib/coffee";
 
 const SITE_URL: string = process.env.NEXT_PUBLIC_SITE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
-interface ApiSizePrice {
-  size: string;
-  price: number;
-  availableGrinds?: string[];
-  totalStock?: number;
-}
-
-interface ApiVariant {
-  _id: string;
-  coffeeId: string;
-  sku: string;
-  size: string;
-  grind: string;
-  price: number;
-  stock: number;
-  img: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ApiCoffee {
-  _id: string;
-  slug: string;
-  name: string;
-  origin: string;
-  notes?: string;
-  img: string;
-  roastLevel: "light" | "medium" | "dark";
-  createdAt: string;
-  variantCount: number;
-  minPrice: number;
-  availableGrinds: string[];
-  availableSizes: ApiSizePrice[];
-  totalStock: number;
-  variants: ApiVariant[];
-  bestSeller?: boolean;
-}
-
-async function fetchProductsFromApi(slug?: string): Promise<ApiCoffee[]> {
-  const base = SITE_URL.replace(/\/$/, "");
-  const searchParam = slug ? `?search=${encodeURIComponent(slug)}` : "";
-  const url = `${base}/api/coffee${searchParam}`;
-
-  try {
-    const res = await fetch(url, { next: { revalidate: 60 } });
-    if (!res.ok) {
-      console.error("fetchProducts: non-OK response", res.status, url);
-      return [];
-    }
-    const json = (await res.json()) as { data?: ApiCoffee[] };
-    return json.data ?? [];
-  } catch (err) {
-    console.error("fetchProducts: fetch failed", err, "url:", url);
-    return [];
-  }
-}
-
 async function fetchProducts(slug?: string): Promise<Product[]> {
-  const apiCoffees = await fetchProductsFromApi(slug);
-
-  return apiCoffees.map((coffee) => {
-    const prices: Record<string, number> = {};
-    if (coffee.availableSizes && coffee.availableSizes.length > 0) {
-      coffee.availableSizes.forEach((s) => {
-        prices[s.size] = s.price;
-      });
-    } else {
-      prices["250g"] = coffee.minPrice;
-    }
-
-    return {
-      id: coffee._id || coffee.slug,
-      name: coffee.name,
-      slug: coffee.slug,
-      origin: coffee.origin,
-      notes: coffee.notes ?? "",
-      price: coffee.minPrice,
-      prices,
-      img: coffee.img,
-      roastLevel: coffee.roastLevel,
-      grinds: coffee.availableGrinds,
-      availableSizes: coffee.availableSizes,
-      minPrice: coffee.minPrice,
-      variants: coffee.variants,
-      bestSeller: coffee.bestSeller,
-    } as Product;
-  });
+  const apiCoffees = await getCoffees(slug);
+  return mapApiCoffeesToProducts(apiCoffees);
 }
 
 // SEO-optimized metadata for /coffee listing
@@ -144,13 +60,12 @@ export default async function Page({ params }: { params?: { slug?: string } }) {
   const itemList = {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    itemListElement: items.map((p, i) => ({
+    itemListElement: items.map((p: Product, i: number) => ({
       "@type": "ListItem",
       position: i + 1,
       item: {
         "@type": "Product",
         name: p.name,
-        // <-- use /coffee/[slug] for product URLs (your example: /coffee/volcano)
         url: `${SITE_URL}/coffee/${encodeURIComponent(String(p.slug))}`,
         image: p.img ? (p.img.startsWith("http") ? p.img : `${SITE_URL}${p.img}`) : undefined,
       },

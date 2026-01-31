@@ -2,93 +2,15 @@ import React from "react";
 import type { Metadata } from "next";
 import CoffeeClient from "./CoffeeClient";
 import { notFound } from "next/navigation";
+import { getCoffeeById, type ApiCoffee } from "@/lib/coffee";
 
 const SITE_URL: string = process.env.NEXT_PUBLIC_SITE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
-
-interface ApiSizePrice {
-  size: string;
-  price: number;
-  availableGrinds?: string[];
-  totalStock?: number;
-}
-
-interface ApiVariant {
-  _id: string;
-  coffeeId: string;
-  sku: string;
-  size: string;
-  grind: string;
-  price: number;
-  stock: number;
-  img: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ApiCoffee {
-  _1?: string;
-  _id: string;
-  slug: string;
-  name: string;
-  origin: string;
-  description?: string;
-  notes?: string;
-  img: string | string[];
-  images?: string[];
-  roastLevel?: "light" | "medium" | "dark";
-  process?: string;
-  altitude?: string;
-  harvest?: string;
-  cupping_score?: number;
-  variety?: string;
-  brewing?: string;
-  bestSeller?: boolean;
-  createdAt?: string;
-  variantCount?: number;
-  minPrice?: number;
-  availableGrinds?: string[];
-  availableSizes?: ApiSizePrice[];
-  totalStock?: number;
-  variants?: ApiVariant[];
-  inStock?: boolean;
-  stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
-  story?: string;
-  sku?: string;
-  brand?: string;
-  currency?: string;
-  aggregateRating?: { ratingValue: number; reviewCount: number };
-}
-
-/**
- * Try to fetch a product by id (first /api/coffee/:id, fallback to /api/coffee?search=:id)
- */
-async function fetchProductFromApi(id: string): Promise<ApiCoffee | null> {
-  if (!id) return null;
-  const base = SITE_URL.replace(/\/$/, "");
-  const url1 = `${base}/api/coffee/${encodeURIComponent(id)}`;
-  const url2 = `${base}/api/coffee?search=${encodeURIComponent(id)}`;
-
-  try {
-    let res = await fetch(url1, { next: { revalidate: 60 } });
-    if (!res.ok) {
-      res = await fetch(url2, { next: { revalidate: 60 } });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const found = (json.data ?? [])[0];
-      return found ?? null;
-    }
-    const json = await res.json();
-    return (json.data ?? json) ?? null;
-  } catch (err) {
-    console.error("fetchProductFromApi failed", err);
-    return null;
-  }
-}
 
 // IMPORTANT: params is a Promise here — await it before accessing .id
 export async function generateMetadata({ params }: { params: Promise<{ id?: string }> }): Promise<Metadata> {
   const resolved = await params;
   const id = resolved?.id?.toString().trim() ?? "";
+  
   if (!id) {
     return {
       title: "Coffee — Coffee Genius",
@@ -97,7 +19,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id?: stri
     };
   }
 
-  const product = await fetchProductFromApi(id);
+  const product = await getCoffeeById(id);
+  
   if (!product) {
     return {
       title: "Product not found — Coffee Genius",
@@ -121,9 +44,12 @@ export async function generateMetadata({ params }: { params: Promise<{ id?: stri
       description,
       url: `${SITE_URL}/coffee/${encodeURIComponent(id)}`,
       siteName: "Coffee Genius",
-      // use "website" (Next metadata validation doesn't accept "product")
       type: "website",
-      images: images.slice(0, 5).map((img) => ({ url: img.startsWith("http") ? img : `${SITE_URL}${img}`, width: 1200, height: 1200 })),
+      images: images.slice(0, 5).map((img: string) => ({ 
+        url: img.startsWith("http") ? img : `${SITE_URL}${img}`, 
+        width: 1200, 
+        height: 1200 
+      })),
       locale: "en_GB",
     },
     twitter: {
@@ -142,13 +68,13 @@ export default async function Page({ params }: { params: Promise<{ id?: string }
 
   if (!id) return notFound();
 
-  const product = await fetchProductFromApi(id);
+  const product = await getCoffeeById(id);
   if (!product) return notFound();
 
   const productUrl = `${SITE_URL}/coffee/${encodeURIComponent(id)}`;
   const images = Array.isArray(product.img) ? product.img : product.images ?? [String(product.img)];
 
-  // Build structured Offer / AggregateOffer — typed as Record<string, unknown> (no explicit any)
+  // Build structured Offer / AggregateOffer
   let offers: Record<string, unknown>;
   if (product.variants && product.variants.length > 0) {
     const low = Math.min(...product.variants.map((v) => v.price));
@@ -179,12 +105,12 @@ export default async function Page({ params }: { params: Promise<{ id?: string }
     };
   }
 
-  // Product JSON-LD typed as Record<string, unknown> to avoid `any`
+  // Product JSON-LD
   const productJsonLd: Record<string, unknown> = {
     "@context": "https://schema.org/",
     "@type": "Product",
     name: product.name,
-    image: images.map((i) => (i.startsWith("http") ? i : `${SITE_URL}${i}`)),
+    image: images.map((i: string) => (i.startsWith("http") ? i : `${SITE_URL}${i}`)),
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? (product.variants && product.variants[0]?.sku) ?? undefined,
     brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
