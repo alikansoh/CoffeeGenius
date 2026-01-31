@@ -1618,17 +1618,24 @@ async function handlePaymentIntentSucceeded(
 
   // ===================== POST-PROCESS: INVOICE + ADMIN NOTIFICATIONS =====================
   
-  const companyInfo: CompanyInfo = {
-    name: process.env.COMPANY_NAME || 'Your Company Name',
-    address: process.env.COMPANY_ADDRESS || '123 Business Street',
-    city: process.env.COMPANY_CITY || 'London',
-    postcode: process.env.COMPANY_POSTCODE || 'SW1A 1AA',
-    country: process.env.COMPANY_COUNTRY || 'United Kingdom',
-    email: process.env.COMPANY_EMAIL || 'info@yourcompany.com',
-    phone: process.env.COMPANY_PHONE,
-    vatNumber: process.env.COMPANY_VAT_NUMBER,
-    website: process.env.COMPANY_WEBSITE,
-  };
+  // normalize helper (strip accidental quotes and trim)
+function normalizeEnvString(v?: string | undefined) {
+  if (!v) return undefined;
+  return v.replace(/^"(.*)"$/, "$1").trim();
+}
+
+// Replace your previous block with this — environment variable names match the .env.example
+const companyInfo: CompanyInfo = {
+  name: normalizeEnvString(process.env.COMPANY_NAME) ?? "Coffee Genius",
+  address: normalizeEnvString(process.env.COMPANY_ADDRESS) ?? "73 High Street",
+  city: normalizeEnvString(process.env.COMPANY_CITY) ?? "Staines",
+  postcode: normalizeEnvString(process.env.COMPANY_POSTCODE) ?? "TW18 4PA",
+  country: normalizeEnvString(process.env.COMPANY_COUNTRY) ?? "United Kingdom",
+  email: normalizeEnvString(process.env.COMPANY_EMAIL) ?? "info@coffeegenius.co.uk",
+  phone: normalizeEnvString(process.env.COMPANY_PHONE) ?? undefined,
+  vatNumber: normalizeEnvString(process.env.COMPANY_VAT) ?? undefined, // was COMPANY_VAT in .env.example
+  website: normalizeEnvString(process.env.COMPANY_WEBSITE) ?? undefined,
+};
   
   const orderNumber = `INV-${new Date().getFullYear()}-${String(existingOrder._id)
     .slice(-8)
