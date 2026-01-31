@@ -3,7 +3,17 @@ import type { Metadata } from "next";
 import AboutClient from "./AboutClient";
 import { notFound } from "next/navigation";
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || `http://localhost:${process.env.PORT ?? 3000}`).replace(/\/$/, "");
+/**
+ * Make this page dynamic so Next.js does not attempt to statically
+ * generate it at build time (which was hitting the 60s per-page timeout).
+ *
+ * This ensures any network/database calls happen at request time
+ * (or you can implement caching / revalidation strategies).
+ */
+export const dynamic = "force-dynamic";
+
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || `http://localhost:${process.env.PORT ?? 3000}`)
+  .replace(/\/$/, "");
 const OG_IMAGE = "/og-image.JPG"; // make sure this file lives in /public
 
 type Review = {
@@ -23,27 +33,52 @@ type ReviewsPayload = {
   user_ratings_total?: number;
 };
 
-async function fetchReviews(): Promise<ReviewsPayload | null> {
+/**
+ * Helper: fetch with a short timeout so builds / requests don't hang indefinitely.
+ */
+async function fetchWithTimeout(input: RequestInfo | URL, timeoutMs = 3000, init?: RequestInit) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${SITE_URL}/api/google-reviews`, { next: { revalidate: 300 } });
+    const res = await fetch(input, { signal: controller.signal, ...init });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+/**
+ * Fetch reviews from the internal API. This function is resilient:
+ * - Uses a short timeout (default 3s)
+ * - Swallows errors and returns null if anything goes wrong (non-critical)
+ *
+ * Note: during builds the SITE_URL may not be reachable from the build worker,
+ * so callers should treat missing reviews as non-fatal.
+ */
+async function fetchReviews(): Promise<ReviewsPayload | null> {
+  // Avoid making requests to an env-derived SITE_URL if it is absent.
+  // Still attempt fetch but with a short timeout to avoid long hangs.
+  try {
+    const url = `${SITE_URL}/api/google-reviews`;
+    const res = await fetchWithTimeout(url, 3000, { next: { revalidate: 300 } });
     if (!res.ok) return null;
     const json: unknown = await res.json().catch(() => null);
     if (!json || typeof json !== "object") return null;
     return json as ReviewsPayload;
   } catch (err) {
     // swallow errors server-side and continue without reviews
-    // console.error("fetchReviews error", err);
     return null;
   }
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const pageUrl = `${SITE_URL}/about`;
-  const title = "About — Coffee Genius";
+  const title = "About �� Coffee Genius";
   const description =
     "Coffee Genius — a cosy coffee shop in Staines. Artisanal drinks, skilled baristas, training and community-focused service. Visit us at 173 High Street, TW18.";
 
-  // attempt to fetch reviews to include rating for social previews (non-critical)
+  // Attempt to fetch reviews for richer metadata but don't block the build:
+  // fetchReviews uses a short timeout and returns null on error.
   const reviews = await fetchReviews();
   const ratingValue = reviews?.rating ?? undefined;
   const reviewCount = reviews?.user_ratings_total ?? undefined;
@@ -72,17 +107,17 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       images: [ogUrl],
     },
-    // optional: include rating in metadata.description for richer preview (non-standard)
-    // Note: Next Metadata type doesn't have a dedicated aggregateRating field; keep JSON-LD on the page.
-    // We avoid adding arbitrary fields not supported by Next Metadata.
+    // If you want to place rating into JSON-LD for preview consumers,
+    // you can render that in the page body rather than metadata here.
   };
 }
 
 export default async function Page() {
+  // fetchReviews is resilient and fast (short timeout). If it's null we continue.
   const reviews = await fetchReviews();
 
-  // If you want this page to always be available, don't fail on reviews fetch
-  // but if you require some critical data, you can notFound() here.
+  // If you require reviews to show the page, you could call notFound() here.
+  // For now we continue even if reviews are unavailable.
   // if (!reviews) return notFound();
 
   const pageUrl = `${SITE_URL}/about`;
@@ -108,7 +143,6 @@ export default async function Page() {
       addressCountry: "GB",
     },
     openingHours,
-    // include aggregateRating if available
     ...(reviews && typeof reviews.rating === "number" && typeof reviews.user_ratings_total === "number"
       ? {
           aggregateRating: {
