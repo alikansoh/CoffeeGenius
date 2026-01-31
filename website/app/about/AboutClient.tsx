@@ -355,13 +355,13 @@ export default function AboutPage() {
                     preload="auto"
                     aria-hidden="true"
                   >
-                    <source src="/about-hero.mp4" type="video/mp4" />
+                    <source src="/about-hero.MP4" type="video/mp4" />
                     <img src="/about-hero.jpg" alt="Coffee Genius interior" className="w-full h-full object-cover" />
                   </video>
                 ) : (
                   <div className="relative w-full h-80 sm:h-[28rem] md:h-[36rem] lg:h-[38rem] xl:h-[44rem]">
                     <Image
-                      src="/about-hero.jpg"
+                      src="/about-hero.JPG"
                       alt="Coffee Genius interior"
                       fill
                       className="object-cover"
