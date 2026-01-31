@@ -461,13 +461,7 @@ export default function CartDrawer() {
                   <span>Secure checkout</span>
                 </button>
 
-                <Link
-                  href="/cart"
-                  onClick={close}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50 focus:outline-none text-center"
-                >
-                  View full cart
-                </Link>
+               
               </div>
             </div>
           )}
