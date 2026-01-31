@@ -2,11 +2,31 @@ import React from "react";
 import type { Metadata } from "next";
 import CoffeeClient from "./CoffeeClient";
 import { notFound } from "next/navigation";
-import { getCoffeeById, type ApiCoffee } from "@/lib/coffee";
+import { getCoffeeById, getCoffees, type ApiCoffee } from "@/lib/coffee";
 
 const SITE_URL: string = process.env.NEXT_PUBLIC_SITE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 
-// IMPORTANT: params is a Promise here — await it before accessing .id
+// ✅ ADD THIS: Tell Next.js which routes to pre-generate
+export async function generateStaticParams() {
+  try {
+    const coffees = await getCoffees();
+    
+    // Generate paths for all coffee products
+    return coffees.map((coffee) => ({
+      id: coffee.slug || coffee._id,
+    }));
+  } catch (error) {
+    console.error("Error generating static params for coffee:", error);
+    return []; // Return empty array if error
+  }
+}
+
+// ✅ ADD THIS: Allow dynamic routes not in generateStaticParams
+export const dynamicParams = true;
+
+// ✅ ADD THIS: Force dynamic rendering if needed (optional)
+// export const dynamic = 'force-dynamic';
+
 export async function generateMetadata({ params }: { params: Promise<{ id?: string }> }): Promise<Metadata> {
   const resolved = await params;
   const id = resolved?.id?.toString().trim() ?? "";
@@ -61,7 +81,6 @@ export async function generateMetadata({ params }: { params: Promise<{ id?: stri
   };
 }
 
-// Page must also await params if it's a Promise
 export default async function Page({ params }: { params: Promise<{ id?: string }> }) {
   const resolved = await params;
   const id = resolved?.id?.toString().trim() ?? "";
@@ -105,7 +124,6 @@ export default async function Page({ params }: { params: Promise<{ id?: string }
     };
   }
 
-  // Product JSON-LD
   const productJsonLd: Record<string, unknown> = {
     "@context": "https://schema.org/",
     "@type": "Product",
@@ -140,10 +158,7 @@ export default async function Page({ params }: { params: Promise<{ id?: string }
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }} />
-
-      {/* Hydration payload so the client avoids an initial fetch */}
       <script id="initial-product" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(product) }} />
-
       <CoffeeClient />
     </>
   );
