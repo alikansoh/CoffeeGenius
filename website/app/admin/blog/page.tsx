@@ -148,6 +148,9 @@ export default function PostsAdminPage(): JSX.Element {
   const [slug, setSlug] = useState<string>(""); // SLUG
   const [description, setDescription] = useState<string>("");
 
+  // New: whether the slug was manually edited (breaks live sync)
+  const [slugEdited, setSlugEdited] = useState<boolean>(false);
+
   // Enhanced tag management
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState<string>("");
@@ -212,14 +215,14 @@ export default function PostsAdminPage(): JSX.Element {
     return;
   }, [error, success]);
 
-  // auto-update slug from title
+  // Live-sync slug with title unless the user has manually edited the slug.
   useEffect(() => {
-    if (!editing || !slug) {
+    if (!slugEdited) {
+      // Let slug be exactly the slugified title (empty when title is empty)
       setSlug(slugify(title));
     }
-    // Only auto-update slug when creating or when slug is empty in edit mode
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title]);
+  }, [title, slugEdited]);
 
   function openCreate() {
     setEditing(null);
@@ -231,13 +234,18 @@ export default function PostsAdminPage(): JSX.Element {
     setSelectedFile(null);
     setPreviewUrl(null);
     if (fileRef.current) fileRef.current.value = "";
+    setSlugEdited(false); // start with live-sync enabled
     setEditOpen(true);
   }
 
   function openEdit(p: PostItem) {
     setEditing(p);
-    setTitle(p.title ?? "");
-    setSlug(p.slug ?? ""); // NEW!
+    const initialTitle = p.title ?? "";
+    const initialSlug = p.slug ?? "";
+    setTitle(initialTitle);
+    setSlug(initialSlug);
+    // If the stored slug differs from slugified title, assume it was manually edited before.
+    setSlugEdited(initialSlug !== slugify(initialTitle));
     setDescription(p.description ?? "");
     setTags(p.tags && Array.isArray(p.tags) ? p.tags.filter(Boolean) : []);
     setTagInput("");
@@ -272,6 +280,7 @@ export default function PostsAdminPage(): JSX.Element {
     setSelectedFile(null);
     setPreviewUrl(null);
     if (fileRef.current) fileRef.current.value = "";
+    setSlugEdited(false);
   }
 
   // default date: today as ISO string (used if server expects date)
@@ -303,6 +312,22 @@ export default function PostsAdminPage(): JSX.Element {
     }
   }
 
+  // Handle manual slug edits:
+  // - If user types a slug (non-empty), we mark slugEdited = true (break live-sync).
+  // - If user clears slug to empty string, re-enable live-sync (slugEdited = false).
+  function onSlugChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    const normalized = slugify(raw);
+    setSlug(normalized);
+    if (normalized === "") {
+      // Clearing slug should re-enable live-sync so title updates it again.
+      setSlugEdited(false);
+    } else {
+      // User is manually editing slug; stop auto-sync.
+      setSlugEdited(true);
+    }
+  }
+
   async function savePost() {
     if (!title.trim()) {
       setError("Title is required");
@@ -320,7 +345,7 @@ export default function PostsAdminPage(): JSX.Element {
         const form = new FormData();
         form.append("files", selectedFile);
         form.append("title", title.trim());
-        form.append("slug", slug); // <-- include slug
+        form.append("slug", slug);
         form.append("description", description || "");
         if (tags.length) form.append("tags", tags.join(","));
         form.append("date", isoToday());
@@ -351,7 +376,7 @@ export default function PostsAdminPage(): JSX.Element {
         const form = new FormData();
         form.append("files", selectedFile);
         form.append("title", title.trim());
-        form.append("slug", slug); // <-- include slug
+        form.append("slug", slug);
         form.append("description", description || "");
         if (tags.length) form.append("tags", tags.join(","));
         form.append("date", editing.date ?? isoToday());
@@ -531,7 +556,7 @@ export default function PostsAdminPage(): JSX.Element {
                         fill
                         className="object-cover"
                         sizes="(max-width: 768px) 100vw, 33vw"
-                        style={{objectFit: "cover"}}
+                        style={{ objectFit: "cover" }}
                         priority={false}
                       />
                     ) : (
@@ -627,12 +652,12 @@ export default function PostsAdminPage(): JSX.Element {
               <label className="text-xs font-medium text-gray-700">Slug</label>
               <input
                 value={slug}
-                onChange={(e) => setSlug(slugify(e.target.value))}
+                onChange={onSlugChange}
                 className="mt-2 w-full border-2 border-gray-200 rounded-xl px-3 py-2"
                 placeholder="post-title-as-slug"
               />
               <p className="text-xs text-gray-400 mt-1">
-                URL-friendly version, auto-generated from title. You can edit it.
+                Automatically follows the title while you type. Edit the slug to take control; clear it to re-enable auto-sync.
               </p>
             </div>
             <div>

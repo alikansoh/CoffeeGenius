@@ -86,7 +86,10 @@ export default function Navbar() {
   const scrollTicking = useRef(false);
 
   // Offers (fetched from API). We keep a ref for the array to avoid recreating loops.
-  const offersRef = useRef<string[]>(DEFAULT_OFFERS);
+  // NOTE: start with empty array so we can show a "loading" state instead of immediately falling
+  // back to DEFAULT_OFFERS. We'll set offersLoadedRef when the fetch completes (success or failure).
+  const offersRef = useRef<string[]>([]);
+  const offersLoadedRef = useRef(false);
 
   // Announcement DOM ref (we update this element directly to avoid frequent React renders)
   const announcementEl = useRef<HTMLSpanElement | null>(null);
@@ -392,11 +395,23 @@ export default function Navbar() {
         const texts = data.map((d) => String(d.text).trim()).filter(Boolean);
         if (mounted && texts.length > 0) {
           offersRef.current = texts;
-        } else {
+        } else if (mounted) {
+          // No offers returned — fall back to defaults
           offersRef.current = DEFAULT_OFFERS;
         }
       } catch (err) {
+        // On any error, fall back to defaults
         offersRef.current = DEFAULT_OFFERS;
+      } finally {
+        // Mark that fetch completed and start the typing loop (or restart it)
+        offersLoadedRef.current = true;
+        // Start the offers loop once data (or fallback) is available.
+        // startOffersTypingLoop has guards to avoid double-starting timers.
+        try {
+          startOffersTypingLoop();
+        } catch (e) {
+          // ignore; defensive
+        }
       }
     }
 
@@ -421,11 +436,21 @@ export default function Navbar() {
   }
 
   function startOffersTypingLoop() {
+    // Guard: don't start twice
+    if (offerTypingTimer.current || offerPauseTimer.current) return;
+
+    // If offers haven't loaded yet, show a loading placeholder and don't start typing
+    if (!offersLoadedRef.current && offersRef.current.length === 0) {
+      if (announcementEl.current) announcementEl.current.textContent = "Loading offers...";
+      return;
+    }
+
     if (typeof window !== "undefined") {
       const prefersReduced =
         window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       if (prefersReduced) {
-        if (announcementEl.current) announcementEl.current.textContent = offersRef.current[0] ?? DEFAULT_OFFERS[0];
+        if (announcementEl.current)
+          announcementEl.current.textContent = offersRef.current[0] ?? DEFAULT_OFFERS[0];
         return;
       }
     }
@@ -491,7 +516,15 @@ export default function Navbar() {
   }
 
   useEffect(() => {
-    const t = window.setTimeout(() => startOffersTypingLoop(), 400);
+    // Show a loading message immediately while offers are being fetched.
+    if (announcementEl.current && (!offersLoadedRef.current || offersRef.current.length === 0)) {
+      announcementEl.current.textContent = "Loading offers...";
+    }
+
+    // Also try to start the typing loop if offers were already loaded (rare case).
+    const t = window.setTimeout(() => {
+      if (offersLoadedRef.current) startOffersTypingLoop();
+    }, 400);
     return () => {
       window.clearTimeout(t);
       clearOfferTimers();
@@ -750,6 +783,8 @@ export default function Navbar() {
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder={getPlaceholderWithCaret()}
                   aria-label="Search"
+                  // Prevent iOS zoom on focus by ensuring font-size >= 16px
+                  style={{ fontSize: 16 }}
                   className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
                 />
                 {query ? (
@@ -849,6 +884,8 @@ export default function Navbar() {
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={getPlaceholderWithCaret()}
                     aria-label="Search"
+                    // Prevent iOS zoom on focus by ensuring font-size >= 16px
+                    style={{ fontSize: 16 }}
                     className="bg-transparent placeholder-gray-400 text-sm w-full outline-none"
                   />
                   {query && (

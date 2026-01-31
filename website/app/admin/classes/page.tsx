@@ -184,6 +184,7 @@ export default function AdminClassesList({ sendCookies = true }: AdminClassesLis
   const fetchBookings = async (opts?: { courseId?: string; page?: number }) => {
     setBookingsLoading(true);
     try {
+      // NOTE: use plural /api/bookings to match server route
       const url = new URL("/api/booking", window.location.origin);
       if (opts?.courseId) url.searchParams.set("courseId", opts.courseId);
       url.searchParams.set("page", String(opts?.page ?? bookingsPage));
@@ -223,6 +224,7 @@ export default function AdminClassesList({ sendCookies = true }: AdminClassesLis
     if (!confirm(`Delete booking ${ref ?? id}? This action cannot be undone.`)) return;
 
     try {
+      // NOTE: use plural /api/bookings to match server route
       const res = await fetch(`/api/booking/${encodeURIComponent(id)}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },

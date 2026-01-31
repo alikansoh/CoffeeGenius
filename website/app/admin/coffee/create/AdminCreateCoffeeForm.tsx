@@ -32,12 +32,13 @@ interface CoffeeFormData {
   variety: string;
   brewing: string;
   bestSeller: boolean;
+  story: string;
 }
 
 // ✅ Interface for temporary files before upload
 interface PendingFile {
   file: File;
-  preview: string;  // Local blob URL for preview
+  preview: string; // Local blob URL for preview
 }
 
 const ROAST_LEVELS: { value: RoastLevel; label: string }[] = [
@@ -59,7 +60,7 @@ function Toast({ message, type, onClose }: { message: string; type: "error" | "s
   return (
     <div
       className={`fixed bottom-6 right-6 px-5 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-4 ${
-        type === "error" ?   "bg-red-600 text-white" : "bg-green-600 text-white"
+        type === "error" ? "bg-red-600 text-white" : "bg-green-600 text-white"
       }`}
     >
       {type === "error" ? <AlertCircle size={20} /> : <Check size={20} />}
@@ -88,7 +89,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
 
   // ✅ Store pending files (not yet uploaded)
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const [mainImageIndex, setMainImageIndex] = useState<number>(-1);  // ✅ Track which image is main
+  const [mainImageIndex, setMainImageIndex] = useState<number>(-1); // ✅ Track which image is main
 
   const [formData, setFormData] = useState<CoffeeFormData>({
     slug: "",
@@ -105,17 +106,18 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     variety: "",
     brewing: "",
     bestSeller: false,
+    story: "",
   });
 
   // ✅ Cleanup blob URLs on unmount
   useEffect(() => {
     return () => {
-      pendingFiles.forEach(pf => URL.revokeObjectURL(pf.preview));
+      pendingFiles.forEach((pf) => URL.revokeObjectURL(pf.preview));
     };
   }, [pendingFiles]);
 
   useEffect(() => {
-    if (! autoSlugEnabled) return;
+    if (!autoSlugEnabled) return;
     const generated = formData.name
       .toLowerCase()
       .trim()
@@ -149,7 +151,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     }
 
     setField(name as keyof CoffeeFormData, value);
-    setErrors((s) => ({ ... s, [name]: "" }));
+    setErrors((s) => ({ ...s, [name]: "" }));
   };
 
   const addNote = () => {
@@ -157,67 +159,73 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    if (! parts.length) return;
+    if (!parts.length) return;
     setFormData((p) => ({
       ...p,
-      notes: Array.from(new Set([...p.notes, ...parts])). slice(0, 12),
+      notes: Array.from(new Set([...p.notes, ...parts])).slice(0, 12),
     }));
     setNoteInput("");
   };
 
-  const removeNote = (n: string) => setFormData((p) => ({ ... p, notes: p.notes.filter((x) => x !== n) }));
+  const removeNote = (n: string) => setFormData((p) => ({ ...p, notes: p.notes.filter((x) => x !== n) }));
 
   // ✅ Helper to check if file is video
   const isVideoFile = (file: File): boolean => {
-    return file.type.startsWith('video/');
+    return file.type.startsWith("video/");
   };
 
   // ✅ Store files locally (don't upload yet)
   const handleFiles = async (files: FileList | null) => {
-    if (!files?. length) return;
+    if (!files?.length) return;
 
-    const newPendingFiles: PendingFile[] = [];
+    const newPendingFiles: PendingFile[] = Array.from(files).map((file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+    }));
 
-    Array.from(files).forEach(file => {
-      const preview = URL.createObjectURL(file);
-      newPendingFiles.push({ file, preview });
+    // Use functional update so we can compute updated array and set mainImage atomically
+    setPendingFiles((prev) => {
+      const updated = [...prev, ...newPendingFiles];
+
+      // If no main image selected yet, set first IMAGE (not video) from the updated list
+      setMainImageIndex((prevMain) => {
+        if (prevMain !== -1) return prevMain;
+        const firstImageIndex = updated.findIndex((pf) => !isVideoFile(pf.file));
+        return firstImageIndex === -1 ? -1 : firstImageIndex;
+      });
+
+      return updated;
     });
-
-    setPendingFiles(prev => [...prev, ...newPendingFiles]);
-
-    // ✅ Set first IMAGE as main (skip videos)
-    if (mainImageIndex === -1) {
-      const firstImageIndex = newPendingFiles.findIndex(pf => ! isVideoFile(pf.file));
-      if (firstImageIndex !== -1) {
-        setMainImageIndex(pendingFiles.length + firstImageIndex);
-      }
-    }
   };
 
   // ✅ Remove pending file
   const removePendingFile = (index: number) => {
-    setPendingFiles(prev => {
-      const updated = prev.filter((_, i) => i !== index);
-      
+    setPendingFiles((prev) => {
+      if (index < 0 || index >= prev.length) return prev;
       // Revoke blob URL
       URL.revokeObjectURL(prev[index].preview);
-      
-      // ✅ Adjust main image index
-      if (mainImageIndex === index) {
-        // Find next available image (not video)
-        const nextImageIndex = updated.findIndex(pf => !isVideoFile(pf.file));
-        setMainImageIndex(nextImageIndex);
-      } else if (mainImageIndex > index) {
-        setMainImageIndex(mainImageIndex - 1);
-      }
-      
+      const updated = prev.filter((_, i) => i !== index);
+
+      // Adjust main image index safely
+      setMainImageIndex((current) => {
+        if (current === index) {
+          // Find next available image (not video)
+          const nextImageIndex = updated.findIndex((pf) => !isVideoFile(pf.file));
+          return nextImageIndex;
+        } else if (current > index) {
+          return current - 1;
+        }
+        return current;
+      });
+
       return updated;
     });
   };
 
   // ✅ Set main image (only if it's an image, not video)
   const handleSetMainImage = (index: number) => {
-    if (isVideoFile(pendingFiles[index]. file)) {
+    if (index < 0 || index >= pendingFiles.length) return;
+    if (isVideoFile(pendingFiles[index].file)) {
       setToast({ type: "error", message: "Videos cannot be set as main image" });
       return;
     }
@@ -232,6 +240,10 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         images: [...p.images, publicId.trim()],
         img: p.img || publicId.trim(),
       }));
+      // If no main image chosen yet and pasted ID is an image, set as main
+      if (!formData.img) {
+        setMainImageIndex(-1); // mainImageIndex refers to pendingFiles; keep -1 to use formData.img
+      }
     }
   };
 
@@ -258,26 +270,28 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     if (pendingFiles.length === 0) return [];
 
     const formDataUpload = new FormData();
-    pendingFiles.forEach(pf => {
-      formDataUpload.append('files', pf.file);
+    pendingFiles.forEach((pf) => {
+      formDataUpload.append("files", pf.file);
     });
-    formDataUpload.append('folder', 'coffee-shop');
+    formDataUpload.append("folder", "coffee-shop");
 
-    const res = await fetch('/api/upload', {
-      method: 'POST',
-      body: formDataUpload,...(sendCookies ?  { credentials: "include" as RequestCredentials } : {}),
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formDataUpload,
+      ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
     });
 
     if (!res.ok) {
-      throw new Error('Failed to upload files to Cloudinary');
+      throw new Error("Failed to upload files to Cloudinary");
     }
 
     const data = await res.json();
 
-    if (! data.success || !data.files) {
-      throw new Error('Upload failed');
+    if (!data.success || !data.files) {
+      throw new Error("Upload failed");
     }
 
+    // Ensure order matches pendingFiles order
     return data.files.map((f: { publicId: string }) => f.publicId);
   };
 
@@ -290,9 +304,9 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
       return;
     }
 
-    // ✅ Check if at least one image exists
-    const hasAtLeastOneImage = pendingFiles.some(pf => !isVideoFile(pf.file));
-    if (!hasAtLeastOneImage && ! formData.img) {
+    // ✅ Check if at least one image exists (either existing img or an image pending)
+    const hasAtLeastOneImage = pendingFiles.some((pf) => !isVideoFile(pf.file));
+    if (!hasAtLeastOneImage && !formData.img) {
       setToast({ type: "error", message: "Please add at least one image (videos cannot be main image)" });
       return;
     }
@@ -301,20 +315,30 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     try {
       // ✅ Step 1: Upload pending files to Cloudinary
       let uploadedPublicIds: string[] = [];
-      
+
       if (pendingFiles.length > 0) {
         setToast({ type: "success", message: "Uploading to Cloudinary..." });
         uploadedPublicIds = await uploadPendingFiles();
       }
 
       // ✅ Step 2: Determine main image (must be an image, not video)
-      let mainImagePublicId = formData.img;
-      
-      if (mainImageIndex >= 0 && mainImageIndex < uploadedPublicIds.length) {
-        // Use the selected main image from uploaded files
-        mainImagePublicId = uploadedPublicIds[mainImageIndex];
-      } else if (! mainImagePublicId && uploadedPublicIds.length > 0) {
-        // Find first image (not video) as fallback
+      let mainImagePublicId: string | undefined = formData.img || undefined;
+
+      if (mainImageIndex >= 0 && uploadedPublicIds.length > 0) {
+        // mainImageIndex refers to index in pendingFiles; uploadedPublicIds align with pendingFiles order
+        if (mainImageIndex < uploadedPublicIds.length) {
+          mainImagePublicId = uploadedPublicIds[mainImageIndex];
+        } else {
+          // fallback: find first uploaded image (not video)
+          for (let i = 0; i < uploadedPublicIds.length; i++) {
+            if (!isVideoFile(pendingFiles[i].file)) {
+              mainImagePublicId = uploadedPublicIds[i];
+              break;
+            }
+          }
+        }
+      } else if (!mainImagePublicId && uploadedPublicIds.length > 0) {
+        // No main selected but we have uploaded images -> pick first uploaded image that's not a video
         for (let i = 0; i < uploadedPublicIds.length; i++) {
           if (!isVideoFile(pendingFiles[i].file)) {
             mainImagePublicId = uploadedPublicIds[i];
@@ -323,8 +347,8 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         }
       }
 
-      // ✅ Step 3: Combine all images
-      const allImages = [...formData.images, ... uploadedPublicIds];
+      // ✅ Step 3: Combine all images (existing Cloudinary IDs + newly uploaded)
+      const allImages = [...formData.images, ...uploadedPublicIds];
 
       // ✅ Step 4: Create coffee in database
       const payload = {
@@ -332,7 +356,8 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         name: formData.name,
         origin: formData.origin,
         notes: formData.notes.join(", "),
-        img: mainImagePublicId,  // ✅ Guaranteed to be an image
+        story: formData.story || undefined,
+        img: mainImagePublicId,
         images: allImages,
         roastLevel: formData.roastLevel || undefined,
         process: formData.process || undefined,
@@ -352,13 +377,15 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
       });
 
       const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body?. message || `Failed to create coffee (${res.status})`);
+      if (!res.ok) throw new Error(body?.message || `Failed to create coffee (${res.status})`);
 
       setToast({ type: "success", message: "Coffee created successfully!" });
-      
+
       // Cleanup blob URLs
-      pendingFiles.forEach(pf => URL.revokeObjectURL(pf.preview));
-      
+      pendingFiles.forEach((pf) => URL.revokeObjectURL(pf.preview));
+      setPendingFiles([]);
+      setMainImageIndex(-1);
+
       setTimeout(() => router.push("/admin/coffee"), 1200);
     } catch (err) {
       setToast({
@@ -371,7 +398,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
   };
 
   const handleCancel = () => {
-    if (formData.name || formData.origin || formData.notes.length > 0 || pendingFiles.length > 0) {
+    if (formData.name || formData.origin || formData.notes.length > 0 || pendingFiles.length > 0 || formData.story) {
       setShowCancelConfirm(true);
       return;
     }
@@ -384,7 +411,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         input,
         select,
         textarea {
-          font-size: 16px ! important;
+          font-size: 16px !important;
         }
       `}</style>
 
@@ -455,7 +482,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                         const g = formData.name
                           .toLowerCase()
                           .trim()
-                          . replace(/\s+/g, "-")
+                          .replace(/\s+/g, "-")
                           .replace(/[^\w-]/g, "")
                           .replace(/-+/g, "-");
                         setField("slug", g);
@@ -560,6 +587,23 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
               <p className="text-xs text-gray-500 mt-2">Press Enter or comma to add. Maximum 12 tags.</p>
             </section>
 
+            {/* Story - long form description */}
+            <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Story / Description</h2>
+              <p className="text-sm text-gray-600 mb-3">Add a longer narrative about this coffee (markdown or plain text).</p>
+              <textarea
+                name="story"
+                value={formData.story}
+                onChange={handleInputChange}
+                placeholder="e.g., Farm story, processing notes, tasting context, recommended recipes..."
+                rows={6}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none transition-all"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                This field can include markdown. Consider sanitizing on the server or escaping when rendering.
+              </p>
+            </section>
+
             {/* Roast & Details */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Roast & Details</h2>
@@ -574,7 +618,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                         type="button"
                         onClick={() => setField("roastLevel", roast.value)}
                         className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                          formData.roastLevel === roast.value ?  "border-gray-900 bg-gray-900 text-white" : "border-gray-300 hover:border-gray-900 text-gray-700"
+                          formData.roastLevel === roast.value ? "border-gray-900 bg-gray-900 text-white" : "border-gray-300 hover:border-gray-900 text-gray-700"
                         }`}
                       >
                         {roast.label}
@@ -646,19 +690,14 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                 onDragOver={(e) => e.preventDefault()}
                 className="border-2 border-dashed border-gray-300 rounded-xl p-6 bg-gray-50 hover:bg-gray-100 transition-all min-h-[240px] flex items-center justify-center"
               >
-                {mainImageIndex >= 0 && pendingFiles[mainImageIndex] ?  (
+                {mainImageIndex >= 0 && pendingFiles[mainImageIndex] ? (
                   <div className="relative w-full aspect-square rounded-xl overflow-hidden ring-2 ring-gray-300">
-                    <Image 
-                      src={pendingFiles[mainImageIndex].preview} 
-                      alt="Main image preview" 
-                      fill 
-                      className="object-cover" 
-                    />
-                    <button 
-                      type="button" 
+                    <Image src={pendingFiles[mainImageIndex].preview} alt="Main image preview" fill className="object-cover" />
+                    <button
+                      type="button"
                       onClick={() => {
                         removePendingFile(mainImageIndex);
-                      }} 
+                      }}
                       className="absolute top-2 right-2 p-2 bg-white rounded-full shadow-lg hover:shadow-xl transition-all"
                     >
                       <X size={16} />
@@ -673,9 +712,9 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                     <div className="text-sm font-medium text-gray-900 mb-1">Drag & drop images or videos here</div>
                     <div className="text-xs text-gray-500 mb-4">Supports: JPG, PNG, MP4, MOV</div>
                     <div className="flex justify-center gap-2">
-                      <button 
-                        type="button" 
-                        onClick={() => fileRef.current?.click()} 
+                      <button
+                        type="button"
+                        onClick={() => fileRef.current?.click()}
                         className="px-4 py-2 text-sm bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all font-medium"
                       >
                         Upload
@@ -684,14 +723,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                     </div>
                   </div>
                 )}
-                <input 
-                  ref={fileRef} 
-                  type="file" 
-                  accept="image/*,video/*" 
-                  multiple 
-                  className="sr-only" 
-                  onChange={(e) => handleFiles(e.target.files)} 
-                />
+                <input ref={fileRef} type="file" accept="image/*,video/*" multiple className="sr-only" onChange={(e) => handleFiles(e.target.files)} />
               </div>
 
               {pendingFiles.length > 0 && (
@@ -704,31 +736,22 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                     {pendingFiles.map((pf, i) => {
                       const isVideo = isVideoFile(pf.file);
                       const isMain = mainImageIndex === i;
-                      
+
                       return (
                         <div
                           key={i}
                           onClick={() => handleSetMainImage(i)}
                           className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${
-                            isVideo 
-                              ? "cursor-not-allowed border-gray-200 opacity-60" 
-                              : isMain 
-                                ? "border-green-600 ring-2 ring-green-300 cursor-pointer" 
-                                : "border-gray-300 hover:border-gray-900 cursor-pointer"
+                            isVideo ? "cursor-not-allowed border-gray-200 opacity-60" : isMain ? "border-green-600 ring-2 ring-green-300 cursor-pointer" : "border-gray-300 hover:border-gray-900 cursor-pointer"
                           }`}
                         >
-                          {isVideo ?  (
+                          {isVideo ? (
                             <div className="w-full h-full bg-gray-200 flex flex-col items-center justify-center">
                               <Film size={24} className="text-gray-500 mb-1" />
                               <span className="text-xs text-gray-600 font-medium">VIDEO</span>
                             </div>
                           ) : (
-                            <Image 
-                              src={pf.preview} 
-                              alt={`Preview ${i + 1}`} 
-                              fill 
-                              className="object-cover" 
-                            />
+                            <Image src={pf.preview} alt={`Preview ${i + 1}`} fill className="object-cover" />
                           )}
                           <button
                             type="button"
@@ -755,16 +778,16 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                         </div>
                       );
                     })}
-                    <button 
-                      type="button" 
-                      onClick={() => fileRef.current?.click()} 
+                    <button
+                      type="button"
+                      onClick={() => fileRef.current?.click()}
                       className="flex items-center justify-center aspect-square border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 hover:bg-gray-100 transition-all"
                     >
                       <Plus size={24} className="text-gray-400" />
                     </button>
                   </div>
                   <p className="text-xs text-gray-500 mt-2">
-                    <span className="font-semibold text-green-600">Click an image to set as main. </span> Videos cannot be main image.  
+                    <span className="font-semibold text-green-600">Click an image to set as main. </span> Videos cannot be main image.
                     <span className="font-semibold text-amber-600"> Files will upload when you click &quot;Create Coffee&quot;</span>
                   </p>
                 </div>
@@ -775,11 +798,11 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <div className="flex flex-col gap-3">
                 <button type="button" onClick={handleCancel} className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all">Cancel</button>
-                <button 
-                  type="submit" 
-                  disabled={isSaving} 
+                <button
+                  type="submit"
+                  disabled={isSaving}
                   className={`w-full px-4 py-3 rounded-xl font-bold transition-all text-white shadow-md ${
-                    isSaving ?  "bg-gray-400 cursor-not-allowed" : "bg-gray-900 hover:bg-gray-800 hover:shadow-lg"
+                    isSaving ? "bg-gray-400 cursor-not-allowed" : "bg-gray-900 hover:bg-gray-800 hover:shadow-lg"
                   }`}
                 >
                   {isSaving ? (
@@ -809,13 +832,13 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
               <p className="text-sm text-gray-600 mt-2">You have unsaved changes. Are you sure you want to leave?</p>
               <div className="mt-6 flex gap-3">
                 <button type="button" onClick={() => setShowCancelConfirm(false)} className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all">Continue Editing</button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   onClick={() => {
                     // Cleanup blob URLs before leaving
-                    pendingFiles.forEach(pf => URL.revokeObjectURL(pf.preview));
+                    pendingFiles.forEach((pf) => URL.revokeObjectURL(pf.preview));
                     router.push("/admin/coffee");
-                  }} 
+                  }}
                   className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
                 >
                   Discard

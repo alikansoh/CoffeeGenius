@@ -44,9 +44,9 @@ const SECTIONS: FeatureSection[] = [
   {
     id: "machines",
     title: "Premium Machines",
-    subtitle: "Professional-grade equipment for your home",
+    subtitle: "Professional coffee equipment & accessories",
     description:
-      "Transform your kitchen into a world-class café with our curated selection of espresso machines and brewing equipment. From beginner-friendly models to professional setups, we have everything you need.",
+      "Curated coffee equipment engineered for consistent, high-quality extraction — from precision espresso machines and calibrated grinders to reliable brewers and barista tools. We stock models and accessories chosen for durability, serviceability, and performance, with expert advice, installation support and maintenance options available for every setup.",
     features: [
       "Expert recommendations",
       "Installation support",
@@ -54,8 +54,8 @@ const SECTIONS: FeatureSection[] = [
       "Trade-in program available",
     ],
     image: "/machine.jpg",
-    ctaText: "Shop Machines",
-    ctaLink: "/machines",
+    ctaText: "Shop equipment",
+    ctaLink: "/equipment",
     icon: <EspressoMachinesIcon className="w-5 h-5" />,
     imagePosition: "right",
   },
@@ -68,7 +68,7 @@ const SECTIONS: FeatureSection[] = [
     features: [
       "Small group sessions",
       "Hands-on practice",
-      "Certificate included",
+      "Continued coaching",
       "Beginner to advanced levels",
     ],
     image: "/classes.jpg",
@@ -288,4 +288,4 @@ export default function FeatureSections() {
       </div>
     </section>
   );
-}
+} 

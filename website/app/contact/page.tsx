@@ -91,6 +91,8 @@ export default function ContactPage() {
       setStatus("error");
       liveRef.current?.focus();
     }
+    // inside handleSubmit, at the top (temporary debug)
+console.log("Contact form submit clicked", { name, email, message, company });
   }
 
   return (

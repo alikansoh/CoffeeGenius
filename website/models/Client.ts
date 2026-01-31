@@ -37,20 +37,26 @@ function normalizePhone(phone?: string | null) {
   return cleaned.replace(/\+/g, '') || undefined;
 }
 
+// Define the address subdocument schema
+const AddressSchema = new Schema<IClientAddress>(
+  {
+    firstName: { type: String, trim: true },
+    lastName: { type: String, trim: true },
+    unit: { type: String, trim: true },
+    line1: { type: String, trim: true },
+    city: { type: String, trim: true },
+    postcode: { type: String, trim: true },
+    country: { type: String, trim: true },
+  },
+  { _id: false } // Don't create separate _id for address subdocument
+);
+
 const ClientSchema = new Schema<IClient>(
   {
     name: { type: String, trim: true },
     email: { type: String, trim: true, lowercase: true, index: true },
     phone: { type: String, trim: true, index: true },
-    address: {
-      firstName: String,
-      lastName: String,
-      unit: String,
-      line1: String,
-      city: String,
-      postcode: String,
-      country: String,
-    },
+    address: { type: AddressSchema, default: null },
     // New field for marketing/subscription status (default false)
     isSubscribed: { type: Boolean, default: false, index: true },
 
@@ -62,10 +68,7 @@ const ClientSchema = new Schema<IClient>(
 );
 
 // Normalize fields before validation/save so uniqueness is consistent
-// Use a middleware without the `next` parameter so we don't need HookNextFunction
 ClientSchema.pre('validate', function (this: IClient) {
-  // normalizeEmail/normalizePhone return `string | undefined` which is assignable
-  // to `email?: string | null` / `phone?: string | null` (optional includes undefined).
   this.email = normalizeEmail(this.email as string | null) ?? undefined;
   this.phone = normalizePhone(this.phone as string | null) ?? undefined;
 });

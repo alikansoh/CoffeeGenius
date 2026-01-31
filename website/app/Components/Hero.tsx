@@ -242,8 +242,8 @@ export default function Hero({
 
             {/* subtle helper text */}
             <p className="mt-6 text-gray-300 text-sm">
-              Free delivery on orders above £30 • Sustainable sourcing • Expert support
-            </p>
+single origin beans • Sustainably sourced • Expert support
+</p>
           </div>
         </div>
       </div>

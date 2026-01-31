@@ -51,7 +51,7 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
     a: (
       <>
         We supply restaurants, shops and offices with roasted coffee and barista training. For wholesale pricing and minimum order
-        information, please email our wholesale team at <a href={`mailto:${COMPANY_EMAIL}`} className="text-indigo-600 hover:underline">{COMPANY_EMAIL}</a>.
+        information, please visit our <Link href="/wholesale" className="text-indigo-600 hover:underline">Wholesale page</Link> and complete the wholesale form — we will contact you directly.
       </>
     ),
   },
@@ -75,19 +75,19 @@ const FAQS: Array<{ q: string; a: React.ReactNode }> = [
     ),
   },
   {
-    q: "Do you have gift cards or vouchers?",
+    q: "Are payments secure?",
     a: (
       <>
-        Yes — we offer gift vouchers redeemable online or in-store. Contact us for details or check the &quot;Gifts&quot; section in our shop.
-      </>
-    ),
-  },
-  {
-    q: "I'm a journalist — who should I contact?",
-    a: (
-      <>
-        For press enquiries, please email <a href={`mailto:${COMPANY_EMAIL}`} className="text-indigo-600 hover:underline">{COMPANY_EMAIL}</a> with “Press” in the subject
-        and we’ll connect you with the right person.
+        Yes — we use Stripe to process payments securely. Card details are handled directly by Stripe&apos;s PCI-compliant infrastructure, and
+        we never store full card numbers on our servers. All payment interactions occur over HTTPS and use Stripe&apos;s recommended integrations
+        (Stripe Checkout or Elements) to keep sensitive data out of our systems.
+        <br />
+        <br />
+        For more information about Stripe security, see{" "}
+        <a href="https://stripe.com/docs/security" target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+          Stripe documentation on security
+        </a>
+        . If you have concerns about a payment or need a receipt, email <a href={`mailto:${COMPANY_EMAIL}`} className="text-indigo-600 hover:underline">{COMPANY_EMAIL}</a>.
       </>
     ),
   },

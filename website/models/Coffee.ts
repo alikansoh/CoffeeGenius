@@ -1,3 +1,5 @@
+
+
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface ICoffee extends Document {
@@ -5,6 +7,7 @@ export interface ICoffee extends Document {
   name: string;
   origin?: string;
   notes?: string;
+  story?: string; // ✅ Added story field
   img?: string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
@@ -42,6 +45,11 @@ const CoffeeSchema = new Schema<ICoffee>(
     notes: {
       type: String,
       trim: true,
+    },
+    story: {
+      type: String,
+      // store longer narrative/description (markdown or HTML as needed)
+      default: null,
     },
     img: {
       type: String,
@@ -91,8 +99,8 @@ const CoffeeSchema = new Schema<ICoffee>(
   }
 );
 
-// Text index for search
-CoffeeSchema.index({ name: "text", origin: "text", notes: "text" });
+// Text index for search (include story so it's searchable)
+CoffeeSchema.index({ name: "text", origin: "text", notes: "text", story: "text" });
 
 // Compound index for filtering best sellers with other criteria
 CoffeeSchema.index({ bestSeller: 1, createdAt: -1 });

@@ -8,8 +8,8 @@ import { v2 as cloudinary } from 'cloudinary';  // ✅ Cloudinary import
 
 // ✅ Configure Cloudinary
 cloudinary.config({
-  cloud_name: process. env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process. env.CLOUDINARY_API_KEY,
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
@@ -36,6 +36,7 @@ interface CoffeeDetail {
   img: string;  // ✅ Cloudinary public ID
   images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
   notes?: string;
+  story?: string; // <-- added
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -158,6 +159,7 @@ export async function GET(
           img: 1,
           images: 1,  // ✅ Include images array in response
           notes: 1,
+          story: 1,   // <-- include story in projection
           process: 1,
           altitude: 1,
           harvest: 1,
@@ -175,7 +177,7 @@ export async function GET(
       },
     ])) as CoffeeDetail[];
 
-    if (!coffees. length) {
+    if (!coffees.length) {
       return NextResponse.json(
         {
           success: false,
@@ -195,27 +197,27 @@ export async function GET(
       }
     });
 
-    const availableSizes: SizePrice[] = Array. from(sizeMap.entries())
+    const availableSizes: SizePrice[] = Array.from(sizeMap.entries())
       .map(([size, price]) => ({ size, price }))
-      . sort((a, b) => {
+      .sort((a, b) => {
         const sizeOrder: Record<string, number> = {
           "250g": 1,
           "500g": 2,
           "1kg": 3,
         };
-        return (sizeOrder[a.size] || 999) - (sizeOrder[b. size] || 999);
+        return (sizeOrder[a.size] || 999) - (sizeOrder[b.size] || 999);
       });
 
     const calculatedMinPrice =
-      coffee.variants. length > 0
-        ? Math. min(...coffee.variants.map((v: CoffeeVariantData) => v.price))
+      coffee.variants.length > 0
+        ? Math.min(...coffee.variants.map((v: CoffeeVariantData) => v.price))
         : 0;
 
     const transformedCoffee: CoffeeDetail = {
       ...coffee,
       availableSizes,
       minPrice:
-        coffee.minPrice > 0 && coffee. minPrice < 999999
+        coffee.minPrice > 0 && coffee.minPrice < 999999
           ? coffee.minPrice
           : calculatedMinPrice,
     };
@@ -233,7 +235,7 @@ export async function GET(
       {
         success: false,
         message: "Failed to fetch coffee details",
-        error: error instanceof Error ?   error.message : "Unknown error",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );
@@ -273,6 +275,7 @@ export async function PATCH(
       name,
       origin,
       notes,
+      story,   // <-- accept story from request body
       img,
       images,  // ✅ This now contains Cloudinary public IDs (images + videos)
       roastLevel,
@@ -290,6 +293,7 @@ export async function PATCH(
       name?: string;
       origin?: string;
       notes?: string;
+      story?: string; // <-- include story in update type
       img?: string;  // ✅ Cloudinary public ID
       images?: string[];  // ✅ Array of Cloudinary public IDs
       roastLevel?: "light" | "medium" | "dark";
@@ -305,14 +309,15 @@ export async function PATCH(
     const updateData: UpdateCoffeeData = {};
     if (slug !== undefined) updateData.slug = slug;
     if (name !== undefined) updateData.name = name;
-    if (origin !== undefined) updateData. origin = origin;
+    if (origin !== undefined) updateData.origin = origin;
     if (notes !== undefined) updateData.notes = notes;
+    if (story !== undefined) updateData.story = story; // <-- set story if provided
     if (img !== undefined) updateData.img = img;  // ✅ Update main image (Cloudinary public ID)
     if (images !== undefined) updateData.images = images;  // ✅ Update images array (Cloudinary public IDs)
     if (roastLevel !== undefined) updateData.roastLevel = roastLevel;
     if (process !== undefined) updateData.process = process;
     if (altitude !== undefined) updateData.altitude = altitude;
-    if (harvest !== undefined) updateData. harvest = harvest;
+    if (harvest !== undefined) updateData.harvest = harvest;
     if (cupping_score !== undefined) updateData.cupping_score = cupping_score;
     if (variety !== undefined) updateData.variety = variety;
     if (brewing !== undefined) updateData.brewing = brewing;
@@ -336,7 +341,7 @@ export async function PATCH(
     }
 
     // Update coffee
-    Object. assign(coffee, updateData);
+    Object.assign(coffee, updateData);
     await coffee.save();
 
     return NextResponse.json(
@@ -348,7 +353,7 @@ export async function PATCH(
       { status: 200 }
     );
   } catch (error) {
-    console. error("Error updating coffee:", error);
+    console.error("Error updating coffee:", error);
     return NextResponse.json(
       {
         success: false,
@@ -389,11 +394,11 @@ export async function DELETE(
     // Try to find by slug first, then by ID
     let coffee = await Coffee.findOne({ slug: coffeeId.toLowerCase() });
 
-    if (!coffee && mongoose.Types. ObjectId.isValid(coffeeId)) {
+    if (!coffee && mongoose.Types.ObjectId.isValid(coffeeId)) {
       coffee = await Coffee.findById(coffeeId);
     }
 
-    if (! coffee) {
+    if (!coffee) {
       return NextResponse.json(
         {
           success: false,
@@ -414,7 +419,7 @@ export async function DELETE(
     const publicIdsToDelete = new Set<string>();
     
     if (coffee.img) {
-      publicIdsToDelete. add(coffee.img);
+      publicIdsToDelete.add(coffee.img);
     }
     
     if (coffee.images && Array.isArray(coffee.images)) {
@@ -480,7 +485,7 @@ export async function DELETE(
     );
   } catch (error) {
     console.error("Error deleting coffee:", error);
-    return NextResponse. json(
+    return NextResponse.json(
       {
         success: false,
         message: "Failed to delete coffee",

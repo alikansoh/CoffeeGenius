@@ -29,9 +29,10 @@ interface CoffeeAggregateResult {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  img: string;  // ✅ Cloudinary public ID
-  images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
+  img: string;
+  images?: string[];
   notes?: string;
+  story?: string;
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -54,9 +55,10 @@ interface TransformedCoffee {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  img: string;  // ✅ Cloudinary public ID
-  images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
+  img: string;
+  images?: string[];
   notes?: string;
+  story?: string;
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -79,28 +81,29 @@ interface TransformedCoffee {
  * Get all coffees with variant count, base price, and available sizes with prices and grinds
  * Query params: search, limit, page, bestSeller
  *
- * PROTECTED: Requires an authenticated user. 
+ * PROTECTED: Requires an authenticated user.
  */
 export async function GET(request: NextRequest) {
-
+ 
   try {
     await dbConnect();
 
-    const searchParams = request. nextUrl.searchParams;
-    const search = searchParams.get("search");
-    const limit = Math.min(parseInt(searchParams. get("limit") || "100"), 100);
-    const page = Math.max(parseInt(searchParams.get("page") || "1"), 1);
+    const searchParams = request.nextUrl.searchParams;
+    const search = searchParams.get("search") ?? undefined;
+    const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 100);
+    const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
     const bestSeller = searchParams.get("bestSeller");
 
     // Build search filter
     const matchFilter: Record<string, unknown> = {};
-    
+
     if (search) {
       matchFilter.$or = [
         { name: { $regex: search, $options: "i" } },
         { origin: { $regex: search, $options: "i" } },
         { notes: { $regex: search, $options: "i" } },
         { slug: { $regex: search, $options: "i" } },
+        { story: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -112,7 +115,8 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Get coffees with aggregation to include variant data
-    const coffees = (await Coffee.aggregate([ ...(Object.keys(matchFilter). length > 0 ? [{ $match: matchFilter }] : []),
+    const coffees = (await Coffee.aggregate([
+      ...(Object.keys(matchFilter).length > 0 ? [{ $match: matchFilter }] : []),
       {
         $lookup: {
           from: "coffeevariants",
@@ -142,7 +146,7 @@ export async function GET(request: NextRequest) {
                     $cond: [
                       { $in: ["$$this.grind", "$$value"] },
                       "$$value",
-                      { $concatArrays: ["$$value", ["$$this. grind"]] },
+                      { $concatArrays: ["$$value", ["$$this.grind"]] },
                     ],
                   },
                 },
@@ -157,10 +161,8 @@ export async function GET(request: NextRequest) {
               0,
             ],
           },
-          // Set default value for bestSeller if it doesn't exist
-          bestSeller: {
-            $ifNull: ["$bestSeller", false]
-          },
+          // Ensure bestSeller has a boolean default
+          bestSeller: { $ifNull: ["$bestSeller", false] },
         },
       },
       { $sort: { createdAt: -1 } },
@@ -173,8 +175,9 @@ export async function GET(request: NextRequest) {
           name: 1,
           origin: 1,
           notes: 1,
+          story: 1,
           img: 1,
-          images: 1,  // ✅ Include images array (Cloudinary public IDs)
+          images: 1,
           roastLevel: 1,
           process: 1,
           altitude: 1,
@@ -202,7 +205,7 @@ export async function GET(request: NextRequest) {
       >();
 
       coffee.variants.forEach((variant: CoffeeVariantData) => {
-        if (! sizeMap.has(variant. size)) {
+        if (!sizeMap.has(variant.size)) {
           sizeMap.set(variant.size, {
             price: variant.price,
             grinds: new Set(),
@@ -214,7 +217,7 @@ export async function GET(request: NextRequest) {
 
         // Set minimum price for this size
         if (variant.price < sizeData.price) {
-          sizeData. price = variant.price;
+          sizeData.price = variant.price;
         }
 
         // Add grind option
@@ -246,9 +249,10 @@ export async function GET(request: NextRequest) {
         name: coffee.name,
         origin: coffee.origin,
         roastLevel: coffee.roastLevel,
-        img: coffee.img,  // ✅ Cloudinary public ID
-        images: coffee. images,  // ✅ Array of Cloudinary public IDs (images + videos)
+        img: coffee.img,
+        images: coffee.images,
         notes: coffee.notes,
+        story: coffee.story,
         process: coffee.process,
         altitude: coffee.altitude,
         harvest: coffee.harvest,
@@ -280,7 +284,7 @@ export async function GET(request: NextRequest) {
           total,
           page,
           limit,
-          pages: Math. ceil(total / limit),
+          pages: Math.ceil(total / limit),
         },
       },
       { status: 200 }
@@ -300,26 +304,27 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/coffee
- * Create new coffee (previously admin-only; now any authenticated user)
+ * Create new coffee (authenticated users)
  *
  * PROTECTED: Requires an authenticated user.
  */
 export async function POST(request: NextRequest) {
-  // require authentication (no admin checks)
+  // require authentication
   const auth = await verifyAuthForApi(request);
   if (auth instanceof NextResponse) return auth;
 
   try {
     await dbConnect();
 
-    const body = await request. json();
+    const body = await request.json();
     const {
       slug,
       name,
       origin,
       notes,
-      img,  // ✅ Cloudinary public ID for main image/video
-      images,  // ✅ Array of Cloudinary public IDs (images + videos)
+      story,
+      img,
+      images,
       roastLevel,
       process,
       altitude,
@@ -332,7 +337,7 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!slug || !name) {
-      return NextResponse. json(
+      return NextResponse.json(
         {
           success: false,
           message: "Slug and name are required",
@@ -361,8 +366,9 @@ export async function POST(request: NextRequest) {
       name,
       origin,
       notes,
-      img,  // ✅ Store Cloudinary public ID
-      images,  // ✅ Store array of Cloudinary public IDs (can include videos)
+      story: story ?? null,
+      img,
+      images,
       roastLevel,
       process,
       altitude,

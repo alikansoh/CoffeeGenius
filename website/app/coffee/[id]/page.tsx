@@ -50,6 +50,7 @@ interface SizePrice {
 }
 
 interface ApiCoffee {
+  _1: string;
   _id: string;
   slug: string;
   name: string;
@@ -74,6 +75,7 @@ interface ApiCoffee {
   variants: Variant[];
   inStock?: boolean;
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
+  story?: string; // <- added
 }
 
 export interface ExtendedProduct {
@@ -99,6 +101,7 @@ export interface ExtendedProduct {
   inStock?: boolean;
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
   bestSeller?: boolean;
+  story?: string; // <- added
 }
 
 type GrindOption = "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
@@ -174,7 +177,7 @@ function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant
 
   if (stockStatus === "out_of_stock") {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-1. 5 rounded-lg bg-red-50 border border-red-200">
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
         <AlertCircle size={14} className="text-red-600" />
         <span className="text-xs font-semibold text-red-600">Out of stock</span>
       </div>
@@ -183,11 +186,9 @@ function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant
 
   if (stockStatus === "low_stock") {
     return (
-      <div className="inline-flex items-center gap-2 px-3 py-1. 5 rounded-lg bg-amber-50 border border-amber-200">
+      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
         <AlertCircle size={14} className="text-amber-600" />
-        <span className="text-xs font-semibold text-amber-600">
-          Only {stock} left in stock
-        </span>
+        <span className="text-xs font-semibold text-amber-600">Only {stock} left in stock</span>
       </div>
     );
   }
@@ -195,9 +196,7 @@ function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant
   return (
     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200">
       <Check size={14} className="text-green-600" />
-      <span className="text-xs font-semibold text-green-600">
-        {stock} in stock
-      </span>
+      <span className="text-xs font-semibold text-green-600">{stock} in stock</span>
     </div>
   );
 }
@@ -223,20 +222,20 @@ export default function ProductDetailPage() {
   const [videoMap, setVideoMap] = useState<Record<string, boolean>>({});
   const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
 
-  const productId = params?. id as string;
+  const productId = params?.id as string;
 
   // Detect a single publicId - returns true if video, false otherwise
   const detectSinglePublicId = useCallback(async (publicId: string): Promise<boolean> => {
     if (!publicId) return false;
-    
+
     // First check by extension
     if (isVideo(publicId)) return true;
-    
+
     // Then try HEAD request
     try {
       const url = getCloudinaryVideo(publicId);
       const res = await fetch(url, { method: "HEAD" });
-      const ct = res.headers. get("content-type") || "";
+      const ct = res.headers.get("content-type") || "";
       return ct.startsWith("video/");
     } catch {
       return false;
@@ -246,7 +245,7 @@ export default function ProductDetailPage() {
   // Detect all publicIds and return a map
   const detectAllPublicIds = useCallback(async (publicIds: string[]): Promise<Record<string, boolean>> => {
     const results: Record<string, boolean> = {};
-    
+
     await Promise.all(
       publicIds.map(async (publicId) => {
         if (publicId) {
@@ -254,7 +253,7 @@ export default function ProductDetailPage() {
         }
       })
     );
-    
+
     return results;
   }, [detectSinglePublicId]);
 
@@ -271,31 +270,31 @@ export default function ProductDetailPage() {
         setLoading(true);
         const response = await fetch(`/api/coffee/${encodeURIComponent(productId)}`);
 
-        if (!response. ok) {
+        if (!response.ok) {
           throw new Error("Failed to fetch product");
         }
 
-        const data = await response. json();
-        const apiCoffee: ApiCoffee = data. data;
+        const data = await response.json();
+        const apiCoffee: ApiCoffee = data.data;
 
         const prices: Record<string, number> = {};
         const sizeGrindsMap: Record<string, string[]> = {};
 
-        if (apiCoffee.variants && apiCoffee. variants.length > 0) {
+        if (apiCoffee.variants && apiCoffee.variants.length > 0) {
           apiCoffee.variants.forEach((variant: Variant) => {
-            if (! prices[variant.size]) {
+            if (!prices[variant.size]) {
               prices[variant.size] = variant.price;
             }
-            if (!sizeGrindsMap[variant. size]) {
+            if (!sizeGrindsMap[variant.size]) {
               sizeGrindsMap[variant.size] = [];
             }
-            if (! sizeGrindsMap[variant.size].includes(variant. grind)) {
-              sizeGrindsMap[variant.size].push(variant. grind);
+            if (!sizeGrindsMap[variant.size].includes(variant.grind)) {
+              sizeGrindsMap[variant.size].push(variant.grind);
             }
           });
         } else if (apiCoffee.availableSizes && apiCoffee.availableSizes.length > 0) {
           apiCoffee.availableSizes.forEach((sizeObj: SizePrice) => {
-            prices[sizeObj. size] = sizeObj.price;
+            prices[sizeObj.size] = sizeObj.price;
           });
         } else {
           prices["250g"] = apiCoffee.minPrice;
@@ -310,9 +309,9 @@ export default function ProductDetailPage() {
           }));
 
         // Get all images from API (not just the main img)
-        const allImages: string[] = apiCoffee.images && apiCoffee. images.length > 0 
-          ? apiCoffee.images 
-          : (apiCoffee. img ?  [apiCoffee.img] : []);
+        const allImages: string[] = apiCoffee.images && apiCoffee.images.length > 0
+          ? apiCoffee.images
+          : (apiCoffee.img ? [apiCoffee.img] : []);
 
         // Detect video types BEFORE setting product state
         const detectedVideoMap = await detectAllPublicIds(allImages);
@@ -320,7 +319,7 @@ export default function ProductDetailPage() {
 
         const transformedProduct: ExtendedProduct = {
           id: apiCoffee._id || apiCoffee.slug,
-          slug: apiCoffee. slug,
+          slug: apiCoffee.slug,
           name: apiCoffee.name,
           origin: apiCoffee.origin,
           notes: apiCoffee.notes || "",
@@ -329,18 +328,19 @@ export default function ProductDetailPage() {
           img: apiCoffee.img,
           roastLevel: apiCoffee.roastLevel,
           process: apiCoffee.process,
-          altitude: apiCoffee. altitude,
+          altitude: apiCoffee.altitude,
           harvest: apiCoffee.harvest,
-          cupping_score: apiCoffee. cupping_score,
+          cupping_score: apiCoffee.cupping_score,
           variety: apiCoffee.variety,
-          brewing: apiCoffee. brewing,
+          brewing: apiCoffee.brewing,
           images: allImages,
           availableGrinds: apiCoffee.availableGrinds,
           availableSizes: availableSizesWithGrinds,
           variants: apiCoffee.variants,
-          inStock: apiCoffee. inStock,
+          inStock: apiCoffee.inStock,
           stockStatus: apiCoffee.stockStatus,
           bestSeller: apiCoffee.bestSeller,
+          story: apiCoffee.story || "", // <- mapped
         };
 
         setProduct(transformedProduct);
@@ -350,9 +350,6 @@ export default function ProductDetailPage() {
         if (allResponse.ok) {
           const allData = await allResponse.json();
 
-          // new logic:
-          // prefer items with the same roast level as the current product,
-          // take up to 4. If there aren't enough same-roast items, fill from others.
           const others: ApiCoffee[] = allData.data.filter((coffee: ApiCoffee) => coffee._id !== apiCoffee._id);
           const sameRoast = others.filter((c) => c.roastLevel === apiCoffee.roastLevel);
           let selectedForRelated: ApiCoffee[] = sameRoast.slice(0, 4);
@@ -376,7 +373,7 @@ export default function ProductDetailPage() {
             }
 
             return {
-              id: coffee._id || coffee.slug,
+              id: coffee._1 || coffee.slug,
               slug: coffee.slug,
               name: coffee.name,
               origin: coffee.origin,
@@ -408,9 +405,8 @@ export default function ProductDetailPage() {
   }, [productId, detectAllPublicIds]);
 
   // Filter out videos from productImages for the main gallery display
-  // Videos will be shown separately or with play overlay
   const productImages = useMemo(() => {
-    const allMedia = product?.images || [product?.img || "/test. webp"];
+    const allMedia = product?.images || [product?.img || "/test.webp"];
     return allMedia;
   }, [product]);
 
@@ -418,7 +414,7 @@ export default function ProductDetailPage() {
   const { imageItems, videoItems } = useMemo(() => {
     const images: string[] = [];
     const videos: string[] = [];
-    
+
     productImages.forEach((item) => {
       if (isVideoId(item)) {
         videos.push(item);
@@ -426,7 +422,7 @@ export default function ProductDetailPage() {
         images.push(item);
       }
     });
-    
+
     return { imageItems: images, videoItems: videos };
   }, [productImages, isVideoId]);
 
@@ -439,8 +435,8 @@ export default function ProductDetailPage() {
     if (!selectedSize || !product) return [];
 
     if (product.availableSizes && product.availableSizes.length > 0) {
-      const sizeData = product.availableSizes.find((s) => s. size === selectedSize);
-      if (sizeData?. availableGrinds && sizeData.availableGrinds. length > 0) {
+      const sizeData = product.availableSizes.find((s) => s.size === selectedSize);
+      if (sizeData?.availableGrinds && sizeData.availableGrinds.length > 0) {
         return sizeData.availableGrinds;
       }
     }
@@ -449,10 +445,7 @@ export default function ProductDetailPage() {
   }, [selectedSize, product]);
 
   const filteredGrindOptions = useMemo(
-    () =>
-      GRIND_OPTIONS. filter((g) =>
-        availableGrindsForSize.includes(g.value as GrindOption)
-      ),
+    () => GRIND_OPTIONS.filter((g) => availableGrindsForSize.includes(g.value as GrindOption)),
     [availableGrindsForSize]
   );
 
@@ -460,20 +453,18 @@ export default function ProductDetailPage() {
     if (userSelectedGrind && availableGrindsForSize.includes(userSelectedGrind)) {
       return userSelectedGrind;
     }
-    return ((availableGrindsForSize[0] as GrindOption) ??  "whole-bean") as GrindOption;
+    return ((availableGrindsForSize[0] as GrindOption) ?? "whole-bean") as GrindOption;
   }, [userSelectedGrind, availableGrindsForSize]);
 
   const selectedVariant = useMemo(() => {
-    if (!product?. variants || ! selectedSize || !selectedGrind) return null;
+    if (!product?.variants || !selectedSize || !selectedGrind) return null;
 
-    return product.variants.find(
-      (v) => v.size === selectedSize && v.grind === selectedGrind
-    );
-  }, [product?. variants, selectedSize, selectedGrind]);
+    return product.variants.find((v) => v.size === selectedSize && v.grind === selectedGrind);
+  }, [product?.variants, selectedSize, selectedGrind]);
 
   useEffect(() => {
     if (selectedSize && availableGrindsForSize.length > 0) {
-      if (! availableGrindsForSize.includes(selectedGrind)) {
+      if (!availableGrindsForSize.includes(selectedGrind)) {
         setUserSelectedGrind(availableGrindsForSize[0] as GrindOption);
       }
     }
@@ -481,7 +472,7 @@ export default function ProductDetailPage() {
 
   const selectedImageIndex = useMemo(() => {
     const len = allDisplayMedia.length || 1;
-    const idx = userSelectedImageIndex ??  0;
+    const idx = userSelectedImageIndex ?? 0;
     if (idx < 0) return 0;
     if (idx >= len) return 0;
     return idx;
@@ -491,22 +482,19 @@ export default function ProductDetailPage() {
     if (selectedVariant) {
       return selectedVariant.price;
     }
-    if (! product) return 0;
-    return product.prices?.[selectedSize] ??  product.price;
+    if (!product) return 0;
+    return product.prices?.[selectedSize] ?? product.price;
   }, [selectedVariant, product, selectedSize]);
 
   const availableStock = useMemo(() => {
-    return selectedVariant?.stock ??  0;
+    return selectedVariant?.stock ?? 0;
   }, [selectedVariant]);
 
-  const isOutOfStock = selectedVariant ?  availableStock === 0 : false;
+  const isOutOfStock = selectedVariant ? availableStock === 0 : false;
 
-  const totalPrice = useMemo(
-    () => currentPrice * quantity,
-    [currentPrice, quantity]
-  );
+  const totalPrice = useMemo(() => currentPrice * quantity, [currentPrice, quantity]);
 
-  const brewingText = product?.brewing ??  "";
+  const brewingText = product?.brewing ?? "";
 
   const brewingEntries = useMemo((): [string, string][] => {
     if (!brewingText) return [];
@@ -526,13 +514,10 @@ export default function ProductDetailPage() {
     return entries;
   }, [brewingText]);
 
-  const availableSizes = useMemo(
-    () => (product?.prices ?  Object.keys(product.prices). sort() : ["250g"]),
-    [product]
-  );
+  const availableSizes = useMemo(() => (product?.prices ? Object.keys(product.prices).sort() : ["250g"]), [product]);
 
   useEffect(() => {
-    if (! loading && !product) {
+    if (!loading && !product) {
       router.push("/coffee");
     }
   }, [product, loading, router]);
@@ -559,20 +544,18 @@ export default function ProductDetailPage() {
     );
   }
 
-  const notesArray = product. notes
+  const notesArray = product.notes
     ?.split(",")
     .map((n) => n.trim())
-    .filter(Boolean) ??  [];
-  const roastInfo = product.roastLevel
-    ?  ROAST_LEVEL_INFO[product. roastLevel]
-    : null;
+    .filter(Boolean) ?? [];
+  const roastInfo = product.roastLevel ? ROAST_LEVEL_INFO[product.roastLevel] : null;
 
   const toggleAccordion = (section: string) => {
     setActiveAccordion((prev) => (prev === section ? null : section));
   };
 
   const handleAddToCart = () => {
-    if (! selectedVariant) {
+    if (!selectedVariant) {
       alert("Please select a valid size and brew method");
       return;
     }
@@ -590,14 +573,14 @@ export default function ProductDetailPage() {
     const cartItem: Omit<CartItem, "quantity"> = {
       id: selectedVariant._id,
       productType: "coffee",
-      productId: product. id,
+      productId: product.id,
       variantId: selectedVariant._id,
       name: `${product.name} — ${selectedSize} — ${selectedGrind}`,
       price: selectedVariant.price,
       img: selectedVariant.img || product.img || "/test.webp",
       size: selectedVariant.size,
       grind: selectedVariant.grind,
-      sku: selectedVariant. sku,
+      sku: selectedVariant.sku,
       stock: selectedVariant.stock,
     };
 
@@ -608,7 +591,7 @@ export default function ProductDetailPage() {
   };
 
   // Get the current selected media item
-  const currentMediaItem = allDisplayMedia[selectedImageIndex] || product. img || "/test.webp";
+  const currentMediaItem = allDisplayMedia[selectedImageIndex] || product.img || "/test.webp";
   const isCurrentItemVideo = isVideoId(currentMediaItem);
 
   return (
@@ -617,13 +600,13 @@ export default function ProductDetailPage() {
         input,
         select,
         textarea {
-          font-size: 16px ! important;
+          font-size: 16px !important;
         }
       `}</style>
 
       <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50">
         <div className="bg-white border-b border-gray-100">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-3 sm:py-4 md:py-4">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-3 sm:py-4 md:py-4 lg:py-4">
             <button
               onClick={() => router.push("/coffee")}
               className="inline-flex items-center gap-2 cursor-pointer text-gray-600 hover:text-gray-900 font-semibold transition-colors group text-sm sm:text-base"
@@ -643,7 +626,7 @@ export default function ProductDetailPage() {
             <div className="flex items-center gap-2 mb-2 flex-wrap">
               <MapPin size={14} className="text-amber-700" />
               <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">
-                {product. origin}
+                {product.origin}
               </p>
               {product.bestSeller && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#8b5e3c] text-white text-[10px] font-bold shadow-md">
@@ -673,13 +656,13 @@ export default function ProductDetailPage() {
             <div className="space-y-3 sm:space-y-4">
               <div className="relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg sm:shadow-xl">
                 {product.bestSeller && (
-                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1. 5 px-3 py-1. 5 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-lg">
+                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-lg">
                     <Star size={14} className="fill-white" />
                     <span>Best Seller</span>
                   </div>
                 )}
-                
-                {isCurrentItemVideo ?  (
+
+                {isCurrentItemVideo ? (
                   <>
                     <Image
                       src={getVideoThumbnail(currentMediaItem)}
@@ -717,7 +700,7 @@ export default function ProductDetailPage() {
                 <div className="grid grid-cols-4 gap-2 sm:gap-3">
                   {allDisplayMedia.map((mediaItem, index) => {
                     const isMediaVideo = isVideoId(mediaItem);
-                    
+
                     return (
                       <button
                         key={index}
@@ -735,7 +718,7 @@ export default function ProductDetailPage() {
                         }`}
                         aria-label={isMediaVideo ? `Play video ${index + 1}` : `View image ${index + 1}`}
                       >
-                        {isMediaVideo ?  (
+                        {isMediaVideo ? (
                           <>
                             <Image
                               src={getVideoThumbnail(mediaItem)}
@@ -744,11 +727,11 @@ export default function ProductDetailPage() {
                               className="object-cover"
                             />
                             <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="bg-black/40 rounded-full p-1. 5">
+                              <div className="bg-black/40 rounded-full p-1.5">
                                 <Play size={16} className="text-white" />
                               </div>
                             </div>
-                            <div className="absolute bottom-1 left-1 px-1. 5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded">
+                            <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded">
                               VIDEO
                             </div>
                           </>
@@ -775,15 +758,9 @@ export default function ProductDetailPage() {
                   >
                     <div className="flex items-center gap-2 sm:gap-3">
                       <Package size={18} className="text-amber-700" />
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
-                        Product Details
-                      </span>
+                      <span className="font-bold text-gray-900 text-sm sm:text-base">Product Details</span>
                     </div>
-                    {activeAccordion === "details" ?  (
-                      <ChevronUp size={18} className="text-gray-600" />
-                    ) : (
-                      <ChevronDown size={18} className="text-gray-600" />
-                    )}
+                    {activeAccordion === "details" ? <ChevronUp size={18} className="text-gray-600" /> : <ChevronDown size={18} className="text-gray-600" />}
                   </button>
                   {activeAccordion === "details" && (
                     <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3 text-xs sm:text-sm text-gray-700">
@@ -792,8 +769,7 @@ export default function ProductDetailPage() {
                       </p>
                       {product.roastLevel && (
                         <p>
-                          <strong>Roast Level:</strong>{" "}
-                          <span className="capitalize">{product.roastLevel}</span>
+                          <strong>Roast Level:</strong> <span className="capitalize">{product.roastLevel}</span>
                         </p>
                       )}
                       {product.process && (
@@ -806,34 +782,28 @@ export default function ProductDetailPage() {
                           <strong>Variety:</strong> {product.variety}
                         </p>
                       )}
-                      {product. altitude && (
+                      {product.altitude && (
                         <p>
                           <strong>Altitude:</strong> {product.altitude}
                         </p>
                       )}
-                      {product. harvest && (
+                      {product.harvest && (
                         <p>
                           <strong>Harvest:</strong> {product.harvest}
                         </p>
                       )}
-                      {product. cupping_score && (
+                      {product.cupping_score && (
                         <p>
-                          <strong>Cupping Score:</strong>{" "}
-                          {product.cupping_score}/100
+                          <strong>Cupping Score:</strong> {product.cupping_score}/100
                         </p>
                       )}
 
                       {notesArray.length > 0 && (
                         <div className="mt-2">
-                          <p className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-2">
-                            Tasting Notes
-                          </p>
+                          <p className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-2">Tasting Notes</p>
                           <div className="flex flex-wrap gap-2">
                             {notesArray.map((note, idx) => (
-                              <span
-                                key={idx}
-                                className="px-3 py-1. 5 rounded-lg bg-amber-50 text-xs sm:text-sm font-semibold text-gray-800 border-2 border-amber-100 shadow-sm"
-                              >
+                              <span key={idx} className="px-3 py-1.5 rounded-lg bg-amber-50 text-xs sm:text-sm font-semibold text-gray-800 border-2 border-amber-100 shadow-sm">
                                 {note}
                               </span>
                             ))}
@@ -842,10 +812,7 @@ export default function ProductDetailPage() {
                       )}
 
                       <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                        Our coffee is carefully sourced from trusted farmers
-                        and roasted in small batches to ensure maximum freshness
-                        and flavor. Each bag is roasted to order, guaranteeing
-                        you receive the freshest coffee possible.
+                        Our coffee is carefully sourced from trusted farmers and roasted in small batches to ensure maximum freshness and flavor. Each bag is roasted to order, guaranteeing you receive the freshest coffee possible.
                       </p>
                     </div>
                   )}
@@ -860,37 +827,22 @@ export default function ProductDetailPage() {
                     >
                       <div className="flex items-center gap-2 sm:gap-3">
                         <Coffee size={18} className="text-amber-700" />
-                        <span className="font-bold text-gray-900 text-sm sm:text-base">
-                          Brewing Guide
-                        </span>
+                        <span className="font-bold text-gray-900 text-sm sm:text-base">Brewing Guide</span>
                       </div>
-                      {activeAccordion === "brewing" ?  (
-                        <ChevronUp size={18} className="text-gray-600" />
-                      ) : (
-                        <ChevronDown size={18} className="text-gray-600" />
-                      )}
+                      {activeAccordion === "brewing" ? <ChevronUp size={18} className="text-gray-600" /> : <ChevronDown size={18} className="text-gray-600" />}
                     </button>
 
                     {activeAccordion === "brewing" && (
                       <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3 text-xs sm:text-sm text-gray-700">
-                        {brewingEntries. map(([label, guide], i) => (
-                          <div
-                            key={`${label}-${i}`}
-                            className="flex items-start gap-3"
-                          >
-                            <div className="flex-shrink-0 w-28 text-xs font-semibold text-gray-900">
-                              {label}
-                            </div>
-                            <div className="text-gray-700 whitespace-pre-wrap">
-                              {guide}
-                            </div>
+                        {brewingEntries.map(([label, guide], i) => (
+                          <div key={`${label}-${i}`} className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-28 text-xs font-semibold text-gray-900">{label}</div>
+                            <div className="text-gray-700 whitespace-pre-wrap">{guide}</div>
                           </div>
                         ))}
 
                         <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                          Experiment with ratios and brew times to find your
-                          perfect cup. Always use filtered water heated to
-                          92-96°C for best results.
+                          Experiment with ratios and brew times to find your perfect cup. Always use filtered water heated to 92-96°C for best results.
                         </p>
                       </div>
                     )}
@@ -905,15 +857,9 @@ export default function ProductDetailPage() {
                   >
                     <div className="flex items-center gap-2 sm:gap-3">
                       <Truck size={18} className="text-amber-700" />
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
-                        Shipping & Returns
-                      </span>
+                      <span className="font-bold text-gray-900 text-sm sm:text-base">Shipping & Returns</span>
                     </div>
-                    {activeAccordion === "shipping" ?  (
-                      <ChevronUp size={18} className="text-gray-600" />
-                    ) : (
-                      <ChevronDown size={18} className="text-gray-600" />
-                    )}
+                    {activeAccordion === "shipping" ? <ChevronUp size={18} className="text-gray-600" /> : <ChevronDown size={18} className="text-gray-600" />}
                   </button>
                   {activeAccordion === "shipping" && (
                     <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-2 sm:space-y-3 text-xs sm:text-sm text-gray-700">
@@ -924,16 +870,13 @@ export default function ProductDetailPage() {
                         <strong>Standard Delivery:</strong> 3-5 business days
                       </div>
                       <div>
-                        <strong>Express Delivery:</strong> 1-2 business days
-                        (£5. 99)
+                        <strong>Express Delivery:</strong> 1-2 business days (£5.99)
                       </div>
                       <div>
-                        <strong>Returns:</strong> 30-day return policy for
-                        unopened items
+                        <strong>Returns:</strong> 30-day return policy for unopened items
                       </div>
                       <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                        All coffee is freshly roasted to order.  Please allow
-                        1-2 business days for roasting before shipping.
+                        All coffee is freshly roasted to order. Please allow 1-2 business days for roasting before shipping.
                       </p>
                     </div>
                   )}
@@ -945,25 +888,19 @@ export default function ProductDetailPage() {
               <div className="hidden md:block">
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <MapPin size={16} className="text-amber-700" />
-                  <p className="text-sm font-bold text-amber-700 uppercase tracking-wide">
-                    {product.origin}
-                  </p>
+                  <p className="text-sm font-bold text-amber-700 uppercase tracking-wide">{product.origin}</p>
                   {product.bestSeller && (
-                    <span className="inline-flex items-center gap-1. 5 px-3 py-1 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-md">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-md">
                       <Star size={12} className="fill-white" />
                       <span>Best Seller</span>
                     </span>
                   )}
                 </div>
 
-                <h1 className="text-4xl xl:text-5xl font-bold text-gray-900 mb-4 leading-tight">
-                  {product.name}
-                </h1>
+                <h1 className="text-4xl xl:text-5xl font-bold text-gray-900 mb-4 leading-tight">{product.name}</h1>
 
                 <div className="flex items-baseline gap-3 mb-4">
-                  <p className="text-4xl font-bold text-gray-900">
-                    £{currentPrice.toFixed(2)}
-                  </p>
+                  <p className="text-4xl font-bold text-gray-900">£{currentPrice.toFixed(2)}</p>
                   <p className="text-lg text-gray-500">per {selectedSize}</p>
                 </div>
 
@@ -979,19 +916,25 @@ export default function ProductDetailPage() {
                   <RoastLevelIndicator level={product.roastLevel} />
                   {roastInfo && (
                     <p className="mt-3 text-xs sm:text-sm text-gray-600">
-                      {roastInfo. description}
+                      {roastInfo.description}
                     </p>
                   )}
                 </div>
               )}
 
+              {/* Story / Description (prominent, before size selection) */}
+              <div className="bg-white rounded-xl border-2 border-gray-100 p-4 sm:p-5 shadow-sm">
+                <h3 className="text-sm font-bold text-gray-900 mb-2">Story</h3>
+                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {product.story ? product.story : "No story available for this coffee."}
+                </div>
+              </div>
+
               <div>
-                <label className="text-xs sm:text-sm font-bold text-gray-900 block mb-2 sm:mb-3">
-                  Select Size
-                </label>
+                <label className="text-xs sm:text-sm font-bold text-gray-900 block mb-2 sm:mb-3">Select Size</label>
                 <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                  {availableSizes. map((size) => {
-                    const price = product.prices?.[size] ??  product.price;
+                  {availableSizes.map((size) => {
+                    const price = product.prices?.[size] ?? product.price;
                     return (
                       <button
                         key={size}
@@ -1004,20 +947,10 @@ export default function ProductDetailPage() {
                         aria-pressed={selectedSize === size}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-base sm:text-lg">
-                            {size}
-                          </span>
-                          {selectedSize === size && (
-                            <Check size={18} className="text-white" />
-                          )}
+                          <span className="font-bold text-base sm:text-lg">{size}</span>
+                          {selectedSize === size && <Check size={18} className="text-white" />}
                         </div>
-                        <span
-                          className={`text-xs sm:text-sm font-semibold ${
-                            selectedSize === size
-                              ? "text-gray-300"
-                              : "text-gray-600"
-                          }`}
-                        >
+                        <span className={`text-xs sm:text-sm font-semibold ${selectedSize === size ? "text-gray-300" : "text-gray-600"}`}>
                           £{price.toFixed(2)}
                         </span>
                       </button>
@@ -1028,70 +961,46 @@ export default function ProductDetailPage() {
 
               <div>
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <label className="text-xs sm:text-sm font-bold text-gray-900">
-                    Brew Method
-                  </label>
-                  <span className="text-xs text-gray-500">
-                    {filteredGrindOptions.length} available
-                  </span>
+                  <label className="text-xs sm:text-sm font-bold text-gray-900">Brew Method</label>
+                  <span className="text-xs text-gray-500">{filteredGrindOptions.length} available</span>
                 </div>
-                {filteredGrindOptions.length > 0 ?  (
+                {filteredGrindOptions.length > 0 ? (
                   <div className="space-y-2">
                     {filteredGrindOptions.map((grind) => (
                       <button
-                        key={grind. value}
-                        onClick={() => setUserSelectedGrind(grind. value)}
+                        key={grind.value}
+                        onClick={() => setUserSelectedGrind(grind.value)}
                         className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left cursor-pointer transition-all ${
-                          selectedGrind === grind.value
-                            ? "bg-gray-900 text-white border-gray-900 shadow-lg"
-                            : "bg-white text-gray-900 border-gray-200 hover:border-gray-900"
+                          selectedGrind === grind.value ? "bg-gray-900 text-white border-gray-900 shadow-lg" : "bg-white text-gray-900 border-gray-200 hover:border-gray-900"
                         }`}
                         aria-pressed={selectedGrind === grind.value}
                       >
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="font-bold text-sm sm:text-base">
-                              {grind.label}
-                            </p>
-                            <p
-                              className={`text-xs sm:text-sm ${
-                                selectedGrind === grind.value
-                                  ? "text-gray-300"
-                                  : "text-gray-600"
-                              }`}
-                            >
-                              {grind.description}
-                            </p>
+                            <p className="font-bold text-sm sm:text-base">{grind.label}</p>
+                            <p className={`text-xs sm:text-sm ${selectedGrind === grind.value ? "text-gray-300" : "text-gray-600"}`}>{grind.description}</p>
                           </div>
-                          {selectedGrind === grind.value && (
-                            <Check size={18} className="text-white" />
-                          )}
+                          {selectedGrind === grind.value && <Check size={18} className="text-white" />}
                         </div>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-sm text-gray-600">
-                    No brew methods available for this size
-                  </div>
+                  <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-sm text-gray-600">No brew methods available for this size</div>
                 )}
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <label className="text-xs sm:text-sm font-bold text-gray-900">
-                    Quantity
-                  </label>
-                  {selectedVariant && (
-                    <StockStatusBadge stock={availableStock} variant={selectedVariant} />
-                  )}
+                  <label className="text-xs sm:text-sm font-bold text-gray-900">Quantity</label>
+                  {selectedVariant && <StockStatusBadge stock={availableStock} variant={selectedVariant} />}
                 </div>
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
                     <button
                       onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      disabled={isOutOfStock || ! selectedVariant}
-                      className="px-4 sm:px-5 py-2. 5 cursor-pointer sm:py-3 hover:bg-gray-50 font-bold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isOutOfStock || !selectedVariant}
+                      className="px-4 sm:px-5 py-2.5 cursor-pointer sm:py-3 hover:bg-gray-50 font-bold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       aria-label="Decrease quantity"
                     >
                       −
@@ -1121,9 +1030,7 @@ export default function ProductDetailPage() {
                   </div>
                   <div className="flex-1 text-right">
                     <p className="text-xs sm:text-sm text-gray-600">Total</p>
-                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                      £{totalPrice.toFixed(2)}
-                    </p>
+                    <p className="text-xl sm:text-2xl font-bold text-gray-900">£{totalPrice.toFixed(2)}</p>
                   </div>
                 </div>
               </div>
@@ -1133,14 +1040,14 @@ export default function ProductDetailPage() {
                 disabled={
                   isAdded ||
                   filteredGrindOptions.length === 0 ||
-                  ! selectedVariant ||
+                  !selectedVariant ||
                   isOutOfStock ||
                   quantity > availableStock
                 }
                 className={`w-full py-4 sm:py-5 cursor-pointer rounded-xl sm:rounded-2xl font-bold text-base sm:text-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 sm:gap-3 ${
                   isAdded
                     ? "bg-green-600 text-white"
-                    : isOutOfStock || ! selectedVariant
+                    : isOutOfStock || !selectedVariant
                     ? "bg-gray-400 text-white cursor-not-allowed"
                     : "bg-gray-900 text-white hover:bg-gray-800"
                 }`}
@@ -1154,14 +1061,14 @@ export default function ProductDetailPage() {
                 {isAdded ? (
                   <>
                     <Check size={20} />
-                    Added to Cart! 
+                    Added to Cart!
                   </>
-                ) : isOutOfStock ?  (
+                ) : isOutOfStock ? (
                   <>
                     <AlertCircle size={20} />
                     Out of Stock
                   </>
-                ) : ! selectedVariant ? (
+                ) : !selectedVariant ? (
                   <>
                     <ShoppingCart size={20} />
                     Select Options
@@ -1198,10 +1105,10 @@ export default function ProductDetailPage() {
                         <span>Best</span>
                       </div>
                     )}
-                    
+
                     <div className="relative aspect-square">
                       <Image
-                        src={p.img ?  getCloudinaryUrl(p.img, "medium") : "/test.webp"}
+                        src={p.img ? getCloudinaryUrl(p.img, "medium") : "/test.webp"}
                         alt={p.name}
                         fill
                         className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -1215,7 +1122,7 @@ export default function ProductDetailPage() {
                         {p.name}
                       </h3>
                       <p className="text-base sm:text-lg font-bold text-gray-900">
-                        £{(Object.values(p. prices || {})[0] ??  p.price).toFixed(2)}
+                        £{(Object.values(p.prices || {})[0] ?? p.price).toFixed(2)}
                       </p>
                     </div>
                   </button>

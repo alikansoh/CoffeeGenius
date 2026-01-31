@@ -39,6 +39,7 @@ interface CoffeeData {
   variety: string;
   brewing: string;
   bestSeller: boolean;
+  story: string; // <-- added story
 }
 
 interface PendingFile {
@@ -178,6 +179,7 @@ export default function AdminEditCoffeePage() {
     variety: "",
     brewing: "",
     bestSeller: false,
+    story: "", // initialize story
   });
 
   const [originalData, setOriginalData] = useState<CoffeeData | null>(null);
@@ -254,6 +256,7 @@ export default function AdminEditCoffeePage() {
         variety: c.variety || "",
         brewing: c.brewing || "",
         bestSeller: c.bestSeller || false,
+        story: c.story || "", // include story from server
       };
 
       // Choose main and order images with detected map
@@ -299,7 +302,8 @@ export default function AdminEditCoffeePage() {
     [videoMap]
   );
 
-  const setField = (k: keyof CoffeeData, v: CoffeeData[keyof CoffeeData]) =>
+  // generic setField to avoid 'any'
+  const setField = <K extends keyof CoffeeData>(k: K, v: CoffeeData[K]) =>
     setFormData((p) => ({ ...p, [k]: v }));
 
   const handleInputChange = (
@@ -311,7 +315,7 @@ export default function AdminEditCoffeePage() {
       // Accept decimals: parseFloat, allow empty string, clamp between 0 and 100
       const parsed = parseFloat(value);
       const n = value === "" || Number.isNaN(parsed) ? "" : Math.min(100, Math.max(0, parsed));
-      setField("cupping_score", n);
+      setField("cupping_score", n as CoffeeData["cupping_score"]);
       setErrors((s) => ({ ...s, cupping_score: "" }));
       return;
     }
@@ -323,12 +327,16 @@ export default function AdminEditCoffeePage() {
         .replace(/\s+/g, "-")
         .replace(/[^\w-]/g, "")
         .replace(/-+/g, "-");
+      // update name and slug together
       setFormData((p) => ({ ...p, name: value, slug: newSlug }));
       setErrors((s) => ({ ...s, name: "" }));
       return;
     }
 
-    setField(name as keyof CoffeeData, value);
+    // Generic handler: includes "story" textarea (name="story")
+    const key = name as keyof CoffeeData;
+    // cast via unknown to avoid explicit any
+    setField(key, value as unknown as CoffeeData[typeof key]);
     setErrors((s) => ({ ...s, [name]: "" }));
   };
 
@@ -487,6 +495,7 @@ export default function AdminEditCoffeePage() {
         name: formData.name,
         origin: formData.origin,
         notes: formData.notes.join(", "),
+        story: formData.story || undefined, // <-- include story in PATCH payload
         img: mainImage,
         images: orderedImages,
         roastLevel: formData.roastLevel || undefined,
@@ -540,7 +549,16 @@ export default function AdminEditCoffeePage() {
     }
   };
 
-  const hasChanges = JSON.stringify(formData) !== JSON.stringify(originalData) || pendingFiles.length > 0;
+  const hasChanges =
+    JSON.stringify(
+      // Normalize ordering for deterministic comparison (main first)
+      { ...formData, images: formData.images || [] }
+    ) !==
+      JSON.stringify(
+        originalData
+          ? { ...originalData, images: originalData.images || [] }
+          : null
+      ) || pendingFiles.length > 0;
 
   const getPendingVideoPosterDataUrl = (label = "NEW VIDEO") => {
     const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='800' height='800' viewBox='0 0 800 800'>
@@ -734,6 +752,23 @@ export default function AdminEditCoffeePage() {
                   ))}
                 </div>
               )}
+            </section>
+
+            {/* Story - long form description (added) */}
+            <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Story / Description</h2>
+              <p className="text-sm text-gray-600 mb-3">Add a longer narrative about this coffee (markdown or plain text).</p>
+              <textarea
+                name="story"
+                value={formData.story}
+                onChange={handleInputChange}
+                placeholder="e.g., Farm story, processing notes, tasting context, recommended recipes..."
+                rows={6}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none transition-all"
+              />
+              <p className="text-xs text-gray-500 mt-2">
+                This field can include markdown. Consider sanitizing on the server or escaping when rendering.
+              </p>
             </section>
 
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
@@ -985,7 +1020,7 @@ export default function AdminEditCoffeePage() {
                                 fill
                                 className="object-cover"
                               />
-                              <div className="absolute inset-0 flex itemscenter justify-center">
+                              <div className="absolute inset-0 flex items-center justify-center">
                                 <div className="bg-black/40 rounded-full p-2">
                                   <Play size={28} className="text-white" />
                                 </div>

@@ -1275,7 +1275,7 @@ export default function CheckoutFormWithAutofill({
         email,
         phone,
         unit,
-        address,
+        line1: address,  // ✅ Map to line1
         city,
         postcode: normalizeUkPostcode(postcode),
         country,
@@ -1287,7 +1287,7 @@ export default function CheckoutFormWithAutofill({
             firstName,
             lastName,
             unit,
-            address,
+            line1: address,  // ✅ Map to line1
             city,
             postcode: normalizeUkPostcode(postcode),
             country,

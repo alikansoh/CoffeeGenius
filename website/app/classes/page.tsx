@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Search,
   X,
@@ -591,6 +592,11 @@ export default function CoffeeClassesPage() {
 
   return (
     <>
+      {/* Ensure buttons show pointer cursor */}
+      <style jsx global>{`
+        button { cursor: pointer; }
+      `}</style>
+
       <div className="min-h-screen bg-gray-50">
         {/* Header / Hero */}
         <div className="relative overflow-hidden bg-black text-white">
@@ -659,9 +665,12 @@ export default function CoffeeClassesPage() {
             <p className="text-neutral-700 mb-6 max-w-2xl mx-auto">
               Looking for specific dates or planning a private group event? Get in touch and we&apos;ll create a bespoke coffee experience just for you.
             </p>
-            <button className="px-8 py-3 rounded-xl bg-black text-white font-bold hover:bg-gray-800 transition">
+            <Link
+              href="/contact"
+              className="inline-block px-8 py-3 rounded-xl bg-black text-white font-bold hover:bg-gray-800 transition"
+            >
               Contact Us
-            </button>
+            </Link>
           </div>
         </div>
       </div>

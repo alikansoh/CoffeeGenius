@@ -727,77 +727,119 @@ async function sendAdminNotificationAsync(
   }
 }
 
+// Updated upsertClient — ensures name & phone are normalized and filled from shippingAddress
+// Full corrected upsertClient function
 async function upsertClient(
   clientMeta: Record<string, unknown> | null,
   shippingAddress: Address | null
 ): Promise<ClientDocument | null> {
   try {
     const hasClientMeta = clientMeta !== null;
-    
-    const fallbackEmail =
-      !hasClientMeta && shippingAddress?.email
-        ? shippingAddress.email.trim().toLowerCase()
-        : undefined;
-        
-    const emailFromMeta =
-      hasClientMeta && typeof clientMeta!.email === 'string' && (clientMeta!.email as string).trim() !== ''
-        ? (clientMeta!.email as string).trim().toLowerCase()
-        : undefined;
-        
-    const phoneFromMeta =
-      hasClientMeta && typeof clientMeta!.phone === 'string' && (clientMeta!.phone as string).trim() !== ''
-        ? (clientMeta!.phone as string).trim()
-        : undefined;
-        
-    const email = emailFromMeta ?? fallbackEmail;
-    const phone = phoneFromMeta ?? undefined;
-    
+
+    // Local normalizers (mirror Client model normalizers)
+    const normalizeEmail = (e?: unknown) => {
+      if (!e || typeof e !== 'string') return undefined;
+      const s = e.trim().toLowerCase();
+      return s || undefined;
+    };
+
+    const normalizePhone = (p?: unknown) => {
+      if (!p || typeof p !== 'string') return undefined;
+      const s = p.trim();
+      const hasPlus = s.startsWith('+');
+      const cleaned = s.replace(/[^\d+]/g, '');
+      if (hasPlus) return cleaned || undefined;
+      return cleaned.replace(/\+/g, '') || undefined;
+    };
+
+    // Extract raw candidates (prefer clientMeta, fall back to shippingAddress)
+    const meta = (clientMeta ?? {}) as Record<string, unknown>;
+
+    const rawEmailFromMeta =
+      hasClientMeta && typeof meta.email === 'string' ? meta.email as string : undefined;
+    const rawPhoneFromMeta =
+      hasClientMeta && typeof meta.phone === 'string' ? meta.phone as string : undefined;
+    const rawNameFromMeta =
+      hasClientMeta && typeof meta.name === 'string' ? meta.name as string : undefined;
+
+    // Fallbacks from shippingAddress
+    const rawEmail = rawEmailFromMeta ?? shippingAddress?.email;
+    const rawPhone = rawPhoneFromMeta ?? shippingAddress?.phone;
+
+    let rawName = rawNameFromMeta;
+    if (!rawName) {
+      const fn = (shippingAddress as Record<string, unknown>)?.firstName as string | undefined;
+      const ln = (shippingAddress as Record<string, unknown>)?.lastName as string | undefined;
+      if (fn || ln) rawName = `${fn ?? ''} ${ln ?? ''}`.trim();
+    }
+    // Also accept first/last from clientMeta if provided separately
+    if (!rawName && hasClientMeta) {
+      const fnMeta = meta.firstName as string | undefined;
+      const lnMeta = meta.lastName as string | undefined;
+      if (fnMeta || lnMeta) rawName = `${fnMeta ?? ''} ${lnMeta ?? ''}`.trim();
+    }
+
+    // Normalize email & phone for lookup & storage
+    const email = normalizeEmail(rawEmail);
+    const phone = normalizePhone(rawPhone);
+
+    // Nothing identifiable to upsert
     if (!email && !phone && !hasClientMeta) {
       console.log('[Client] No identifiable info - skipping upsert');
       return null;
     }
-    
+
+    // Build payload but only include keys we actually have to avoid overwriting with undefined
     const payload: Record<string, unknown> = {
       updatedAt: new Date(),
+      metadata: {
+        lastSeenFrom: 'stripe-webhook',
+        updatedAt: new Date().toISOString(),
+      },
     };
-    
-    if (hasClientMeta && typeof clientMeta!.name === 'string') {
-      payload.name = clientMeta!.name;
-    } else if (
-      hasClientMeta &&
-      (typeof clientMeta!.firstName === 'string' || typeof clientMeta!.lastName === 'string')
-    ) {
-      payload.name = `${(clientMeta!.firstName as string) || ''} ${
-        (clientMeta!.lastName as string) || ''
-      }`.trim();
+
+    if (rawName && typeof rawName === 'string' && rawName.trim()) {
+      payload.name = rawName.trim();
     }
-    
     if (email) payload.email = email;
     if (phone) payload.phone = phone;
-    
-    if (hasClientMeta && clientMeta!.address && typeof clientMeta!.address === 'object') {
-      payload.address = normalizeAddress(clientMeta!.address);
-    } else if (shippingAddress) {
-      payload.address = shippingAddress;
+
+    // ✅ FIXED: Normalize address with debug logging
+    try {
+      console.log('[Client] Input shippingAddress:', JSON.stringify(shippingAddress, null, 2));
+      
+      if (hasClientMeta && meta.address && typeof meta.address === 'object') {
+        console.log('[Client] Normalizing address from clientMeta:', JSON.stringify(meta.address, null, 2));
+        const normalizedFromMeta = normalizeAddress(meta.address);
+        console.log('[Client] Normalized result:', JSON.stringify(normalizedFromMeta, null, 2));
+        if (normalizedFromMeta) payload.address = normalizedFromMeta;
+      } else if (shippingAddress) {
+        console.log('[Client] Normalizing address from shippingAddress:', JSON.stringify(shippingAddress, null, 2));
+        const normalizedFromShipping = normalizeAddress(shippingAddress);
+        console.log('[Client] Normalized result:', JSON.stringify(normalizedFromShipping, null, 2));
+        if (normalizedFromShipping) {
+          payload.address = normalizedFromShipping;
+        } else {
+          console.warn('[Client] ⚠️ Normalization returned null/undefined! Original address:', JSON.stringify(shippingAddress, null, 2));
+        }
+      }
+    } catch (addrErr) {
+      console.warn('[Client] Address normalization failed (continuing):', getErrorMessage(addrErr));
     }
-    
-    payload.metadata = {
-      lastSeenFrom: 'stripe-webhook',
-      updatedAt: new Date().toISOString(),
-    };
-    
-    // Find existing client by email OR phone
+
+    // Build lookup using normalized values (so indexes match)
     const lookup: Array<Record<string, unknown>> = [];
     if (email) lookup.push({ email });
     if (phone) lookup.push({ phone });
-    
+
     let existing: ClientDocument | null = null;
     if (lookup.length) {
       const rawExisting = await Client.findOne({ $or: lookup }).exec();
       existing = rawExisting ? (rawExisting as unknown as ClientDocument) : null;
     }
-    
+
     if (existing) {
+      // Merge into existing client (only set fields we prepared)
       const rawUpdated = await Client.findByIdAndUpdate(
         existing._id,
         { $set: payload },
@@ -805,9 +847,11 @@ async function upsertClient(
       ).exec();
       const clientDoc = rawUpdated ? (rawUpdated as unknown as ClientDocument) : null;
       console.log(`[Client] Merged into existing client ${existing._id.toString()}`);
+      console.log(`[Client] Final saved address:`, JSON.stringify(clientDoc?.address, null, 2));
       return clientDoc;
     } else {
       try {
+        // Create new client — include createdBy in metadata
         const metaBase = (payload.metadata as Record<string, unknown>) ?? {};
         const created = await Client.create({
           ...payload,
@@ -819,18 +863,20 @@ async function upsertClient(
         });
         const clientDoc = created as unknown as ClientDocument;
         console.log(`[Client] Created new client ${clientDoc._id.toString()}`);
+        console.log(`[Client] Final saved address:`, JSON.stringify(clientDoc?.address, null, 2));
         return clientDoc;
       } catch (createErr) {
+        // If create races with another process, try finding again
         console.warn('[Client] Create failed, retrying lookup:', createErr);
-        
+
         if (email || phone) {
           const retryLookup: Array<Record<string, unknown>> = [];
           if (email) retryLookup.push({ email });
           if (phone) retryLookup.push({ phone });
-          
+
           const foundRaw = await Client.findOne({ $or: retryLookup }).exec();
           const found = foundRaw ? (foundRaw as unknown as ClientDocument) : null;
-          
+
           if (found) {
             const mergedRaw = await Client.findByIdAndUpdate(
               found._id,
@@ -839,10 +885,11 @@ async function upsertClient(
             ).exec();
             const clientDoc = mergedRaw ? (mergedRaw as unknown as ClientDocument) : null;
             console.log(`[Client] Found after race: ${found._id.toString()}`);
+            console.log(`[Client] Final saved address:`, JSON.stringify(clientDoc?.address, null, 2));
             return clientDoc;
           }
         }
-        
+
         throw createErr;
       }
     }
@@ -1733,7 +1780,7 @@ async function handlePaymentIntentSucceeded(
     try {
       await Order.findByIdAndUpdate(existingOrder._id, {
         $set: {
-          'metadata.notificationTimedOutAt': new Date().toISOString(),
+          'metadata.notificataionTimedOutAt': new Date().toISOString(),
         },
       }).exec();
     } catch (updateErr) {
