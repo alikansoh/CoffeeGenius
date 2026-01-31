@@ -40,6 +40,7 @@ function PaymentBadge({
 export default function Footer() {
   const NAV_LINKS = [
     { href: "/", label: "Home" },
+    { href: "/blog", label: "Blog" }, // added blog link
     { href: "/coffee", label: "Coffee" },
     { href: "/equipment", label: "Equipment" },
     { href: "/classes", label: "Classes" },
@@ -79,7 +80,7 @@ export default function Footer() {
               </div>
               <div className="flex items-start sm:items-center gap-3 text-gray-600">
                 <Mail size={16} className="flex-shrink-0 mt-0.5 sm:mt-0" />
-                <a href="mailto:hello@coffee-genius.example" className="text-xs sm:text-sm hover:underline break-words" aria-label="Email Coffee Genius">hello@coffee-genius.example</a>
+                <a href="mailto:info@coffeegenius.co.uk" className="text-xs sm:text-sm hover:underline break-words" aria-label="Email Coffee Genius">info@coffeegenius.co.uk</a>
               </div>
             </div>
           </div>
@@ -157,7 +158,7 @@ export default function Footer() {
                 <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-tr from-pink-500 via-orange-400 to-yellow-400">
                   <FaInstagram size={18} color="white" />
                 </span>
-                <span className="hidden sm:inline">@coffeegenius</span>
+                <span className="hidden sm:inline">@coffeegeniuscg</span>
                 <span className="sm:hidden">Instagram</span>
               </a>
             </div>

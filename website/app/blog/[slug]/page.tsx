@@ -1,218 +1,210 @@
-"use client";
-import { useParams, notFound } from "next/navigation";
-import { useEffect, useState } from "react";
-import Image from "next/image";
-import { Calendar } from "lucide-react";
+import React from "react";
+import type { Metadata } from "next";
+import BlogPostClient from "./BlogPostClient";
+import { notFound } from "next/navigation";
 
-// Helper function to get the Cloudinary image URL
-const getCloudinaryUrl = (publicId?: string, format?: string) => {
-  if (!publicId || !format) return undefined;
-  const cloudName = "drjpzgjn7";
-  return `https://res.cloudinary.com/${cloudName}/image/upload/w_1200,c_limit,q_auto:good,f_auto,dpr_auto/${publicId}.${format}`;
-};
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || `http://localhost:${process.env.PORT ?? 3000}`).replace(/\/$/, "");
+const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "drjpzgjn7";
 
-// BlogPost type
+/* -------------------- Types & helpers -------------------- */
+type RawPost = Record<string, unknown>;
+
 type BlogPost = {
   id: string;
+  slug: string;
   title: string;
   content?: string;
   description?: string;
   date: string;
   tags?: string[];
   image?: string;
+  author?: string;
+  updatedAt?: string;
 };
 
-// RecentPost type
-type RecentPost = {
-  id: string;
-  title: string;
-  description: string;
-  date: string;
-  image?: string;
-};
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null;
+}
+function toString(v: unknown, fallback = ""): string {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  return fallback;
+}
+function toStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map((x) => toString(x)).filter(Boolean);
+  return [];
+}
+function getCloudinaryUrl(publicId?: string, format?: string) {
+  if (!publicId || !format) return undefined;
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/image/upload/w_2000,c_limit,q_auto:good,f_auto,dpr_auto/${publicId}.${format}`;
+}
 
-export default function BlogPostPage() {
-  // Fetch the slug from the URL
-  const params = useParams<{ slug: string }>();
-  // Get the dynamic slug
-  const slug = params?.slug;
+/* -------------------- Fetch helpers -------------------- */
+async function fetchPostBySlugServer(slug: string | undefined): Promise<BlogPost | null> {
+  if (!slug) return null;
+  try {
+    const res = await fetch(`${SITE_URL}/api/posts/${encodeURIComponent(slug)}`, { next: { revalidate: 300 } });
+    if (!res.ok) return null;
+    const json: unknown = await res.json().catch(() => null);
+    const rec = isObject(json) && (isObject((json as Record<string, unknown>).data) || Array.isArray((json as Record<string, unknown>).data))
+      ? (json as Record<string, unknown>).data
+      : json;
+    const postRec = isObject(rec) ? rec : ({} as RawPost);
 
-  // State to hold the blog post
-  const [post, setPost] = useState<BlogPost | null>(null);
-  const [recentPosts, setRecentPosts] = useState<RecentPost[]>([]);
-  const [loading, setLoading] = useState(true);
+    const id = toString(postRec._id ?? postRec.id ?? slug);
+    const postSlug = toString(postRec.slug ?? slug);
+    const title = toString(postRec.title ?? postSlug); // fallback to slug when title absent
+    const content = toString(postRec.content ?? "");
+    const description = toString(postRec.description ?? "");
+    const date = toString(postRec.date ?? postRec.publishedAt ?? postRec.createdAt ?? new Date().toISOString());
+    const image = getCloudinaryUrl(toString(postRec.imagePublicId), toString(postRec.imageFormat));
+    const tags = toStringArray(postRec.tags);
+    const author = toString(postRec.author ?? postRec.authorName ?? "Coffee Genius");
+    const updatedAt = toString(postRec.updatedAt ?? "");
 
-  useEffect(() => {
-    async function fetchPostBySlug() {
-      setLoading(true);
-      try {
-        // Fetch the blog post based on the slug
-        const res = await fetch(`/api/posts/${slug}`);
-        if (!res.ok) throw new Error("Failed to fetch post");
-        const data = await res.json();
-        const fetchedPost = data.data;
+    return { id, slug: postSlug, title, content, description, date, tags, image, author, updatedAt };
+  } catch (err) {
+    console.error("fetchPostBySlugServer error", err);
+    return null;
+  }
+}
 
-        // Map API response to state
-        const blogPost: BlogPost = {
-          id: fetchedPost._id,
-          title: fetchedPost.title,
-          content: fetchedPost.content,
-          description: fetchedPost.description,
-          date: fetchedPost.date,
-          tags: fetchedPost.tags,
-          image: getCloudinaryUrl(fetchedPost.imagePublicId, fetchedPost.imageFormat),
-        };
+async function fetchRecentPostsServer(limit = 4, excludeSlug?: string): Promise<BlogPost[]> {
+  try {
+    const res = await fetch(`${SITE_URL}/api/posts?limit=${limit + 4}`, { next: { revalidate: 300 } });
+    if (!res.ok) return [];
+    const json: unknown = await res.json().catch(() => null);
+    const arr: unknown[] = Array.isArray(json)
+      ? json
+      : (isObject(json) && Array.isArray((json as Record<string, unknown>).data))
+      ? ((json as Record<string, unknown>).data as unknown[])
+      : [];
+    const mapped = (arr || [])
+      .map((post, idx) => {
+        const rec = isObject(post) ? post : {};
+        const id = toString(rec._id ?? rec.id ?? `anon-${idx}`);
+        const slug = toString(rec.slug ?? id);
+        const title = toString(rec.title ?? slug);
+        const description = toString(rec.description ?? rec.content ?? "");
+        const date = toString(rec.date ?? rec.updatedAt ?? rec.createdAt ?? new Date().toISOString());
+        const image = getCloudinaryUrl(toString(rec.imagePublicId), toString(rec.imageFormat));
+        const tags = toStringArray(rec.tags);
+        return { id, slug, title, description, date, image, tags } as BlogPost;
+      })
+      .filter((p) => p.slug !== excludeSlug)
+      .slice(0, limit);
+    return mapped;
+  } catch (err) {
+    console.error("fetchRecentPostsServer error", err);
+    return [];
+  }
+}
 
-        setPost(blogPost);
-
-        // Fetch recent posts (excluding the current one)
-        const recentRes = await fetch("/api/posts");
-        if (!recentRes.ok) throw new Error("Failed to fetch recent posts");
-        const recentData = await recentRes.json();
-
-        const recent = recentData.data
-          .filter((item: { slug: string }) => item.slug !== slug) // Exclude the current post
-          .slice(0, 4) // Get the last 4 posts
-          .map((post: { _id: string; title: string; description?: string; content?: string; date: string; imagePublicId: string; imageFormat: string }) => ({
-            id: post._id,
-            title: post.title,
-            description: post.description || post.content || "",
-            date: post.date,
-            image: getCloudinaryUrl(post.imagePublicId, post.imageFormat),
-          }));
-
-        setRecentPosts(recent);
-      } catch (error) {
-        console.error("Error fetching post:", error);
-        setPost(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    if (slug) fetchPostBySlug();
-  }, [slug]);
-
-  // If loading, show a loading state
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-gray-900 border-r-transparent mb-4"></div>
-          <p className="text-gray-600 font-medium">Loading...</p>
-        </div>
-      </div>
-    );
+/* -------------------- Metadata -------------------- */
+/**
+ * params is a Promise in Next.js 16's app router runtime for dynamic routes.
+ * Await it before accessing properties to avoid the "params is a Promise" error.
+ */
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const post = await fetchPostBySlugServer(slug);
+  if (!post) {
+    return {
+      title: "Post not found",
+      description: "Post not found",
+    };
   }
 
-  // If no post is found, show the 404 page
+  // Use slug as the metadata title (exactly as requested)
+  const title = post.slug;
+  const description = post.description || (post.content ? `${post.content.slice(0, 160)}` : "Read our latest blog post at Coffee Genius.");
+  const ogImage = post.image ?? `${SITE_URL}/og-image.JPG`;
+  const pageUrl = `${SITE_URL}/blog/${encodeURIComponent(post.slug)}`;
+
+  return {
+    title,
+    description,
+    metadataBase: new URL(SITE_URL),
+    alternates: { canonical: pageUrl },
+    openGraph: {
+      title, // equals slug
+      description,
+      url: pageUrl,
+      siteName: "Coffee Genius",
+      images: [{ url: ogImage, width: 1200, height: 630 }],
+      type: "article",
+      locale: "en_GB",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title, // equals slug
+      description,
+      images: [ogImage],
+    },
+  };
+}
+
+/* -------------------- Page (server) -------------------- */
+export default async function Page({ params }: { params: Promise<{ slug?: string }> }) {
+  const { slug } = await params;
+  if (!slug) return notFound();
+
+  const post = await fetchPostBySlugServer(slug);
   if (!post) return notFound();
 
+  const recent = await fetchRecentPostsServer(4, post.slug);
+
+  const pageUrl = `${SITE_URL}/blog/${encodeURIComponent(post.slug)}`;
+  const ogImage = post.image ?? `${SITE_URL}/og-image.JPG`;
+
+  // Build BlogPosting JSON-LD
+  const blogPosting: Record<string, unknown> = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": post.title,
+    "description": post.description || (post.content ? post.content.slice(0, 160) : ""),
+    "datePublished": post.date,
+    ...(post.updatedAt ? { "dateModified": post.updatedAt } : {}),
+    "url": pageUrl,
+    "publisher": {
+      "@type": "Organization",
+      "name": "Coffee Genius",
+      "url": SITE_URL,
+    },
+    ...(post.author ? { "author": { "@type": "Person", "name": post.author } } : {}),
+    ...(post.image ? { "image": post.image } : {}),
+  };
+
+  const breadcrumb = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Blog", item: `${SITE_URL}/blog` },
+      { "@type": "ListItem", position: 3, name: post.title, item: pageUrl },
+    ],
+  } as Record<string, unknown>;
+
+  const webPage = {
+    "@context": "https://schema.org",
+    "@type": "WebPage",
+    name: post.title,
+    description: post.description || "",
+    url: pageUrl,
+    image: post.image ? [post.image] : undefined,
+  } as Record<string, unknown>;
+
   return (
-    <div className="min-h-screen bg-gray-50 pt-10">
-      {/* Hero Section with Image */}
-      {post.image && (
-        <div className="relative w-full h-[70vh] max-h-[600px] overflow-hidden">
-          {/* Background Image with Overlay */}
-          <div className="absolute inset-0">
-            <Image
-              src={post.image}
-              alt={post.title}
-              fill
-              className="object-cover"
-              priority
-            />
-            {/* Gradient Overlay */}
-            <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-black/40 to-gray-50"></div>
-          </div>
-          
-          {/* Content Overlay */}
-          <div className="relative h-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col justify-end pb-16">
-            {/* Tags */}
-            {post.tags?.length && (
-              <div className="flex flex-wrap gap-2 mb-6">
-                {post.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="bg-gray-900/90 backdrop-blur-sm text-white text-xs font-semibold px-4 py-2 rounded-full"
-                  >
-                    #{tag}
-                  </span>
-                ))}
-              </div>
-            )}
-            
-            {/* Title */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white mb-4 leading-tight drop-shadow-2xl">
-              {post.title}
-            </h1>
-            
-            {/* Date */}
-            <div className="flex items-center text-white/90 text-sm backdrop-blur-sm bg-white/10 rounded-full px-4 py-2 w-fit">
-              <Calendar className="w-4 h-4 mr-2" />
-              <span className="font-medium">
-                {new Date(post.date).toLocaleDateString(undefined, {
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+    <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(blogPosting) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(webPage) }} />
 
-      {/* Content Section */}
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
-        {/* Blog Content Card */}
-        <div className="bg-white rounded-2xl shadow-2xl p-8 sm:p-12 mb-16">
-          <div className="prose prose-lg max-w-none text-gray-700 leading-relaxed">
-            {post.content || post.description}
-          </div>
-        </div>
+      {/* Hydration payloads so client can avoid re-fetch */}
+      <script id="initial-post" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(post) }} />
+      <script id="initial-recent-posts" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(recent) }} />
 
-        {/* Recent Posts Section */}
-        <div className="pb-20">
-          <h2 className="text-3xl font-bold text-gray-900 mb-8">Recent Posts</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {recentPosts.map((recentPost) => (
-              <a
-                key={recentPost.id}
-                href={`/blog/${recentPost.id}`}
-                className="group bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 hover:-translate-y-1"
-              >
-                {recentPost.image && (
-                  <div className="relative overflow-hidden h-48">
-                    <Image
-                      src={recentPost.image}
-                      alt={recentPost.title}
-                      fill
-                      className="object-cover group-hover:scale-110 transition-transform duration-500"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                  </div>
-                )}
-                <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-3 group-hover:text-gray-700 transition-colors line-clamp-2">
-                    {recentPost.title}
-                  </h3>
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-                    {recentPost.description}
-                  </p>
-                  <div className="flex items-center text-gray-500 text-xs">
-                    <Calendar className="w-4 h-4 mr-2" />
-                    {new Date(recentPost.date).toLocaleDateString(undefined, {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                    })}
-                  </div>
-                </div>
-              </a>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
+      <BlogPostClient initialPost={post} initialRecent={recent} />
+    </>
   );
 }
