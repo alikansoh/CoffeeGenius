@@ -538,7 +538,7 @@ export default function AboutPage() {
 
             <div className="order-1 lg:order-2 relative rounded-3xl overflow-hidden shadow-2xl ring-1 ring-gray-900/10 group">
               <Image
-                src="/mission.jpg"
+                src="/post1.jpg"
                 alt="Our approach to coffee"
                 width={1200}
                 height={800}

@@ -11,6 +11,7 @@ export type BlogPost = {
   tags?: string[];
   content?: string;
   author?: string;
+  createdAt?: string; // ✅ ADDED THIS LINE
   updatedAt?: string;
 };
 
@@ -46,7 +47,11 @@ const PostSchema = new mongoose.Schema({
   publishedAt: Date,
   createdAt: Date,
   updatedAt: Date,
-}, { collection: 'Post' }); // Change to 'Post' or 'posts' based on your collection
+}, { 
+  collection: 'posts', // ⚠️ Change to 'Post' or 'posts' based on your actual collection
+  timestamps: true, // ✅ RECOMMENDED: Auto-manage createdAt/updatedAt
+  strict: false // ✅ RECOMMENDED: Allow flexible fields
+});
 
 const Post = mongoose.models.Post || mongoose.model('Post', PostSchema);
 
@@ -82,6 +87,8 @@ export async function getPosts(limit = 50): Promise<BlogPost[]> {
       .lean()
       .exec();
 
+    console.log(`✅ Found ${rawPosts.length} blog posts`);
+
     return rawPosts.map((post: RawPost, idx: number) => {
       const rec = isObject(post) ? post : ({} as Record<string, unknown>);
       const id = toString(rec._id ?? rec.id ?? `anon-${idx}`);
@@ -93,11 +100,25 @@ export async function getPosts(limit = 50): Promise<BlogPost[]> {
       const image = getCloudinaryUrl(toString(rec.imagePublicId), toString(rec.imageFormat)) ?? undefined;
       const tags = toStringArray(rec.tags);
       const author = toString(rec.author ?? rec.authorName ?? "Coffee Genius");
+      const createdAt = toString(rec.createdAt ?? rec.date ?? ""); // ✅ ADDED THIS LINE
       const updatedAt = toString(rec.updatedAt ?? "");
-      return { id, title, slug, description, content, date, image, tags, author, updatedAt } as BlogPost;
+      
+      return { 
+        id, 
+        title, 
+        slug, 
+        description, 
+        content, 
+        date, 
+        image, 
+        tags, 
+        author, 
+        createdAt, // ✅ ADDED THIS LINE
+        updatedAt 
+      } as BlogPost;
     });
   } catch (error) {
-    console.error("Error fetching posts:", error);
+    console.error("❌ Error fetching posts:", error);
     return [];
   }
 }
@@ -111,7 +132,10 @@ export async function getPostBySlug(slug: string): Promise<BlogPost | null> {
       .lean()
       .exec();
 
-    if (!rawPost) return null;
+    if (!rawPost) {
+      console.log(`❌ Post not found: ${slug}`);
+      return null;
+    }
 
     const rec = isObject(rawPost) ? rawPost : ({} as Record<string, unknown>);
     const id = toString(rec._id ?? rec.id ?? slug);
@@ -123,11 +147,26 @@ export async function getPostBySlug(slug: string): Promise<BlogPost | null> {
     const image = getCloudinaryUrl(toString(rec.imagePublicId), toString(rec.imageFormat)) ?? undefined;
     const tags = toStringArray(rec.tags);
     const author = toString(rec.author ?? rec.authorName ?? "Coffee Genius");
+    const createdAt = toString(rec.createdAt ?? rec.date ?? ""); // ✅ ADDED THIS LINE
     const updatedAt = toString(rec.updatedAt ?? "");
 
-    return { id, slug: postSlug, title, content, description, date, tags, image, author, updatedAt };
+    console.log(`✅ Found post: ${title}`);
+
+    return { 
+      id, 
+      slug: postSlug, 
+      title, 
+      content, 
+      description, 
+      date, 
+      tags, 
+      image, 
+      author, 
+      createdAt, // ✅ ADDED THIS LINE
+      updatedAt 
+    };
   } catch (error) {
-    console.error("Error fetching post by slug:", error);
+    console.error("❌ Error fetching post by slug:", error);
     return null;
   }
 }

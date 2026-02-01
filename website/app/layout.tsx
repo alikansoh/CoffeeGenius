@@ -146,9 +146,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Site-wide structured data (Organization, Website, LocalBusiness) */}
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(siteJsonLd) }} />
         <LayoutWrapper>
-          <Navbar />
           <main>{children}</main>
-          <Footer />
         </LayoutWrapper>
       </body>
     </html>

@@ -39,6 +39,7 @@ export interface ApiCoffee {
   brewing?: string;
   bestSeller?: boolean;
   createdAt?: string;
+  updatedAt?: string; // ✅ ADDED THIS LINE
   variantCount?: number;
   minPrice?: number;
   availableGrinds?: string[];
@@ -77,7 +78,7 @@ const CoffeeSchema = new mongoose.Schema({
   origin: String,
   description: String,
   notes: String,
-  img: mongoose.Schema.Types.Mixed, // Can be string or array
+  img: mongoose.Schema.Types.Mixed,
   images: [String],
   roastLevel: { type: String, enum: ['light', 'medium', 'dark'] },
   process: String,
@@ -102,7 +103,11 @@ const CoffeeSchema = new mongoose.Schema({
   aggregateRating: mongoose.Schema.Types.Mixed,
   createdAt: Date,
   updatedAt: Date,
-}, { collection: 'Coffee' }); // Change to your collection name
+}, { 
+  collection: 'coffees', // ⚠️ Change to your actual collection name
+  timestamps: true, // ✅ RECOMMENDED: Add this to auto-manage createdAt/updatedAt
+  strict: false // ✅ RECOMMENDED: Allow fields not in schema
+});
 
 const Coffee = mongoose.models.Coffee || mongoose.model('Coffee', CoffeeSchema);
 
@@ -127,9 +132,10 @@ export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
       .lean()
       .exec();
 
+    console.log(`✅ Found ${rawCoffees.length} coffee items`);
     return rawCoffees as ApiCoffee[];
   } catch (error) {
-    console.error("Error fetching coffees:", error);
+    console.error("❌ Error fetching coffees:", error);
     return [];
   }
 }
@@ -143,11 +149,15 @@ export async function getCoffeeBySlug(slug: string): Promise<ApiCoffee | null> {
       .lean()
       .exec();
 
-    if (!rawCoffee) return null;
+    if (!rawCoffee) {
+      console.log(`❌ Coffee not found: ${slug}`);
+      return null;
+    }
 
+    console.log(`✅ Found coffee: ${rawCoffee.name}`);
     return rawCoffee as ApiCoffee;
   } catch (error) {
-    console.error("Error fetching coffee by slug:", error);
+    console.error("❌ Error fetching coffee by slug:", error);
     return null;
   }
 }
@@ -170,8 +180,12 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
         .exec();
     }
 
-    if (!rawCoffee) return null;
+    if (!rawCoffee) {
+      console.log(`❌ Coffee not found: ${id}`);
+      return null;
+    }
 
+    console.log(`✅ Found coffee: ${rawCoffee.name}`);
     return rawCoffee as ApiCoffee;
   } catch (error) {
     // If findById fails (invalid ObjectId format), try slug
@@ -183,7 +197,7 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
       
       return rawCoffee ? (rawCoffee as ApiCoffee) : null;
     } catch (err) {
-      console.error("Error fetching coffee by id:", error);
+      console.error("❌ Error fetching coffee by id:", error);
       return null;
     }
   }
@@ -200,6 +214,11 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       prices["250g"] = coffee.minPrice ?? 0;
     }
 
+    // Handle img as string or array
+    const imgUrl = Array.isArray(coffee.img) 
+      ? coffee.img[0] || "" 
+      : coffee.img || "";
+
     return {
       id: coffee._id || coffee.slug,
       name: coffee.name,
@@ -208,7 +227,7 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       notes: coffee.notes ?? "",
       price: coffee.minPrice ?? 0,
       prices,
-      img: Array.isArray(coffee.img) ? coffee.img[0] : coffee.img,
+      img: imgUrl,
       roastLevel: coffee.roastLevel ?? "medium",
       grinds: coffee.availableGrinds ?? [],
       availableSizes: coffee.availableSizes ?? [],
