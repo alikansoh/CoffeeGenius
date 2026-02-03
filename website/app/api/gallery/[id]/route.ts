@@ -3,11 +3,13 @@ import dbConnect from "@/lib/dbConnect";
 import GalleryItem from "@/models/GalleryItem";
 import mongoose from "mongoose";
 import { destroyPublicId, initCloudinary } from "@/lib/cloudinarySrever";
+import { verifyAuthForApi } from "@/lib/auth";
 
 function isValidObjectId(id?: string) {
   return !!id && mongoose.Types.ObjectId.isValid(id);
 }
 
+/* GET (public) */
 export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
   const { id } = await context.params; // Resolve the promise
@@ -24,14 +26,25 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
   }
 }
 
+/* PUT (authenticated only) */
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for PUT /api/gallery/[id]", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
   const { id } = await context.params; // Resolve the promise
   if (!isValidObjectId(id)) {
     return NextResponse.json({ ok: false, error: "Invalid id" }, { status: 400 });
   }
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     interface UpdateFields {
       title?: string;
       description?: string;
@@ -54,7 +67,18 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
   }
 }
 
-export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
+/* DELETE (authenticated only) */
+export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/gallery/[id]", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
   const { id } = await context.params; // Resolve the promise
   if (!isValidObjectId(id)) {

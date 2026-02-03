@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -19,11 +19,10 @@ import {
   FaUserTie,
   FaGraduationCap,
   FaFileAlt,
-  FaIndustry,
   FaMugHot,
   FaReceipt,
 } from "react-icons/fa";
-import {TbCodeVariablePlus} from "react-icons/tb";
+import { TbCodeVariablePlus } from "react-icons/tb";
 
 const COLORS = {
   primary: "#111827",
@@ -81,11 +80,10 @@ export default function AdminLayout({
       }
 
       localStorage.removeItem("username");
-      
+
       router.replace("/login");
     } catch (err) {
       console.error("Logout error:", err);
-      // Optionally show an error to the user here
     }
   };
 
@@ -174,7 +172,6 @@ export default function AdminLayout({
       href: "/admin/admins",
       category: "settings",
     },
-    // Delivery settings link
     {
       id: "delivery-settings",
       label: "settings",
@@ -209,13 +206,10 @@ export default function AdminLayout({
       >
         {/* Logo Section */}
         <div
-          className="p-6 border-b border-gray-200 sticky top-0"
+          className="p-6 border-b border-gray-200 sticky top-0 flex items-center justify-between gap-3"
           style={{ backgroundColor: COLORS.white }}
         >
-          <Link
-            href="/admin"
-            className="flex items-center gap-3 cursor-pointer"
-          >
+          <Link href="/admin" className="flex items-center gap-3 cursor-pointer">
             <Image
               src={logoSrc}
               alt="Logo"
@@ -224,15 +218,22 @@ export default function AdminLayout({
               className="object-contain"
             />
             <div>
-              <h1
-                className="text-lg font-bold"
-                style={{ color: COLORS.primary }}
-              >
+              <h1 className="text-lg font-bold" style={{ color: COLORS.primary }}>
                 Coffee Admin
               </h1>
               <p className="text-xs text-gray-500">Dashboard</p>
             </div>
           </Link>
+
+          {/* Mobile close button: visible on small screens to dismiss the sidebar */}
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="lg:hidden p-2 rounded-md hover:bg-gray-100 transition-colors"
+            aria-label="Close sidebar"
+            title="Close sidebar"
+          >
+            <FaTimes size={18} />
+          </button>
         </div>
 
         {/* Menu Items */}
@@ -270,7 +271,7 @@ export default function AdminLayout({
                   onClick={() => setSidebarOpen(false)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg font-medium transition-colors duration-200 cursor-pointer block ${
                     isActive(item.href)
-                      ? "bg-gray-100 font-semibold"
+                      ? "bg_gray-100 font-semibold"
                       : "hover:bg-gray-50 text-gray-700"
                   }`}
                   style={{

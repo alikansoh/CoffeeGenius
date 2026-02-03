@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import dbConnect from "@/lib/dbConnect";
 import Post, { type IPost } from "@/models/Post";
 import { initCloudinary, uploadBufferToCloudinary } from "@/lib/cloudinarySrever";
+import { verifyAuthForApi } from "@/lib/auth";
 
 // --- Types ---
 type RouteContext = { params: Promise<{ id: string }> };
@@ -98,6 +99,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 // ---- PUT handler ----
 export async function PUT(req: NextRequest, context: RouteContext) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for PUT /api/posts/[id]", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
+
   const { id } = await context.params;
   await dbConnect();
 
@@ -248,6 +259,16 @@ export async function PUT(req: NextRequest, context: RouteContext) {
 
 // ---- DELETE handler ----
 export async function DELETE(_request: NextRequest, context: RouteContext) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(_request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/posts/[id]", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
+
   const { id } = await context.params;
   await dbConnect();
 

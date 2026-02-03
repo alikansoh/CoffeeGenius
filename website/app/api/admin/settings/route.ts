@@ -1,15 +1,17 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Settings from '@/models/Settings';
+import { verifyAuthForApi } from '@/lib/auth';
 
 /**
  * GET returns the singleton settings doc (or defaults)
- * PATCH updates the settings (incoming values expected in pence OR in pounds if you prefer).
+ * PATCH updates the settings (incoming values expected in pence).
  *
  * Example PATCH body:
  * { deliveryPricePence: 499, freeDeliveryThresholdPence: 3000, freeDeliveryEnabled: true }
  *
- * NOTE: This route is not protected. Add auth in production.
+ * GET is left public (so the storefront can read shipping/pricing).
+ * PATCH requires an authenticated user (no role check).
  */
 
 async function getSingleton() {
@@ -31,7 +33,17 @@ export async function GET() {
   }
 }
 
-export async function PATCH(req: Request) {
+export async function PATCH(req: NextRequest) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth is present — continue (we don't check roles)
+  } catch (err) {
+    console.error('Auth check failed for PATCH /api/admin/settings', err);
+    return NextResponse.json({ success: false, message: 'Authentication failed' }, { status: 401 });
+  }
+
   try {
     await dbConnect();
     const body = await req.json().catch(() => ({}));
@@ -51,7 +63,7 @@ export async function PATCH(req: Request) {
 
     // Upsert singleton
     const updated = await Settings.findOneAndUpdate({}, { $set: updates }, { new: true, upsert: true }).lean().exec();
-    return NextResponse.json(updated, { status: 200 });
+    return NextResponse.json({ success: true, data: updated }, { status: 200 });
   } catch (err) {
     console.error('PATCH /api/admin/settings failed', err);
     return NextResponse.json({ error: 'Failed to update settings' }, { status: 500 });

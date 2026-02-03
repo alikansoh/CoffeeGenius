@@ -2,11 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import Offer from "@/models/Offer";
 import dbConnect from "@/lib/dbConnect";
 import mongoose from "mongoose";
+import { verifyAuthForApi } from "@/lib/auth";
 
 function isValidObjectId(id?: string) {
   return !!id && mongoose.Types.ObjectId.isValid(id);
 }
 
+/* GET (public) */
 export async function GET(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   await dbConnect();
 
@@ -26,7 +28,18 @@ export async function GET(_req: NextRequest, context: { params: Promise<{ id: st
   }
 }
 
+/* PUT (authenticated only) */
 export async function PUT(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for PUT /api/offers/[id]", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
 
   const { id } = await context.params; // Correctly await the params promise
@@ -61,7 +74,18 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ id: str
   }
 }
 
+/* DELETE (authenticated only) */
 export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/offers/[id]", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
 
   const { id } = await context.params; // Correctly await the params promise

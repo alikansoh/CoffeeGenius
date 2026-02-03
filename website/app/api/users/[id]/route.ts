@@ -4,6 +4,7 @@ import {
   deleteUser,
 } from "@/controllers/userController";
 import { NextRequest, NextResponse } from "next/server";
+import { verifyAuthForApi } from "@/lib/auth";
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,6 +23,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for PUT /api/users/[id]", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     await updateUser(id, body);
@@ -33,6 +44,16 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/users/[id]", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
 
   try {
     await deleteUser(id);

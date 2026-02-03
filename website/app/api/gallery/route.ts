@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/dbConnect";
 import GalleryItem from "@/models/GalleryItem";
 import { initCloudinary, uploadBufferToCloudinary } from "@/lib/cloudinarySrever";
+import { verifyAuthForApi } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -9,7 +10,11 @@ export const runtime = "nodejs";
  * GET /api/gallery
  * - optional query: active=true|false
  * - sorts newest-first by createdAt
+ *
+ * Public route.
  */
+
+/* GET */
 export async function GET(req: Request) {
   await dbConnect();
 
@@ -30,21 +35,32 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/gallery
- * Accepts multipart/form-data with field 'files' (one or many).
- * Optional fields:
- * - folder: string (Cloudinary folder)
- * - meta: JSON string or per-file metadata (not implemented per-file in this simple example)
+ * - Protected: requires authenticated user (no role check)
+ * - Accepts multipart/form-data with field 'files' (one or many).
+ * - Optional fields:
+ *   - folder: string (Cloudinary folder)
+ *   - title / description: optional metadata applied to each item
  *
  * Behavior:
  * - Uploads each file to Cloudinary (using server upload)
  * - Creates a GalleryItem record per upload with metadata from Cloudinary and optional title/description
  */
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // Require authenticated user (no role check)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for POST /api/gallery", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
   initCloudinary();
 
   try {
-    const formData = await (req as Request).formData();
+    const formData = await req.formData();
     const rawFiles = formData.getAll("files");
     const files = rawFiles.filter((f: File | unknown) => typeof (f as File)?.arrayBuffer === "function") as File[];
     const folder = (formData.get("folder") as string) || "coffee-shop";
@@ -80,10 +96,10 @@ export async function POST(req: Request) {
         bytes?: number;
       }
 
-      const uploadResult = await uploadBufferToCloudinary(buffer, {
+      const uploadResult = (await uploadBufferToCloudinary(buffer, {
         folder,
         resource_type: resourceType as "image" | "video" | "auto",
-      }) as UploadResult;
+      })) as UploadResult;
 
       const doc = await GalleryItem.create({
         publicId: uploadResult.public_id,

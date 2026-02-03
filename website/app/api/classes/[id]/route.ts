@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import connect from "@/lib/dbConnect";
 import Course from "@/models/Class";
+import { verifyAuthForApi } from "@/lib/auth";
 
 type ContextLike = { params?: { id?: string | string[] } | Promise<{ id: string }> } | undefined;
 
@@ -52,7 +53,7 @@ async function resolveId(request: NextRequest, context?: ContextLike): Promise<s
   return undefined;
 }
 
-/* GET */
+/* GET (public) */
 export async function GET(request: NextRequest, context?: ContextLike) {
   await connect();
   const id = await resolveId(request, context);
@@ -74,8 +75,18 @@ export async function GET(request: NextRequest, context?: ContextLike) {
   }
 }
 
-/* PATCH */
+/* PATCH (authenticated only) */
 export async function PATCH(request: NextRequest, context?: ContextLike) {
+  // Require authenticated user (no role check)
+  try {
+    const auth = await verifyAuthForApi(request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for PATCH /api/classes/[id]", err);
+    return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
+  }
+
   await connect();
   const id = await resolveId(request, context);
   if (!id) {
@@ -155,8 +166,18 @@ export async function PATCH(request: NextRequest, context?: ContextLike) {
   }
 }
 
-/* DELETE */
+/* DELETE (authenticated only) */
 export async function DELETE(request: NextRequest, context?: ContextLike) {
+  // Require authenticated user (no role check)
+  try {
+    const auth = await verifyAuthForApi(request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/classes/[id]", err);
+    return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
+  }
+
   await connect();
   const id = await resolveId(request, context);
   if (!id) {

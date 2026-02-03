@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import CoffeeVariant from "@/models/CoffeeVariant";
 import dbConnect from "@/lib/dbConnect";
+import { verifyAuthForApi } from "@/lib/auth";
 
 /**
  * GET /api/variants
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
-    const variants = await CoffeeVariant.find(). populate("coffeeId");
+    const variants = await CoffeeVariant.find().populate("coffeeId");
 
     return NextResponse.json(
       {
@@ -34,9 +35,19 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/variants
- * Create new variant
+ * Create new variant (protected - requires authentication)
  */
 export async function POST(request: NextRequest) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(request);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for POST /api/variants", err);
+    return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
+  }
+
   try {
     await dbConnect();
 
@@ -54,7 +65,7 @@ export async function POST(request: NextRequest) {
     } = body;
 
     // Validate required fields
-    if (!  coffeeId || !  sku || ! size || !grind || price === undefined || stock === undefined) {
+    if (!coffeeId || !sku || !size || !grind || price === undefined || stock === undefined) {
       return NextResponse.json(
         {
           success: false,
@@ -91,7 +102,7 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         message: "Failed to create variant",
-        error: error instanceof Error ?   error.message : "Unknown error",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );

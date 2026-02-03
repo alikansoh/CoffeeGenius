@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 import dbConnect from "@/lib/dbConnect";
 import Post from "@/models/Post";
 import { initCloudinary, uploadBufferToCloudinary } from "@/lib/cloudinarySrever";
+import { verifyAuthForApi } from "@/lib/auth";
 
 // Type for Cloudinary upload responses
 interface CloudinaryUploadResult {
@@ -82,6 +84,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(request as unknown as NextRequest);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for POST /api/posts", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
 
   try {

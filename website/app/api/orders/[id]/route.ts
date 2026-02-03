@@ -1,22 +1,14 @@
 "use server";
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import dbConnect from "@/lib/dbConnect";
 import Order from "@/models/Order";
 import mongoose from "mongoose";
+import { verifyAuthForApi } from "@/lib/auth";
 
 /**
  * DELETE /api/orders/:id
- *
- * Robust handler with detailed logging for debugging:
- * - Accepts id from: path param, ?id=, JSON body { id } / { _id } / { orderRef } / { paymentIntentId }
- * - Accepts ObjectId-like strings and a few wrapped forms
- * - Tries deletion by _id (ObjectId) first, then falls back to common identifier fields
- * - Returns helpful JSON and logs the resolved id and branch taken
- *
- * NOTE:
- * - Add authentication/authorization as needed (e.g. verifyAuthForApi) before performing deletion.
- * - Remove or reduce verbose logs in production.
+ * ...
  */
 
 /* Type guards and helpers */
@@ -175,9 +167,16 @@ export async function DELETE(
   request: Request,
   context?: { params?: { id?: string | string[] } | Promise<{ id: string }> }
 ) {
-  // Optional: enforce auth here (uncomment and use your auth util)
-  // const auth = await verifyAuthForApi(request);
-  // if (auth instanceof NextResponse) return auth;
+  // --- ADDED: require authentication before performing DELETE ---
+  try {
+    const auth = await verifyAuthForApi(request as unknown as NextRequest);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for DELETE /api/orders", err);
+    return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
+  }
+  // --- end auth ---
 
   try {
     await dbConnect();

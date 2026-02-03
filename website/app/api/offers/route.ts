@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import Offer from "@/models/Offer";
-import dbConnect from "@/lib/dbConnect"; 
+import dbConnect from "@/lib/dbConnect";
+import { verifyAuthForApi } from "@/lib/auth";
+
 export async function GET(req: Request) {
   await dbConnect();
 
@@ -29,7 +31,17 @@ export async function GET(req: Request) {
   }
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for POST /api/offers", err);
+    return NextResponse.json({ ok: false, error: "Authentication failed" }, { status: 401 });
+  }
+
   await dbConnect();
 
   try {

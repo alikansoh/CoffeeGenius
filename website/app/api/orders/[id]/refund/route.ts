@@ -1,11 +1,12 @@
-'use server';
+"use server";
 
-import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
-import dbConnect from '@/lib/dbConnect';
-import Order from '@/models/Order';
-import mongoose from 'mongoose';
-import { notifyRefundToCustomer } from '@/lib/notifyRefund';
+import { NextRequest, NextResponse } from "next/server";
+import Stripe from "stripe";
+import dbConnect from "@/lib/dbConnect";
+import Order from "@/models/Order";
+import mongoose from "mongoose";
+import { notifyRefundToCustomer } from "@/lib/notifyRefund";
+import { verifyAuthForApi } from "@/lib/auth";
 
 interface RefundRecord {
   refundId: string;
@@ -29,74 +30,80 @@ type RefundInput = {
   idempotencyKey?: string;
 };
 
-function toMinorUnit(amount: number, currency = 'GBP'): number {
-  const zeroDecimal = new Set(['JPY', 'VND', 'KRW']);
-  const cur = (currency || 'GBP').toUpperCase();
+function toMinorUnit(amount: number, currency = "GBP"): number {
+  const zeroDecimal = new Set(["JPY", "VND", "KRW"]);
+  const cur = (currency || "GBP").toUpperCase();
   return zeroDecimal.has(cur) ? Math.round(amount) : Math.round(amount * 100);
 }
 
 function safeParseBody(raw: unknown): RefundInput {
-  if (!raw || typeof raw !== 'object') throw new Error('Invalid body');
+  if (!raw || typeof raw !== "object") throw new Error("Invalid body");
   const obj = raw as Record<string, unknown>;
   const amount =
-    typeof obj.amount === 'number'
+    typeof obj.amount === "number"
       ? obj.amount
-      : typeof obj.amount === 'string'
+      : typeof obj.amount === "string"
       ? Number(obj.amount)
       : NaN;
-  const reason = typeof obj.reason === 'string' ? obj.reason.trim() : undefined;
-  const currency = typeof obj.currency === 'string' ? obj.currency.trim() : undefined;
+  const reason = typeof obj.reason === "string" ? obj.reason.trim() : undefined;
+  const currency = typeof obj.currency === "string" ? obj.currency.trim() : undefined;
   const idempotencyKey =
-    typeof obj.idempotencyKey === 'string' ? obj.idempotencyKey.trim() : undefined;
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('Invalid refund amount');
+    typeof obj.idempotencyKey === "string" ? obj.idempotencyKey.trim() : undefined;
+  if (!Number.isFinite(amount) || amount <= 0) throw new Error("Invalid refund amount");
   return { amount, reason, currency, idempotencyKey };
 }
 
 // Note: params is a Promise in Next.js app router — await it before use.
-export async function POST(
-  req: Request,
-  context: { params: Promise<{ id: string }> }
-) {
+export async function POST(req: Request, context: { params: Promise<{ id: string }> }) {
+  // --- ADDED: require authentication before processing refund ---
+  try {
+    const auth = await verifyAuthForApi(req as unknown as NextRequest);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error("Auth check failed for POST /api/orders/[id]/refund", err);
+    return NextResponse.json({ error: "Authentication failed" }, { status: 401 });
+  }
+  // --- end auth ---
+
   // resolve params promise
   const { params } = context;
   const { id } = await params;
 
   const stripeSecret = process.env.STRIPE_SECRET_KEY;
   if (!stripeSecret) {
-    console.error('Stripe secret missing');
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 });
+    console.error("Stripe secret missing");
+    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
   }
-  const stripe = new Stripe(stripeSecret, { apiVersion: '2025-12-15.clover' });
+  const stripe = new Stripe(stripeSecret, { apiVersion: "2025-12-15.clover" });
 
   // parse body
   let bodyJson: unknown;
   try {
     bodyJson = await req.json();
   } catch (err) {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   let input: RefundInput;
   try {
     input = safeParseBody(bodyJson);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Invalid input';
+    const message = err instanceof Error ? err.message : "Invalid input";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
-  if (!id) return NextResponse.json({ error: 'Missing order id' }, { status: 400 });
+  if (!id) return NextResponse.json({ error: "Missing order id" }, { status: 400 });
 
   // optional header idempotency key preferred
   const headerIdempotency =
-    req.headers.get('idempotency-key') ||
-    req.headers.get('Idempotency-Key') ||
-    undefined;
+    req.headers.get("idempotency-key") || req.headers.get("Idempotency-Key") || undefined;
   const idempotencyKey = input.idempotencyKey || headerIdempotency;
 
   await dbConnect();
 
   const order = await Order.findById(id).lean().exec();
-  if (!order) return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+  if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
 
   const meta = (order as { metadata?: Record<string, unknown> }).metadata ?? {};
   const legacyRefundAmount = (order as { refund?: { amount?: number } }).refund?.amount ?? 0;
@@ -109,7 +116,7 @@ export async function POST(
 
   if (input.amount > refundable + 0.0001) {
     return NextResponse.json(
-      { error: 'Refund amount exceeds refundable amount', refundable },
+      { error: "Refund amount exceeds refundable amount", refundable },
       { status: 409 }
     );
   }
@@ -128,37 +135,37 @@ export async function POST(
   let stripeError: unknown = null;
   try {
     if (paymentIntentId) {
-      const currency = (input.currency || (order as { currency?: string }).currency || 'GBP').toString().toUpperCase();
+      const currency = (input.currency || (order as { currency?: string }).currency || "GBP").toString().toUpperCase();
       const amountMinor = toMinorUnit(input.amount, currency);
 
       stripeRefund = await stripe.refunds.create(
         {
           payment_intent: paymentIntentId,
           amount: amountMinor,
-          reason: 'requested_by_customer',
+          reason: "requested_by_customer",
           metadata: {
             orderId: String(order._id),
-            reason: input.reason || '',
+            reason: input.reason || "",
           },
         },
         idempotencyKey ? { idempotencyKey } : undefined
       );
     }
   } catch (err) {
-    console.error('Stripe refund failed', err);
+    console.error("Stripe refund failed", err);
     stripeError = err;
   }
 
   const refundRecord: RefundRecord = {
     refundId: stripeRefund?.id ?? `manual_${new mongoose.Types.ObjectId().toString()}`,
     amount: Number(input.amount),
-    currency: (input.currency || (order as { currency?: string }).currency || 'GBP').toString().toUpperCase(),
+    currency: (input.currency || (order as { currency?: string }).currency || "GBP").toString().toUpperCase(),
     reason: input.reason || null,
     refundedAt: new Date().toISOString(),
     paymentProviderRefundId: stripeRefund?.id ?? null,
     idempotencyKey: idempotencyKey ?? null,
     // ensure stripeResponse.status is always a string (avoid null)
-    stripeResponse: stripeRefund ? { id: stripeRefund.id, status: stripeRefund.status ?? 'unknown' } : undefined,
+    stripeResponse: stripeRefund ? { id: stripeRefund.id, status: stripeRefund.status ?? "unknown" } : undefined,
   };
 
   try {
@@ -177,7 +184,7 @@ export async function POST(
 
     // Determine status: refunded (full) or partially_refunded
     const isFullyRefunded = newRefundedTotal >= (total - 0.0001);
-    const newStatus = isFullyRefunded ? 'refunded' : 'partially_refunded';
+    const newStatus = isFullyRefunded ? "refunded" : "partially_refunded";
 
     // Build the refund field on order root for backwards compatibility
     const refundRoot = {
@@ -208,12 +215,12 @@ export async function POST(
         order._id,
         {
           $set: {
-            'metadata.refundError': stripeError
+            "metadata.refundError": stripeError
               ? stripeError instanceof Error
                 ? stripeError.message
                 : String(stripeError)
               : null,
-            'metadata.refundAttemptedAt': new Date().toISOString(),
+            "metadata.refundAttemptedAt": new Date().toISOString(),
           },
         }
       ).exec();
@@ -225,27 +232,27 @@ export async function POST(
         // updated is the fresh order document (lean). Cast via unknown to OrderLike to satisfy TS.
         const notifyResult = await notifyRefundToCustomer({ order: updated as unknown as OrderLike, refund: refundRecord });
         if (!notifyResult.sent) {
-          console.error('Refund email not sent:', notifyResult.error);
+          console.error("Refund email not sent:", notifyResult.error);
           // Optionally attach metadata noting email failure:
           await Order.findByIdAndUpdate(
             order._id,
-            { $set: { 'metadata.lastRefundEmailError': notifyResult.error || 'unknown' } }
+            { $set: { "metadata.lastRefundEmailError": notifyResult.error || "unknown" } }
           ).exec();
         } else {
           // Optionally save lastRefundEmailSentAt
           await Order.findByIdAndUpdate(order._id, {
-            $set: { 'metadata.lastRefundEmailSentAt': new Date().toISOString() },
+            $set: { "metadata.lastRefundEmailSentAt": new Date().toISOString() },
           }).exec();
         }
       } catch (err) {
-        console.error('Failed to send refund email:', err);
+        console.error("Failed to send refund email:", err);
         // best-effort only
       }
     })();
 
     return NextResponse.json({ data: { refund: refundRecord, order: updated } }, { status: 200 });
   } catch (err) {
-    console.error('Failed to persist refund info on order:', err);
-    return NextResponse.json({ error: 'Failed to record refund' }, { status: 500 });
+    console.error("Failed to persist refund info on order:", err);
+    return NextResponse.json({ error: "Failed to record refund" }, { status: 500 });
   }
 }

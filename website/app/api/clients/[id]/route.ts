@@ -3,6 +3,7 @@ import dbConnect from '@/lib/dbConnect';
 import Client from '@/models/Client';
 import Order from '@/models/Order';
 import mongoose from 'mongoose';
+import { verifyAuthForApi } from '@/lib/auth';
 
 type ContextLike = { params?: { id?: string | string[] } | Promise<{ id: string }> } | undefined;
 
@@ -46,7 +47,7 @@ async function resolveId(req: NextRequest, context?: ContextLike): Promise<strin
   return undefined;
 }
 
-/* GET */
+/* GET - public */
 export async function GET(req: NextRequest, context?: ContextLike) {
   try {
     const id = await resolveId(req, context);
@@ -64,7 +65,7 @@ export async function GET(req: NextRequest, context?: ContextLike) {
   }
 }
 
-/* PATCH */
+/* PATCH - public */
 export async function PATCH(req: NextRequest, context?: ContextLike) {
   try {
     const id = await resolveId(req, context);
@@ -98,8 +99,18 @@ export async function PATCH(req: NextRequest, context?: ContextLike) {
   }
 }
 
-/* DELETE */
+/* DELETE - authenticated only */
 export async function DELETE(req: NextRequest, context?: ContextLike) {
+  // Require authenticated user (no role checks)
+  try {
+    const auth = await verifyAuthForApi(req);
+    if (auth instanceof NextResponse) return auth;
+    // auth present — continue
+  } catch (err) {
+    console.error('Auth check failed for DELETE /api/admin/clients/[id]', err);
+    return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
+  }
+
   try {
     const id = await resolveId(req, context);
     if (!id) return NextResponse.json({ error: 'Missing client id' }, { status: 400 });
