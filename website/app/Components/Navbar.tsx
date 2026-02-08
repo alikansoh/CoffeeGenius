@@ -963,7 +963,7 @@ export default function Navbar() {
       </nav>
 
       {/* Spacer to prevent content behind fixed header */}
-      <div className="h-12 lg:h-12" aria-hidden="true" />
+      <div className="h-22 lg:h-22" aria-hidden="true" />
     </>
   );
 }
