@@ -3,6 +3,11 @@ import CoffeeVariant from "@/models/CoffeeVariant";
 import dbConnect from "@/lib/dbConnect";
 import { verifyAuthForApi } from "@/lib/auth";
 
+interface MongoError extends Error {
+  code?: number;
+  keyValue?: Record<string, string>;
+}
+
 /**
  * GET /api/variants
  * Get all variants
@@ -11,7 +16,11 @@ export async function GET(request: NextRequest) {
   try {
     await dbConnect();
 
-    const variants = await CoffeeVariant.find().populate("coffeeId");
+    const { searchParams } = new URL(request.url);
+    const coffeeId = searchParams.get("coffeeId");
+
+    const query = coffeeId ? { coffeeId } : {};
+    const variants = await CoffeeVariant.find(query).populate("coffeeId");
 
     return NextResponse.json(
       {
@@ -38,14 +47,15 @@ export async function GET(request: NextRequest) {
  * Create new variant (protected - requires authentication)
  */
 export async function POST(request: NextRequest) {
-  // Require authenticated user (no role checks)
   try {
     const auth = await verifyAuthForApi(request);
     if (auth instanceof NextResponse) return auth;
-    // auth present — continue
   } catch (err) {
     console.error("Auth check failed for POST /api/variants", err);
-    return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
+    return NextResponse.json(
+      { success: false, message: "Authentication failed" },
+      { status: 401 }
+    );
   }
 
   try {
@@ -53,18 +63,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    // Create new variant
-    const {
-      coffeeId,
-      sku,
-      size,
-      grind,
-      price,
-      stock,
-      img,
-    } = body;
+    const { coffeeId, sku, size, grind, price, stock, img } = body;
 
-    // Validate required fields
     if (!coffeeId || !sku || !size || !grind || price === undefined || stock === undefined) {
       return NextResponse.json(
         {
@@ -98,6 +98,41 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Error creating variant:", error);
+
+    const mongoError = error as MongoError;
+
+    if (mongoError?.code === 11000) {
+      const keyValue = mongoError.keyValue ?? {};
+
+      if (keyValue.sku) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `SKU "${keyValue.sku}" already exists. Please use a unique SKU.`,
+          },
+          { status: 409 }
+        );
+      }
+
+      if (keyValue.size || keyValue.grind) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "A variant with this size and grind already exists for this coffee.",
+          },
+          { status: 409 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A duplicate variant already exists.",
+        },
+        { status: 409 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,

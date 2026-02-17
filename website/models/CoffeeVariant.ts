@@ -24,7 +24,6 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
       type: String,
       required: true,
       unique: true,
-      index: true,
       uppercase: true,
       trim: true,
     },
@@ -57,12 +56,8 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
   }
 );
 
-// Compound index: ensure one variant per size+grind per coffee
+// Compound index: one variant per size+grind per coffee
 CoffeeVariantSchema.index({ coffeeId: 1, size: 1, grind: 1 }, { unique: true });
 
-// Index for fast SKU lookup
-CoffeeVariantSchema.index({ sku: 1 });
-
-// Prevent model recompilation in Next.js dev mode
 export default mongoose.models.CoffeeVariant ||
   mongoose.model<ICoffeeVariant>("CoffeeVariant", CoffeeVariantSchema);
