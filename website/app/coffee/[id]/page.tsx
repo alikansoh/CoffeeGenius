@@ -8,7 +8,8 @@ const SITE_URL: string =
   process.env.NEXT_PUBLIC_SITE_URL ??
   `http://localhost:${process.env.PORT ?? 3000}`;
 
-// Pre-generate static routes
+// ─── Static params ────────────────────────────────────────────────────────────
+
 export async function generateStaticParams() {
   try {
     const coffees = await getCoffees();
@@ -22,6 +23,8 @@ export async function generateStaticParams() {
 }
 
 export const dynamicParams = true;
+
+// ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
@@ -95,6 +98,8 @@ export async function generateMetadata({
   };
 }
 
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default async function Page({
   params,
 }: {
@@ -110,11 +115,13 @@ export default async function Page({
 
   const productUrl = `${SITE_URL}/coffee/${encodeURIComponent(id)}`;
 
-  const images = Array.isArray(product.img)
+  // ── Normalise images ──────────────────────────────────────────────────────
+
+  const rawImages = Array.isArray(product.img)
     ? product.img
     : product.images ?? [String(product.img)];
 
-  const normalizedImages = images
+  const normalizedImages = rawImages
     .filter(Boolean)
     .map((img: string) =>
       img.startsWith("http")
@@ -122,7 +129,8 @@ export default async function Page({
         : `${SITE_URL}${img.startsWith("/") ? img : `/${img}`}`
     );
 
-  // Build offers safely (numeric prices)
+  // ── Offers ────────────────────────────────────────────────────────────────
+
   let offers: Record<string, unknown> | undefined;
 
   if (product.variants && product.variants.length > 0) {
@@ -154,41 +162,47 @@ export default async function Page({
       url: productUrl,
       price: parseFloat(product.minPrice.toFixed(2)),
       priceCurrency: product.currency ?? "GBP",
-      availability: `https://schema.org/${(product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
+      availability: `https://schema.org/${
+        (product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"
+      }`,
       sku: product.sku ?? product.slug,
     };
   }
 
+  // ── Product JSON-LD ───────────────────────────────────────────────────────
+  // Only emit if Google's minimum requirements are met (offers OR aggregateRating).
+
   const productJsonLd: Record<string, unknown> = {
-    "@context": "https://schema.org/",
+    "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
     image: normalizedImages,
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? product.variants?.[0]?.sku,
-    brand: product.brand
-      ? { "@type": "Brand", name: product.brand }
-      : undefined,
+    ...(product.brand && { brand: { "@type": "Brand", name: product.brand } }),
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": productUrl,
     },
+    ...(offers && { offers }),
+    ...(product.aggregateRating && {
+      aggregateRating: {
+        "@type": "AggregateRating",
+        // Numeric values are required by Google's validator
+        ratingValue: Number(product.aggregateRating.ratingValue),
+        reviewCount: Number(product.aggregateRating.reviewCount),
+      },
+    }),
   };
 
-  if (offers) {
-    productJsonLd.offers = offers;
-  }
+  const shouldRenderProductJsonLd =
+    Boolean(offers) || Boolean(product.aggregateRating);
 
-  if (product.aggregateRating) {
-    // Use numbers for ratingValue and reviewCount to satisfy schema validators
-    productJsonLd.aggregateRating = {
-      "@type": "AggregateRating",
-      ratingValue: Number(product.aggregateRating.ratingValue),
-      reviewCount: Number(product.aggregateRating.reviewCount),
-    };
-  }
+  // ── Breadcrumb JSON-LD ────────────────────────────────────────────────────
+  // FIX: each `item` must be a WebPage object with @type, @id AND name.
+  // Using a plain URL string causes Google Search Console to show "Unnamed item"
+  // because it parses the item as a generic Thing with no name property.
 
-  // Breadcrumb: move `name` onto the ListItem itself to avoid "Unnamed item" in validators
   const breadcrumb = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
@@ -197,51 +211,58 @@ export default async function Page({
         "@type": "ListItem",
         position: 1,
         name: "Home",
-        item: SITE_URL,
+        item: {
+          "@type": "WebPage",
+          "@id": SITE_URL,
+          name: "Home",
+        },
       },
       {
         "@type": "ListItem",
         position: 2,
         name: "Shop",
-        item: `${SITE_URL}/coffee`,
+        item: {
+          "@type": "WebPage",
+          "@id": `${SITE_URL}/coffee`,
+          name: "Shop",
+        },
       },
       {
         "@type": "ListItem",
         position: 3,
         name: product.name,
-        item: productUrl,
+        item: {
+          "@type": "WebPage",
+          "@id": productUrl,
+          name: product.name,
+        },
       },
     ],
   };
 
-  // Only render Product JSON-LD if it meets Google's requirement:
-  // at least one of offers or aggregateRating must be present.
-  const shouldRenderProductJsonLd = Boolean(offers) || Boolean(product.aggregateRating);
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
       {shouldRenderProductJsonLd && (
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify(productJsonLd),
-          }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
         />
       )}
 
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(breadcrumb),
-        }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
       />
+
+      {/* Hydration payload consumed by CoffeeClient */}
       <script
         id="initial-product"
         type="application/json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(product),
-        }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(product) }}
       />
+
       <CoffeeClient />
     </>
   );
