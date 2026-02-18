@@ -528,7 +528,7 @@ export default function ProductCard({
               )}
             </div>
 
-            {/* Stock info */}
+            {/* Stock info
             <div className="text-xs font-semibold">
               {!selectedVariant ? (
                 <span className="text-amber-600">Select options to check availability</span>
@@ -539,7 +539,7 @@ export default function ProductCard({
               ) : (
                 <span className="text-green-600">{availableStock} in stock</span>
               )}
-            </div>
+            </div> */}
 
             {/* Quantity */}
             <div>

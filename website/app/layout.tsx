@@ -9,7 +9,7 @@ const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"] });
 
 // REQUIRED: set this to your production domain (include protocol)
-const SITE_URL = "https://www.coffeegenius.co.uk"; // <- change to your domain
+const SITE_URL = "https://coffeegenius.co.uk"; // <- change to your domain
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),

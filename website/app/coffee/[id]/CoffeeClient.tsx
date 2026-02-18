@@ -647,9 +647,7 @@ export default function ProductDetailPage() {
               <p className="text-sm text-gray-500">per {selectedSize}</p>
             </div>
 
-            {selectedVariant && (
-              <StockStatusBadge stock={availableStock} variant={selectedVariant} />
-            )}
+            {/* Removed stock badge under the price as requested */}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 md:gap-12 lg:gap-12">
@@ -904,11 +902,7 @@ export default function ProductDetailPage() {
                   <p className="text-lg text-gray-500">per {selectedSize}</p>
                 </div>
 
-                {selectedVariant && (
-                  <div className="mb-6">
-                    <StockStatusBadge stock={availableStock} variant={selectedVariant} />
-                  </div>
-                )}
+                {/* Removed stock badge under the price as requested */}
               </div>
 
               {product.roastLevel && (
