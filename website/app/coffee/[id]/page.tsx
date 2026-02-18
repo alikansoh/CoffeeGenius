@@ -24,7 +24,7 @@ export async function generateStaticParams() {
 
 export const dynamicParams = true;
 
-// ─── Metadata ─────────────────────────────────────────────────────────────────
+// ─── Metadata ─────��───────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
@@ -170,7 +170,9 @@ export default async function Page({
   }
 
   // ── Product JSON-LD ───────────────────────────────────────────────────────
-  // Only emit if Google's minimum requirements are met (offers OR aggregateRating).
+  // Always emitted — Google accepts Product without offers.
+  // Pricing rich snippets will appear automatically once offers/aggregateRating
+  // data exists in the database.
 
   const productJsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -188,19 +190,16 @@ export default async function Page({
     ...(product.aggregateRating && {
       aggregateRating: {
         "@type": "AggregateRating",
-        // Numeric values are required by Google's validator
+        // Numeric values required by Google's validator
         ratingValue: Number(product.aggregateRating.ratingValue),
         reviewCount: Number(product.aggregateRating.reviewCount),
       },
     }),
   };
 
-  const shouldRenderProductJsonLd =
-    Boolean(offers) || Boolean(product.aggregateRating);
-
   // ── Breadcrumb JSON-LD ────────────────────────────────────────────────────
-  // FIX: each `item` must be a WebPage object with @type, @id AND name.
-  // Using a plain URL string causes Google Search Console to show "Unnamed item"
+  // Each `item` is a full WebPage object with @type, @id AND name.
+  // A plain URL string causes Google Search Console to show "Unnamed item"
   // because it parses the item as a generic Thing with no name property.
 
   const breadcrumb = {
@@ -244,13 +243,13 @@ export default async function Page({
 
   return (
     <>
-      {shouldRenderProductJsonLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
-        />
-      )}
+      {/* Product JSON-LD — always emitted so Google indexes this as a Product entity */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+      />
 
+      {/* Breadcrumb JSON-LD */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
