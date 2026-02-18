@@ -8,6 +8,22 @@ const SITE_URL: string =
   process.env.NEXT_PUBLIC_SITE_URL ??
   `http://localhost:${process.env.PORT ?? 3000}`;
 
+const CLOUDINARY_CLOUD = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ?? "";
+
+// ─── Cloudinary helper (server-safe, no client utils needed) ─────────────────
+// Converts a Cloudinary public ID to a full absolute image URL.
+// If the value is already an absolute URL it is returned as-is.
+
+function toCloudinaryImageUrl(publicId: string): string {
+  if (!publicId) return "";
+  if (/^https?:\/\//i.test(publicId)) return publicId;
+  const encoded = publicId
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD}/image/upload/w_1200,c_limit,q_auto:best,f_auto,fl_progressive/${encoded}`;
+}
+
 // ─── Static params ────────────────────────────────────────────────────────────
 
 export async function generateStaticParams() {
@@ -59,17 +75,14 @@ export async function generateMetadata({
     `Buy ${product.name} — freshly roasted specialty coffee.`
   ).slice(0, 160);
 
-  const images = Array.isArray(product.img)
+  const rawImages = Array.isArray(product.img)
     ? product.img
     : product.images ?? [String(product.img)];
 
-  const normalizedImages = images
+  // Use Cloudinary URLs for Open Graph images
+  const ogImages = rawImages
     .filter(Boolean)
-    .map((img: string) =>
-      img.startsWith("http")
-        ? img
-        : `${SITE_URL}${img.startsWith("/") ? img : `/${img}`}`
-    );
+    .map((img: string) => toCloudinaryImageUrl(img));
 
   return {
     title,
@@ -82,7 +95,7 @@ export async function generateMetadata({
       url: `${SITE_URL}/coffee/${encodeURIComponent(id)}`,
       siteName: "Coffee Genius",
       type: "website",
-      images: normalizedImages.slice(0, 5).map((url) => ({
+      images: ogImages.slice(0, 5).map((url) => ({
         url,
         width: 1200,
         height: 1200,
@@ -93,7 +106,7 @@ export async function generateMetadata({
       card: "summary_large_image",
       title,
       description,
-      images: normalizedImages.length ? [normalizedImages[0]] : [],
+      images: ogImages.length ? [ogImages[0]] : [],
     },
   };
 }
@@ -116,7 +129,9 @@ export default async function Page({
   const productUrl = `${SITE_URL}/coffee/${encodeURIComponent(id)}`;
   const currency = product.currency ?? "GBP";
 
-  // ── Normalise images ──────────────────────────────────────────────────────
+  // ── Normalise images → full Cloudinary URLs ───────────────────────────────
+  // The DB stores Cloudinary public IDs (e.g. "coffee-shop/j06a3i88g5jjbsvuql7i").
+  // JSON-LD and Open Graph require absolute HTTPS URLs, so we convert them here.
 
   const rawImages = Array.isArray(product.img)
     ? product.img
@@ -124,24 +139,15 @@ export default async function Page({
 
   const normalizedImages = rawImages
     .filter(Boolean)
-    .map((img: string) =>
-      img.startsWith("http")
-        ? img
-        : `${SITE_URL}${img.startsWith("/") ? img : `/${img}`}`
-    );
+    .map((img: string) => toCloudinaryImageUrl(img));
 
   // ── Offers ────────────────────────────────────────────────────────────────
-  // Priority 1 — use variants if they exist and have prices
-  // Priority 2 — use availableSizes from the DB summary fields
-  // Priority 3 — use minPrice as a single Offer fallback
-  // This guarantees offers is always built as long as the product has any price data.
 
   let offers: Record<string, unknown> | undefined;
 
   const validVariants = (product.variants ?? []).filter((v) => v.price > 0);
 
   if (validVariants.length > 0) {
-    // Full variant-level offers with per-SKU availability
     const low = Math.min(...validVariants.map((v) => v.price));
     const high = Math.max(...validVariants.map((v) => v.price));
 
@@ -161,7 +167,6 @@ export default async function Page({
       })),
     };
   } else if (product.availableSizes && product.availableSizes.length > 0) {
-    // Fallback — use availableSizes summary from DB
     const sizePrices = product.availableSizes.filter((s) => s.price > 0);
 
     if (sizePrices.length > 0) {
@@ -184,21 +189,19 @@ export default async function Page({
       };
     }
   } else if (product.minPrice && product.minPrice > 0) {
-    // Last resort — single Offer from minPrice
     offers = {
       "@type": "Offer",
       url: productUrl,
       price: parseFloat(product.minPrice.toFixed(2)),
       priceCurrency: currency,
-      availability: `https://schema.org/${(product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
+      availability: `https://schema.org/${
+        (product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"
+      }`,
       sku: product.sku ?? product.slug,
     };
   }
 
   // ── Product JSON-LD ───────────────────────────────────────────────────────
-  // Google requires at least one of: offers, review, or aggregateRating.
-  // With the 3-tier fallback above, offers will be set for any product
-  // that has variants, availableSizes, or a minPrice — which covers all cases.
 
   const hasOffers = Boolean(offers);
   const hasRating = Boolean(product.aggregateRating);
@@ -208,6 +211,7 @@ export default async function Page({
     "@context": "https://schema.org",
     "@type": "Product",
     name: product.name,
+    // normalizedImages are now full Cloudinary HTTPS URLs — required by Google
     image: normalizedImages,
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? product.variants?.[0]?.sku,
@@ -269,11 +273,6 @@ export default async function Page({
 
   return (
     <>
-      {/*
-        Product JSON-LD — only emitted when offers OR aggregateRating is present.
-        The 3-tier offers fallback (variants → availableSizes → minPrice) means
-        this will fire for every product that has any price data in the DB.
-      */}
       {shouldRenderProductJsonLd && (
         <script
           type="application/ld+json"
@@ -281,7 +280,6 @@ export default async function Page({
         />
       )}
 
-      {/* Breadcrumb JSON-LD */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
