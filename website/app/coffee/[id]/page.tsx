@@ -24,7 +24,7 @@ export async function generateStaticParams() {
 
 export const dynamicParams = true;
 
-// ─── Metadata ─────��───────────────────────────────────────────────────────────
+// ─── Metadata ─────────────────────────────────────────────────────────────────
 
 export async function generateMetadata({
   params,
@@ -114,6 +114,7 @@ export default async function Page({
   if (!product) return notFound();
 
   const productUrl = `${SITE_URL}/coffee/${encodeURIComponent(id)}`;
+  const currency = product.currency ?? "GBP";
 
   // ── Normalise images ──────────────────────────────────────────────────────
 
@@ -130,49 +131,78 @@ export default async function Page({
     );
 
   // ── Offers ────────────────────────────────────────────────────────────────
+  // Priority 1 — use variants if they exist and have prices
+  // Priority 2 — use availableSizes from the DB summary fields
+  // Priority 3 — use minPrice as a single Offer fallback
+  // This guarantees offers is always built as long as the product has any price data.
 
   let offers: Record<string, unknown> | undefined;
 
-  if (product.variants && product.variants.length > 0) {
-    const validVariants = product.variants.filter((v) => v.price > 0);
+  const validVariants = (product.variants ?? []).filter((v) => v.price > 0);
 
-    if (validVariants.length > 0) {
-      const low = Math.min(...validVariants.map((v) => v.price));
-      const high = Math.max(...validVariants.map((v) => v.price));
+  if (validVariants.length > 0) {
+    // Full variant-level offers with per-SKU availability
+    const low = Math.min(...validVariants.map((v) => v.price));
+    const high = Math.max(...validVariants.map((v) => v.price));
+
+    offers = {
+      "@type": "AggregateOffer",
+      lowPrice: parseFloat(low.toFixed(2)),
+      highPrice: parseFloat(high.toFixed(2)),
+      offerCount: validVariants.length,
+      priceCurrency: currency,
+      offers: validVariants.map((v) => ({
+        "@type": "Offer",
+        url: productUrl,
+        price: parseFloat(v.price.toFixed(2)),
+        priceCurrency: currency,
+        availability: `https://schema.org/${v.stock > 0 ? "InStock" : "OutOfStock"}`,
+        sku: v.sku,
+      })),
+    };
+  } else if (product.availableSizes && product.availableSizes.length > 0) {
+    // Fallback — use availableSizes summary from DB
+    const sizePrices = product.availableSizes.filter((s) => s.price > 0);
+
+    if (sizePrices.length > 0) {
+      const low = Math.min(...sizePrices.map((s) => s.price));
+      const high = Math.max(...sizePrices.map((s) => s.price));
 
       offers = {
         "@type": "AggregateOffer",
         lowPrice: parseFloat(low.toFixed(2)),
         highPrice: parseFloat(high.toFixed(2)),
-        offerCount: validVariants.length,
-        priceCurrency: product.currency ?? "GBP",
-        offers: validVariants.map((v) => ({
+        offerCount: sizePrices.length,
+        priceCurrency: currency,
+        offers: sizePrices.map((s) => ({
           "@type": "Offer",
           url: productUrl,
-          price: parseFloat(v.price.toFixed(2)),
-          priceCurrency: product.currency ?? "GBP",
-          availability: `https://schema.org/${v.stock > 0 ? "InStock" : "OutOfStock"}`,
-          sku: v.sku,
+          price: parseFloat(s.price.toFixed(2)),
+          priceCurrency: currency,
+          availability: `https://schema.org/${(s.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
         })),
       };
     }
   } else if (product.minPrice && product.minPrice > 0) {
+    // Last resort — single Offer from minPrice
     offers = {
       "@type": "Offer",
       url: productUrl,
       price: parseFloat(product.minPrice.toFixed(2)),
-      priceCurrency: product.currency ?? "GBP",
-      availability: `https://schema.org/${
-        (product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"
-      }`,
+      priceCurrency: currency,
+      availability: `https://schema.org/${(product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
       sku: product.sku ?? product.slug,
     };
   }
 
   // ── Product JSON-LD ───────────────────────────────────────────────────────
-  // Always emitted — Google accepts Product without offers.
-  // Pricing rich snippets will appear automatically once offers/aggregateRating
-  // data exists in the database.
+  // Google requires at least one of: offers, review, or aggregateRating.
+  // With the 3-tier fallback above, offers will be set for any product
+  // that has variants, availableSizes, or a minPrice — which covers all cases.
+
+  const hasOffers = Boolean(offers);
+  const hasRating = Boolean(product.aggregateRating);
+  const shouldRenderProductJsonLd = hasOffers || hasRating;
 
   const productJsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -190,7 +220,6 @@ export default async function Page({
     ...(product.aggregateRating && {
       aggregateRating: {
         "@type": "AggregateRating",
-        // Numeric values required by Google's validator
         ratingValue: Number(product.aggregateRating.ratingValue),
         reviewCount: Number(product.aggregateRating.reviewCount),
       },
@@ -198,9 +227,6 @@ export default async function Page({
   };
 
   // ── Breadcrumb JSON-LD ────────────────────────────────────────────────────
-  // Each `item` is a full WebPage object with @type, @id AND name.
-  // A plain URL string causes Google Search Console to show "Unnamed item"
-  // because it parses the item as a generic Thing with no name property.
 
   const breadcrumb = {
     "@context": "https://schema.org",
@@ -243,11 +269,17 @@ export default async function Page({
 
   return (
     <>
-      {/* Product JSON-LD — always emitted so Google indexes this as a Product entity */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
-      />
+      {/*
+        Product JSON-LD — only emitted when offers OR aggregateRating is present.
+        The 3-tier offers fallback (variants → availableSizes → minPrice) means
+        this will fire for every product that has any price data in the DB.
+      */}
+      {shouldRenderProductJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        />
+      )}
 
       {/* Breadcrumb JSON-LD */}
       <script
