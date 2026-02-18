@@ -171,35 +171,35 @@ export function RoastLevelIndicator({ level }: { level?: ExtendedProduct["roastL
   );
 }
 
-function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant }) {
-  const stockStatus = variant?.stockStatus ||
-    (stock === 0 ? "out_of_stock" : stock < 10 ? "low_stock" : "in_stock");
+// function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant }) {
+//   const stockStatus = variant?.stockStatus ||
+//     (stock === 0 ? "out_of_stock" : stock < 10 ? "low_stock" : "in_stock");
 
-  if (stockStatus === "out_of_stock") {
-    return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
-        <AlertCircle size={14} className="text-red-600" />
-        <span className="text-xs font-semibold text-red-600">Out of stock</span>
-      </div>
-    );
-  }
+//   if (stockStatus === "out_of_stock") {
+//     return (
+//       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
+//         <AlertCircle size={14} className="text-red-600" />
+//         <span className="text-xs font-semibold text-red-600">Out of stock</span>
+//       </div>
+//     );
+//   }
 
-  if (stockStatus === "low_stock") {
-    return (
-      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
-        <AlertCircle size={14} className="text-amber-600" />
-        <span className="text-xs font-semibold text-amber-600">Only {stock} left in stock</span>
-      </div>
-    );
-  }
+//   if (stockStatus === "low_stock") {
+//     return (
+//       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
+//         <AlertCircle size={14} className="text-amber-600" />
+//         <span className="text-xs font-semibold text-amber-600">Only {stock} left in stock</span>
+//       </div>
+//     );
+//   }
 
-  return (
-    <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200">
-      <Check size={14} className="text-green-600" />
-      <span className="text-xs font-semibold text-green-600">{stock} in stock</span>
-    </div>
-  );
-}
+//   return (
+//     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200">
+//       <Check size={14} className="text-green-600" />
+//       <span className="text-xs font-semibold text-green-600">{stock} in stock</span>
+//     </div>
+//   );
+// }
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -987,7 +987,7 @@ export default function ProductDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <label className="text-xs sm:text-sm font-bold text-gray-900">Quantity</label>
-                  {selectedVariant && <StockStatusBadge stock={availableStock} variant={selectedVariant} />}
+                  {/* {selectedVariant && <StockStatusBadge stock={availableStock} variant={selectedVariant} />} */}
                 </div>
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
