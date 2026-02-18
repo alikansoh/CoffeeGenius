@@ -72,7 +72,7 @@ export default function Footer() {
             <div className="space-y-2">
               <div className="flex items-start sm:items-center gap-3 text-gray-600">
                 <MapPin size={16} className="flex-shrink-0 mt-0.5 sm:mt-0" />
-                <span className="text-xs sm:text-sm leading-snug">73 High St, Staines TW18 4PA</span>
+                <span className="text-xs sm:text-sm leading-snug">173 High St, Staines TW18 4PA</span>
               </div>
               <div className="flex items-center gap-3 text-gray-600">
                 <Phone size={16} className="flex-shrink-0" />

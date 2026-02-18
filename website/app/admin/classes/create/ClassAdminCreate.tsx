@@ -104,7 +104,7 @@ export default function AdminCreateClassForm({ sendCookies = true }: { sendCooki
     featured: false,
     thingsToNote: [],
     furtherInformation: "",
-    location: "73 High St, Staines TW18 4PA",
+    location: "173 High St, Staines TW18 4PA",
     level: "",
   });
 
