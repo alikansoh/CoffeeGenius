@@ -26,9 +26,10 @@ export const dynamicParams = true;
 export async function generateMetadata({
   params,
 }: {
-  params: { id?: string };
+  params: Promise<{ id?: string }>;
 }): Promise<Metadata> {
-  const id = params?.id?.toString().trim() ?? "";
+  const resolved = await params;
+  const id = resolved?.id?.toString().trim() ?? "";
 
   if (!id) {
     return {
@@ -97,9 +98,10 @@ export async function generateMetadata({
 export default async function Page({
   params,
 }: {
-  params: { id?: string };
+  params: Promise<{ id?: string }>;
 }) {
-  const id = params?.id?.toString().trim() ?? "";
+  const resolved = await params;
+  const id = resolved?.id?.toString().trim() ?? "";
 
   if (!id) return notFound();
 
