@@ -26,10 +26,9 @@ export const dynamicParams = true;
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ id?: string }>;
+  params: { id?: string };
 }): Promise<Metadata> {
-  const resolved = await params;
-  const id = resolved?.id?.toString().trim() ?? "";
+  const id = params?.id?.toString().trim() ?? "";
 
   if (!id) {
     return {
@@ -98,10 +97,9 @@ export async function generateMetadata({
 export default async function Page({
   params,
 }: {
-  params: Promise<{ id?: string }>;
+  params: { id?: string };
 }) {
-  const resolved = await params;
-  const id = resolved?.id?.toString().trim() ?? "";
+  const id = params?.id?.toString().trim() ?? "";
 
   if (!id) return notFound();
 
@@ -180,45 +178,37 @@ export default async function Page({
   }
 
   if (product.aggregateRating) {
+    // Use numbers for ratingValue and reviewCount to satisfy schema validators
     productJsonLd.aggregateRating = {
       "@type": "AggregateRating",
-      ratingValue: String(product.aggregateRating.ratingValue),
-      reviewCount: String(product.aggregateRating.reviewCount),
+      ratingValue: Number(product.aggregateRating.ratingValue),
+      reviewCount: Number(product.aggregateRating.reviewCount),
     };
   }
 
-  // Breadcrumb: include `name` inside each `item` object to avoid "Unnamed item" in validators
+  // Breadcrumb: move `name` onto the ListItem itself to avoid "Unnamed item" in validators
   const breadcrumb = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
       {
         "@type": "ListItem",
-        "position": 1,
-        "item": {
-          "@type": "WebPage",
-          "@id": SITE_URL,
-          "name": "Home"
-        }
+        position: 1,
+        name: "Home",
+        item: SITE_URL,
       },
       {
         "@type": "ListItem",
-        "position": 2,
-        "item": {
-          "@type": "WebPage",
-          "@id": `${SITE_URL}/coffee`,
-          "name": "Shop"
-        }
+        position: 2,
+        name: "Shop",
+        item: `${SITE_URL}/coffee`,
       },
       {
         "@type": "ListItem",
-        "position": 3,
-        "item": {
-          "@type": "WebPage",
-          "@id": productUrl,
-          "name": product.name
-        }
-      }
+        position: 3,
+        name: product.name,
+        item: productUrl,
+      },
     ],
   };
 
