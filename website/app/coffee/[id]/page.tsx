@@ -166,7 +166,9 @@ export default async function Page({
     image: normalizedImages,
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? product.variants?.[0]?.sku,
-    brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
+    brand: product.brand
+      ? { "@type": "Brand", name: product.brand }
+      : undefined,
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": productUrl,
@@ -185,13 +187,38 @@ export default async function Page({
     };
   }
 
+  // Breadcrumb: include `name` inside each `item` object to avoid "Unnamed item" in validators
   const breadcrumb = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
-      { "@type": "ListItem", position: 2, name: "Shop", item: `${SITE_URL}/coffee` },
-      { "@type": "ListItem", position: 3, name: product.name, item: productUrl },
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "item": {
+          "@type": "WebPage",
+          "@id": SITE_URL,
+          "name": "Home"
+        }
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "item": {
+          "@type": "WebPage",
+          "@id": `${SITE_URL}/coffee`,
+          "name": "Shop"
+        }
+      },
+      {
+        "@type": "ListItem",
+        "position": 3,
+        "item": {
+          "@type": "WebPage",
+          "@id": productUrl,
+          "name": product.name
+        }
+      }
     ],
   };
 
