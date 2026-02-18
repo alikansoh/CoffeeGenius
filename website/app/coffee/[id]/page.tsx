@@ -122,7 +122,7 @@ export default async function Page({
         : `${SITE_URL}${img.startsWith("/") ? img : `/${img}`}`
     );
 
-  // Build offers safely
+  // Build offers safely (numeric prices)
   let offers: Record<string, unknown> | undefined;
 
   if (product.variants && product.variants.length > 0) {
@@ -134,18 +134,16 @@ export default async function Page({
 
       offers = {
         "@type": "AggregateOffer",
-        lowPrice: low.toFixed(2),
-        highPrice: high.toFixed(2),
+        lowPrice: parseFloat(low.toFixed(2)),
+        highPrice: parseFloat(high.toFixed(2)),
         offerCount: validVariants.length,
         priceCurrency: product.currency ?? "GBP",
         offers: validVariants.map((v) => ({
           "@type": "Offer",
           url: productUrl,
-          price: v.price.toFixed(2),
+          price: parseFloat(v.price.toFixed(2)),
           priceCurrency: product.currency ?? "GBP",
-          availability: `https://schema.org/${
-            v.stock > 0 ? "InStock" : "OutOfStock"
-          }`,
+          availability: `https://schema.org/${v.stock > 0 ? "InStock" : "OutOfStock"}`,
           sku: v.sku,
         })),
       };
@@ -154,11 +152,9 @@ export default async function Page({
     offers = {
       "@type": "Offer",
       url: productUrl,
-      price: product.minPrice.toFixed(2),
+      price: parseFloat(product.minPrice.toFixed(2)),
       priceCurrency: product.currency ?? "GBP",
-      availability: `https://schema.org/${
-        (product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"
-      }`,
+      availability: `https://schema.org/${(product.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
       sku: product.sku ?? product.slug,
     };
   }
@@ -170,9 +166,7 @@ export default async function Page({
     image: normalizedImages,
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? product.variants?.[0]?.sku,
-    brand: product.brand
-      ? { "@type": "Brand", name: product.brand }
-      : undefined,
+    brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
     mainEntityOfPage: {
       "@type": "WebPage",
       "@id": productUrl,
@@ -203,8 +197,7 @@ export default async function Page({
 
   // Only render Product JSON-LD if it meets Google's requirement:
   // at least one of offers or aggregateRating must be present.
-  const shouldRenderProductJsonLd =
-    Boolean(offers) || Boolean(product.aggregateRating);
+  const shouldRenderProductJsonLd = Boolean(offers) || Boolean(product.aggregateRating);
 
   return (
     <>
