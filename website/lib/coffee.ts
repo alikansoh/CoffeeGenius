@@ -39,7 +39,7 @@ export interface ApiCoffee {
   brewing?: string;
   bestSeller?: boolean;
   createdAt?: string;
-  updatedAt?: string; // ✅ ADDED THIS LINE
+  updatedAt?: string;
   variantCount?: number;
   minPrice?: number;
   availableGrinds?: string[];
@@ -103,10 +103,10 @@ const CoffeeSchema = new mongoose.Schema({
   aggregateRating: mongoose.Schema.Types.Mixed,
   createdAt: Date,
   updatedAt: Date,
-}, { 
-  collection: 'coffees', // ⚠️ Change to your actual collection name
-  timestamps: true, // ✅ RECOMMENDED: Add this to auto-manage createdAt/updatedAt
-  strict: false // ✅ RECOMMENDED: Allow fields not in schema
+}, {
+  collection: 'coffees',
+  timestamps: true,
+  strict: false
 });
 
 const Coffee = mongoose.models.Coffee || mongoose.model('Coffee', CoffeeSchema);
@@ -114,9 +114,9 @@ const Coffee = mongoose.models.Coffee || mongoose.model('Coffee', CoffeeSchema);
 export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
   try {
     await dbConnect();
-    
-    const filter = searchQuery 
-      ? { 
+
+    const filter = searchQuery
+      ? {
           $or: [
             { name: { $regex: searchQuery, $options: 'i' } },
             { slug: { $regex: searchQuery, $options: 'i' } },
@@ -125,7 +125,7 @@ export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
           ]
         }
       : {};
-    
+
     const rawCoffees = await Coffee
       .find(filter)
       .sort({ bestSeller: -1, createdAt: -1 })
@@ -143,7 +143,7 @@ export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
 export async function getCoffeeBySlug(slug: string): Promise<ApiCoffee | null> {
   try {
     await dbConnect();
-    
+
     const rawCoffee = await Coffee
       .findOne({ slug })
       .lean()
@@ -162,44 +162,122 @@ export async function getCoffeeBySlug(slug: string): Promise<ApiCoffee | null> {
   }
 }
 
+// ─── getCoffeeById ────────────────────────────────────────────────────────────
+// FIXED: Uses $lookup to join the separate `coffeevariants` collection.
+// The old findById() only read the `coffees` document which has no variants
+// embedded — so variants was always empty and offers could never be built
+// for the Product JSON-LD, causing Google's "missing offers" critical error.
+
 export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
   try {
     await dbConnect();
-    
-    // Try to find by _id first
-    let rawCoffee = await Coffee
-      .findById(id)
-      .lean()
-      .exec();
 
-    // If not found by _id, try by slug
-    if (!rawCoffee) {
-      rawCoffee = await Coffee
-        .findOne({ slug: id })
-        .lean()
-        .exec();
+    const isValidObjectId = mongoose.Types.ObjectId.isValid(id);
+
+    const matchFilter: { $or: object[] } = {
+      $or: [{ slug: id.toLowerCase() }],
+    };
+
+    if (isValidObjectId) {
+      matchFilter.$or.push({ _id: new mongoose.Types.ObjectId(id) });
     }
 
-    if (!rawCoffee) {
+    const results = await Coffee.aggregate([
+      { $match: matchFilter },
+      {
+        // Join variants from the separate coffeevariants collection
+        $lookup: {
+          from: "coffeevariants",
+          localField: "_id",
+          foreignField: "coffeeId",
+          as: "variants",
+        },
+      },
+      {
+        $addFields: {
+          variantCount: { $size: "$variants" },
+          // Recalculate minPrice from live variants (ignores stale cached value)
+          minPrice: {
+            $cond: {
+              if: { $gt: [{ $size: "$variants" }, 0] },
+              then: {
+                $reduce: {
+                  input: "$variants",
+                  initialValue: 999999,
+                  in: { $min: ["$$value", "$$this.price"] },
+                },
+              },
+              else: { $ifNull: ["$minPrice", 0] },
+            },
+          },
+          totalStock: {
+            $cond: [
+              { $gt: [{ $size: "$variants" }, 0] },
+              { $sum: "$variants.stock" },
+              { $ifNull: ["$totalStock", 0] },
+            ],
+          },
+          availableGrinds: {
+            $cond: [
+              { $gt: [{ $size: "$variants" }, 0] },
+              {
+                $reduce: {
+                  input: "$variants",
+                  initialValue: [],
+                  in: {
+                    $cond: [
+                      { $in: ["$$this.grind", "$$value"] },
+                      "$$value",
+                      { $concatArrays: ["$$value", ["$$this.grind"]] },
+                    ],
+                  },
+                },
+              },
+              { $ifNull: ["$availableGrinds", []] },
+            ],
+          },
+        },
+      },
+      { $limit: 1 },
+    ]);
+
+    if (!results.length) {
       console.log(`❌ Coffee not found: ${id}`);
       return null;
     }
 
-    console.log(`✅ Found coffee: ${rawCoffee.name}`);
-    return rawCoffee as ApiCoffee;
+    const coffee = results[0];
+
+    // Build availableSizes with per-size grinds and stock from joined variants
+    const sizeMap = new Map<string, { price: number; grinds: string[]; stock: number }>();
+    (coffee.variants as ApiVariant[]).forEach((v) => {
+      const existing = sizeMap.get(v.size);
+      if (!existing) {
+        sizeMap.set(v.size, { price: v.price, grinds: [v.grind], stock: v.stock });
+      } else {
+        if (v.price < existing.price) existing.price = v.price;
+        if (!existing.grinds.includes(v.grind)) existing.grinds.push(v.grind);
+        existing.stock += v.stock;
+      }
+    });
+
+    const availableSizes: ApiSizePrice[] = Array.from(sizeMap.entries()).map(
+      ([size, data]) => ({
+        size,
+        price: data.price,
+        availableGrinds: data.grinds,
+        totalStock: data.stock,
+      })
+    );
+
+    console.log(
+      `✅ Found coffee: ${coffee.name} (${coffee.variants?.length ?? 0} variants)`
+    );
+
+    return { ...coffee, availableSizes } as ApiCoffee;
   } catch (error) {
-    // If findById fails (invalid ObjectId format), try slug
-    try {
-      const rawCoffee = await Coffee
-        .findOne({ slug: id })
-        .lean()
-        .exec();
-      
-      return rawCoffee ? (rawCoffee as ApiCoffee) : null;
-    } catch (err) {
-      console.error("❌ Error fetching coffee by id:", error);
-      return null;
-    }
+    console.error("❌ Error fetching coffee by id:", error);
+    return null;
   }
 }
 
@@ -215,8 +293,8 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
     }
 
     // Handle img as string or array
-    const imgUrl = Array.isArray(coffee.img) 
-      ? coffee.img[0] || "" 
+    const imgUrl = Array.isArray(coffee.img)
+      ? coffee.img[0] || ""
       : coffee.img || "";
 
     return {
