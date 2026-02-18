@@ -122,7 +122,7 @@ export default async function Page({
         : `${SITE_URL}${img.startsWith("/") ? img : `/${img}`}`
     );
 
-  // ✅ Build offers safely
+  // Build offers safely
   let offers: Record<string, unknown> | undefined;
 
   if (product.variants && product.variants.length > 0) {
@@ -201,14 +201,22 @@ export default async function Page({
     ],
   };
 
+  // Only render Product JSON-LD if it meets Google's requirement:
+  // at least one of offers or aggregateRating must be present.
+  const shouldRenderProductJsonLd =
+    Boolean(offers) || Boolean(product.aggregateRating);
+
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(productJsonLd),
-        }}
-      />
+      {shouldRenderProductJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(productJsonLd),
+          }}
+        />
+      )}
+
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
