@@ -3,14 +3,16 @@ import type { Metadata } from "next";
 import CoffeeClient from "./CoffeeClient";
 import { getCoffees, mapApiCoffeesToProducts, type Product } from "@/lib/coffee";
 
-const SITE_URL: string = process.env.NEXT_PUBLIC_SITE_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+const SITE_URL: string =
+  process.env.NEXT_PUBLIC_SITE_URL ??
+  `http://localhost:${process.env.PORT ?? 3000}`;
 
 async function fetchProducts(slug?: string): Promise<Product[]> {
   const apiCoffees = await getCoffees(slug);
   return mapApiCoffeesToProducts(apiCoffees);
 }
 
-// SEO-optimized metadata for /coffee listing
+// ✅ SEO-optimized metadata for /coffee listing
 export async function generateMetadata(): Promise<Metadata> {
   const products = await fetchProducts();
   const count = products.length;
@@ -35,7 +37,15 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "Coffee Genius",
       images:
         products[0]?.img
-          ? [{ url: products[0]!.img.startsWith("http") ? products[0]!.img : `${SITE_URL}${products[0]!.img}`, width: 1200, height: 630 }]
+          ? [
+              {
+                url: products[0]!.img.startsWith("http")
+                  ? products[0]!.img
+                  : `${SITE_URL}${products[0]!.img}`,
+                width: 1200,
+                height: 630,
+              },
+            ]
           : [],
       type: "website",
       locale: "en_GB",
@@ -46,36 +56,55 @@ export async function generateMetadata(): Promise<Metadata> {
       description,
       images:
         products[0]?.img
-          ? [products[0]!.img.startsWith("http") ? products[0]!.img : `${SITE_URL}${products[0]!.img}`]
+          ? [
+              products[0]!.img.startsWith("http")
+                ? products[0]!.img
+                : `${SITE_URL}${products[0]!.img}`,
+            ]
           : [],
     },
   };
 }
 
-export default async function Page({ params }: { params?: { slug?: string } }) {
+export default async function Page({
+  params,
+}: {
+  params?: { slug?: string };
+}) {
   const slug = params?.slug;
   const products = await fetchProducts(slug);
   const items = products.slice(0, 50); // limit JSON-LD size
 
+  // ✅ FIXED SCHEMA (No Product type here)
   const itemList = {
     "@context": "https://schema.org",
     "@type": "ItemList",
     itemListElement: items.map((p: Product, i: number) => ({
       "@type": "ListItem",
       position: i + 1,
-      item: {
-        "@type": "Product",
-        name: p.name,
-        url: `${SITE_URL}/coffee/${encodeURIComponent(String(p.slug))}`,
-        image: p.img ? (p.img.startsWith("http") ? p.img : `${SITE_URL}${p.img}`) : undefined,
-      },
+      url: `${SITE_URL}/coffee/${encodeURIComponent(String(p.slug))}`,
     })),
   };
 
   return (
     <>
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(itemList) }} />
-      <script id="initial-products" type="application/json" dangerouslySetInnerHTML={{ __html: JSON.stringify(products) }} />
+      {/* ✅ Correct Listing Schema */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(itemList),
+        }}
+      />
+
+      {/* Optional: hydration data */}
+      <script
+        id="initial-products"
+        type="application/json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(products),
+        }}
+      />
+
       <CoffeeClient params={params ?? {}} />
     </>
   );
