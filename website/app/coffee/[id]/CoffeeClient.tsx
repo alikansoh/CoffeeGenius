@@ -75,7 +75,7 @@ interface ApiCoffee {
   variants: Variant[];
   inStock?: boolean;
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
-  story?: string; // <- added
+  story?: string;
 }
 
 export interface ExtendedProduct {
@@ -101,7 +101,7 @@ export interface ExtendedProduct {
   inStock?: boolean;
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
   bestSeller?: boolean;
-  story?: string; // <- added
+  story?: string;
 }
 
 type GrindOption = "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
@@ -171,35 +171,44 @@ export function RoastLevelIndicator({ level }: { level?: ExtendedProduct["roastL
   );
 }
 
-// function StockStatusBadge({ stock, variant }: { stock: number; variant?: Variant }) {
-//   const stockStatus = variant?.stockStatus ||
-//     (stock === 0 ? "out_of_stock" : stock < 10 ? "low_stock" : "in_stock");
+function ReadMore({ text, maxChars = 320 }: { text?: string; maxChars?: number }) {
+  const [expanded, setExpanded] = useState(false);
 
-//   if (stockStatus === "out_of_stock") {
-//     return (
-//       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-50 border border-red-200">
-//         <AlertCircle size={14} className="text-red-600" />
-//         <span className="text-xs font-semibold text-red-600">Out of stock</span>
-//       </div>
-//     );
-//   }
+  if (!text) {
+    return (
+      <p className="text-sm italic" style={{ color: "rgba(139, 94, 60, 0.5)" }}>
+        No story available for this coffee.
+      </p>
+    );
+  }
 
-//   if (stockStatus === "low_stock") {
-//     return (
-//       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber-50 border border-amber-200">
-//         <AlertCircle size={14} className="text-amber-600" />
-//         <span className="text-xs font-semibold text-amber-600">Only {stock} left in stock</span>
-//       </div>
-//     );
-//   }
+  const isLong = text.length > maxChars;
+  const displayed = !isLong || expanded ? text : text.slice(0, maxChars).trimEnd() + "…";
 
-//   return (
-//     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200">
-//       <Check size={14} className="text-green-600" />
-//       <span className="text-xs font-semibold text-green-600">{stock} in stock</span>
-//     </div>
-//   );
-// }
+  return (
+    <div>
+      <p
+        className="text-sm leading-relaxed whitespace-pre-wrap"
+        style={{ color: "rgba(60, 30, 10, 0.82)", letterSpacing: "0.01em" }}
+      >
+        {displayed}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded((s) => !s)}
+          aria-expanded={expanded}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-colors focus:outline-none group"
+          style={{ color: "#c8924a" }}
+        >
+          <span>{expanded ? "Read less" : "Read more"}</span>
+          <span className="inline-block transition-transform group-hover:translate-y-px">
+            {expanded ? "↑" : "↓"}
+          </span>
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -218,20 +227,14 @@ export default function ProductDetailPage() {
   const [isAdded, setIsAdded] = useState(false);
   const [activeAccordion, setActiveAccordion] = useState<string | null>("details");
 
-  // Video detection map
   const [videoMap, setVideoMap] = useState<Record<string, boolean>>({});
   const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
 
   const productId = params?.id as string;
 
-  // Detect a single publicId - returns true if video, false otherwise
   const detectSinglePublicId = useCallback(async (publicId: string): Promise<boolean> => {
     if (!publicId) return false;
-
-    // First check by extension
     if (isVideo(publicId)) return true;
-
-    // Then try HEAD request
     try {
       const url = getCloudinaryVideo(publicId);
       const res = await fetch(url, { method: "HEAD" });
@@ -242,10 +245,8 @@ export default function ProductDetailPage() {
     }
   }, []);
 
-  // Detect all publicIds and return a map
   const detectAllPublicIds = useCallback(async (publicIds: string[]): Promise<Record<string, boolean>> => {
     const results: Record<string, boolean> = {};
-
     await Promise.all(
       publicIds.map(async (publicId) => {
         if (publicId) {
@@ -253,11 +254,9 @@ export default function ProductDetailPage() {
         }
       })
     );
-
     return results;
   }, [detectSinglePublicId]);
 
-  // Check if a publicId is a video
   const isVideoId = useCallback((publicId: string) => {
     if (!publicId) return false;
     if (videoMap[publicId] !== undefined) return videoMap[publicId];
@@ -308,14 +307,9 @@ export default function ProductDetailPage() {
             availableGrinds: sizeGrindsMap[size] || apiCoffee.availableGrinds || [],
           }));
 
-        // Get all images from API (not just the main img)
         const allImages: string[] = apiCoffee.images && apiCoffee.images.length > 0
           ? apiCoffee.images
           : (apiCoffee.img ? [apiCoffee.img] : []);
-
-        // Detect video types BEFORE setting product state
-        const detectedVideoMap = await detectAllPublicIds(allImages);
-        setVideoMap(detectedVideoMap);
 
         const transformedProduct: ExtendedProduct = {
           id: apiCoffee._id || apiCoffee.slug,
@@ -340,61 +334,77 @@ export default function ProductDetailPage() {
           inStock: apiCoffee.inStock,
           stockStatus: apiCoffee.stockStatus,
           bestSeller: apiCoffee.bestSeller,
-          story: apiCoffee.story || "", // <- mapped
+          story: apiCoffee.story || "",
         };
 
+        // ✅ Set product and stop loading immediately
         setProduct(transformedProduct);
         setSelectedSize(Object.keys(prices)[0] || "250g");
+        setLoading(false);
+        setError(null);
 
-        const allResponse = await fetch("/api/coffee");
-        if (allResponse.ok) {
-          const allData = await allResponse.json();
+        // ✅ Detect videos in background
+        detectAllPublicIds(allImages).then((detectedVideoMap) => {
+          setVideoMap(detectedVideoMap);
+        });
 
-          const others: ApiCoffee[] = allData.data.filter((coffee: ApiCoffee) => coffee._id !== apiCoffee._id);
-          const sameRoast = others.filter((c) => c.roastLevel === apiCoffee.roastLevel);
-          let selectedForRelated: ApiCoffee[] = sameRoast.slice(0, 4);
+        // ✅ Fetch related products in background
+        fetch("/api/coffee")
+          .then((allResponse) => {
+            if (!allResponse.ok) return;
+            return allResponse.json();
+          })
+          .then((allData) => {
+            if (!allData) return;
 
-          if (selectedForRelated.length < 4) {
-            const needed = 4 - selectedForRelated.length;
-            const additional = others
-              .filter((c) => !selectedForRelated.some((s) => s._id === c._id))
-              .slice(0, needed);
-            selectedForRelated = [...selectedForRelated, ...additional];
-          }
+            const others: ApiCoffee[] = allData.data.filter(
+              (coffee: ApiCoffee) => coffee._id !== apiCoffee._id
+            );
+            const sameRoast = others.filter((c) => c.roastLevel === apiCoffee.roastLevel);
+            let selectedForRelated: ApiCoffee[] = sameRoast.slice(0, 4);
 
-          const relatedTransformed: ExtendedProduct[] = selectedForRelated.map((coffee: ApiCoffee) => {
-            const relatedPrices: Record<string, number> = {};
-            if (coffee.availableSizes && coffee.availableSizes.length > 0) {
-              coffee.availableSizes.forEach((sizeObj: SizePrice) => {
-                relatedPrices[sizeObj.size] = sizeObj.price;
-              });
-            } else {
-              relatedPrices["250g"] = coffee.minPrice;
+            if (selectedForRelated.length < 4) {
+              const needed = 4 - selectedForRelated.length;
+              const additional = others
+                .filter((c) => !selectedForRelated.some((s) => s._id === c._id))
+                .slice(0, needed);
+              selectedForRelated = [...selectedForRelated, ...additional];
             }
 
-            return {
-              id: coffee._1 || coffee.slug,
-              slug: coffee.slug,
-              name: coffee.name,
-              origin: coffee.origin,
-              notes: coffee.notes || "",
-              price: coffee.minPrice,
-              prices: relatedPrices,
-              img: coffee.img,
-              roastLevel: coffee.roastLevel,
-              availableGrinds: coffee.availableGrinds,
-              bestSeller: coffee.bestSeller,
-            } as ExtendedProduct;
+            const relatedTransformed: ExtendedProduct[] = selectedForRelated.map((coffee: ApiCoffee) => {
+              const relatedPrices: Record<string, number> = {};
+              if (coffee.availableSizes && coffee.availableSizes.length > 0) {
+                coffee.availableSizes.forEach((sizeObj: SizePrice) => {
+                  relatedPrices[sizeObj.size] = sizeObj.price;
+                });
+              } else {
+                relatedPrices["250g"] = coffee.minPrice;
+              }
+
+              return {
+                id: coffee._1 || coffee.slug,
+                slug: coffee.slug,
+                name: coffee.name,
+                origin: coffee.origin,
+                notes: coffee.notes || "",
+                price: coffee.minPrice,
+                prices: relatedPrices,
+                img: coffee.img,
+                roastLevel: coffee.roastLevel,
+                availableGrinds: coffee.availableGrinds,
+                bestSeller: coffee.bestSeller,
+              } as ExtendedProduct;
+            });
+
+            setRelatedProducts(relatedTransformed);
+          })
+          .catch((err) => {
+            console.error("Error fetching related products:", err);
           });
 
-          setRelatedProducts(relatedTransformed);
-        }
-
-        setError(null);
       } catch (err) {
         console.error("Error fetching product:", err);
         setError("Failed to load product details");
-      } finally {
         setLoading(false);
       }
     };
@@ -404,13 +414,11 @@ export default function ProductDetailPage() {
     }
   }, [productId, detectAllPublicIds]);
 
-  // Filter out videos from productImages for the main gallery display
   const productImages = useMemo(() => {
     const allMedia = product?.images || [product?.img || "/test.webp"];
     return allMedia;
   }, [product]);
 
-  // Separate images and videos
   const { imageItems, videoItems } = useMemo(() => {
     const images: string[] = [];
     const videos: string[] = [];
@@ -426,7 +434,6 @@ export default function ProductDetailPage() {
     return { imageItems: images, videoItems: videos };
   }, [productImages, isVideoId]);
 
-  // All displayable media (images first, then videos)
   const allDisplayMedia = useMemo(() => {
     return [...imageItems, ...videoItems];
   }, [imageItems, videoItems]);
@@ -590,7 +597,6 @@ export default function ProductDetailPage() {
     setTimeout(() => setIsAdded(false), 2000);
   };
 
-  // Get the current selected media item
   const currentMediaItem = allDisplayMedia[selectedImageIndex] || product.img || "/test.webp";
   const isCurrentItemVideo = isVideoId(currentMediaItem);
 
@@ -646,8 +652,6 @@ export default function ProductDetailPage() {
               </p>
               <p className="text-sm text-gray-500">per {selectedSize}</p>
             </div>
-
-            {/* Removed stock badge under the price as requested */}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 md:gap-12 lg:gap-12">
@@ -901,8 +905,6 @@ export default function ProductDetailPage() {
                   <p className="text-4xl font-bold text-gray-900">£{currentPrice.toFixed(2)}</p>
                   <p className="text-lg text-gray-500">per {selectedSize}</p>
                 </div>
-
-                {/* Removed stock badge under the price as requested */}
               </div>
 
               {product.roastLevel && (
@@ -916,13 +918,71 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              {/* Story / Description (prominent, before size selection) */}
-              <div className="bg-white rounded-xl border-2 border-gray-100 p-4 sm:p-5 shadow-sm">
-                <h3 className="text-sm font-bold text-gray-900 mb-2">Story</h3>
-                <div className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                  {product.story ? product.story : "No story available for this coffee."}
+              {/* ── Enhanced Story Section ── */}
+              <div
+                className="relative rounded-2xl overflow-hidden shadow-sm"
+                style={{
+                  background: "linear-gradient(135deg, #fdf6ee 0%, #faebd7 60%, #f5deb3 100%)",
+                  border: "1px solid #e2c49a",
+                }}
+              >
+                {/* Top accent line */}
+                <div
+                  className="absolute top-0 left-0 right-0 h-0.5"
+                  style={{
+                    background: "linear-gradient(90deg, transparent, #e8b07a, #c8924a, #e8b07a, transparent)",
+                  }}
+                />
+
+                {/* Large decorative quote mark */}
+                <div
+                  className="absolute bottom-2 right-4 text-7xl sm:text-8xl font-serif leading-none select-none pointer-events-none"
+                  style={{
+                    color: "rgba(139, 94, 60, 0.10)",
+                    fontFamily: "Georgia, 'Times New Roman', serif",
+                    lineHeight: 1,
+                  }}
+                  aria-hidden="true"
+                >
+                  ❞
+                </div>
+
+                <div className="relative p-4 sm:p-5">
+                  {/* Header row */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <Coffee size={14} style={{ color: "#c8924a" }} className="flex-shrink-0" />
+                    <span
+                      className="text-xs font-bold uppercase tracking-widest"
+                      style={{ color: "#c8924a" }}
+                    >
+                      Origin Story
+                    </span>
+                    {product.origin && (
+                      <>
+                        <span style={{ color: "#c8924a" }} className="text-xs select-none">·</span>
+                        <span
+                          className="text-xs font-medium truncate"
+                          style={{ color: "rgba(139, 94, 60, 0.65)" }}
+                        >
+                          {product.origin}
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div
+                    className="mb-3 h-px w-full"
+                    style={{
+                      background: "linear-gradient(90deg, rgba(200,146,74,0.4), rgba(200,146,74,0.05))",
+                    }}
+                  />
+
+                  {/* Story text */}
+                  <ReadMore text={product.story} />
                 </div>
               </div>
+              {/* ── End Story Section ── */}
 
               <div>
                 <label className="text-xs sm:text-sm font-bold text-gray-900 block mb-2 sm:mb-3">Select Size</label>
@@ -955,7 +1015,7 @@ export default function ProductDetailPage() {
 
               <div>
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <label className="text-xs sm:text-sm font-bold text-gray-900">Brew Method</label>
+                  <label className="text-xs sm:text-sm font-bold text-gray-900">Grind type</label>
                   <span className="text-xs text-gray-500">{filteredGrindOptions.length} available</span>
                 </div>
                 {filteredGrindOptions.length > 0 ? (
@@ -987,7 +1047,6 @@ export default function ProductDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-2 sm:mb-3">
                   <label className="text-xs sm:text-sm font-bold text-gray-900">Quantity</label>
-                  {/* {selectedVariant && <StockStatusBadge stock={availableStock} variant={selectedVariant} />} */}
                 </div>
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
@@ -1126,7 +1185,6 @@ export default function ProductDetailPage() {
           )}
         </div>
 
-        {/* Video modal player */}
         {playingVideoSrc && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
