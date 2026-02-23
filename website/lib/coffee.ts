@@ -31,6 +31,7 @@ export interface ApiCoffee {
   img: string | string[];
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter"; // <-- added roastType
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -65,6 +66,7 @@ export interface Product {
   prices: Record<string, number>;
   img: string;
   roastLevel: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter"; // <-- added roastType
   grinds: string[];
   availableSizes: ApiSizePrice[];
   minPrice: number;
@@ -81,6 +83,7 @@ const CoffeeSchema = new mongoose.Schema({
   img: mongoose.Schema.Types.Mixed,
   images: [String],
   roastLevel: { type: String, enum: ['light', 'medium', 'dark'] },
+  roastType: { type: String, enum: ['espresso', 'filter'], default: null }, // <-- added roastType in schema
   process: String,
   altitude: String,
   harvest: String,
@@ -307,6 +310,7 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       prices,
       img: imgUrl,
       roastLevel: coffee.roastLevel ?? "medium",
+      roastType: coffee.roastType ?? undefined, // <-- pass roastType through
       grinds: coffee.availableGrinds ?? [],
       availableSizes: coffee.availableSizes ?? [],
       minPrice: coffee.minPrice ?? 0,

@@ -39,6 +39,7 @@ interface ApiCoffee {
   notes?: string;
   img: string;
   roastLevel: "light" | "medium" | "dark";
+  roastType?: string; // ✅ Optional — some coffees may not have this
   createdAt: string;
   variantCount: number;
   minPrice: number;
@@ -46,7 +47,7 @@ interface ApiCoffee {
   availableSizes: SizePrice[];
   totalStock: number;
   variants: Variant[];
-  bestSeller?: boolean;  // ✅ Added
+  bestSeller?: boolean;
 }
 
 function useTypewriter(phrases: string[]) {
@@ -62,7 +63,7 @@ function useTypewriter(phrases: string[]) {
 
     const currentPhrase = phrases[phraseIndex];
 
-    if (! isDeleting && text === currentPhrase) {
+    if (!isDeleting && text === currentPhrase) {
       const pauseTimeout = setTimeout(() => {
         setIsDeleting(true);
       }, 2000);
@@ -80,7 +81,7 @@ function useTypewriter(phrases: string[]) {
     const timeout = setTimeout(
       () => {
         setText((current) => {
-          if (isDeleting) return currentPhrase. substring(0, current.length - 1);
+          if (isDeleting) return currentPhrase.substring(0, current.length - 1);
           return currentPhrase.substring(0, current.length + 1);
         });
       },
@@ -100,20 +101,20 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
-  const [selectedRoasts, setSelectedRoasts] = useState<Set<string>>(new Set());
+  const [selectedRoastTypes, setSelectedRoastTypes] = useState<Set<string>>(new Set()); // ✅ Replaced selectedRoasts
   const [minPrice, setMinPrice] = useState<number | "">(0);
   const [maxPrice, setMaxPrice] = useState<number | "">(0);
   const [sort, setSort] = useState<SortOption>("featured");
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  const slug = params?. slug;
+  const slug = params?.slug;
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
         setLoading(true);
         const url = slug
-          ? `/api/coffee? search=${encodeURIComponent(slug)}`
+          ? `/api/coffee?search=${encodeURIComponent(slug)}`
           : "/api/coffee";
         const response = await fetch(url);
         if (!response.ok) throw new Error("Failed to fetch products");
@@ -125,8 +126,9 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
           (coffee: ApiCoffee) => {
             console.log(`☕ Coffee: ${coffee.name}`, {
               hasVariants: !!coffee.variants,
-              variantCount: coffee.variants?. length || 0,
-              bestSeller: coffee.bestSeller,  // ✅ Log bestSeller
+              variantCount: coffee.variants?.length || 0,
+              bestSeller: coffee.bestSeller,
+              roastType: coffee.roastType, // ✅ Log roastType
             });
 
             const prices: Record<string, number> = {};
@@ -148,25 +150,17 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
               prices,
               img: coffee.img,
               roastLevel: coffee.roastLevel,
+              roastType: coffee.roastType ?? null, // ✅ Pass roastType (null if missing)
               grinds: coffee.availableGrinds,
               availableSizes: coffee.availableSizes,
               minPrice: coffee.minPrice,
               variants: coffee.variants,
-              bestSeller: coffee. bestSeller,  // ✅ Pass bestSeller to ProductCard
+              bestSeller: coffee.bestSeller,
             };
           }
         );
 
         console.log("✅ Transformed products:", transformedProducts);
-        console.log(
-          "🔍 First product variants:",
-          transformedProducts[0]?.variants
-        );
-        console.log(
-          "⭐ First product bestSeller:",
-          transformedProducts[0]?.bestSeller
-        );
-
         setProducts(transformedProducts);
 
         if (transformedProducts.length > 0) {
@@ -197,31 +191,38 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
   }, [slug]);
 
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query. trim()), 220);
+    const t = setTimeout(() => setDebouncedQuery(query.trim()), 220);
     return () => clearTimeout(t);
   }, [query]);
 
   const origins = useMemo(() => {
     const s = new Set<string>();
     for (const p of products) if (p.origin) s.add(p.origin);
-    return Array.from(s). sort();
+    return Array.from(s).sort();
+  }, [products]);
+
+  // ✅ Dynamically collect available roast types from products (excluding nulls)
+  const availableRoastTypes = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of products) if (p.roastType) s.add(p.roastType);
+    return Array.from(s).sort();
   }, [products]);
 
   const priceBounds = useMemo(() => {
     if (products.length === 0) return { min: 0, max: 100 };
     const prices = products.map((p) => {
-      const firstSize = Object. values(p.prices || {})[0];
+      const firstSize = Object.values(p.prices || {})[0];
       return firstSize || p.price;
     });
     return {
-      min: Math.min(...prices. filter((p) => p !== undefined)),
+      min: Math.min(...prices.filter((p) => p !== undefined)),
       max: Math.max(...prices.filter((p) => p !== undefined)),
     };
   }, [products]);
 
   const typewriterPhrases = [
-    "Search by name, notes, or origin.. .",
-    "Try 'Ethiopia' or 'Colombia'.. .",
+    "Search by name, notes, or origin...",
+    "Try 'Ethiopia' or 'Colombia'...",
     "Your coffee is waiting...",
     "Discover new flavors...",
     "Search tasting notes...",
@@ -230,7 +231,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
   const typewriterText = useTypewriter(query === "" ? typewriterPhrases : []);
 
   const filtered = useMemo(() => {
-    let out = products. slice();
+    let out = products.slice();
 
     if (debouncedQuery) {
       const q = debouncedQuery.toLowerCase();
@@ -242,27 +243,28 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
       );
     }
 
-    if (selectedRoasts.size > 0) {
+    // ✅ Filter by roast type (skip if no roastType on product)
+    if (selectedRoastTypes.size > 0) {
       out = out.filter((p) =>
-        p.roastLevel ?  selectedRoasts.has(p.roastLevel) : false
+        p.roastType ? selectedRoastTypes.has(p.roastType) : false
       );
     }
 
     const min = typeof minPrice === "number" ? minPrice : -Infinity;
-    const max = typeof maxPrice === "number" ?  maxPrice : Infinity;
+    const max = typeof maxPrice === "number" ? maxPrice : Infinity;
     out = out.filter((p) => {
-      const firstSize = Object.values(p. prices || {})[0];
+      const firstSize = Object.values(p.prices || {})[0];
       const unit = firstSize || p.price;
-      return (unit ??  0) >= min && (unit ??  0) <= max;
+      return (unit ?? 0) >= min && (unit ?? 0) <= max;
     });
 
     switch (sort) {
       case "price-asc": {
         const getFirstPrice = (p: Product) => {
-          const firstSize = Object. values(p.prices || {})[0];
+          const firstSize = Object.values(p.prices || {})[0];
           return firstSize || p.price;
         };
-        out. sort((a, b) => (getFirstPrice(a) || 0) - (getFirstPrice(b) || 0));
+        out.sort((a, b) => (getFirstPrice(a) || 0) - (getFirstPrice(b) || 0));
         break;
       }
       case "price-desc": {
@@ -270,7 +272,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
           const firstSize = Object.values(p.prices || {})[0];
           return firstSize || p.price;
         };
-        out. sort((a, b) => (getFirstPrice(b) || 0) - (getFirstPrice(a) || 0));
+        out.sort((a, b) => (getFirstPrice(b) || 0) - (getFirstPrice(a) || 0));
         break;
       }
       case "name-asc":
@@ -285,32 +287,32 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
     }
 
     return out;
-  }, [products, debouncedQuery, selectedRoasts, minPrice, maxPrice, sort]);
+  }, [products, debouncedQuery, selectedRoastTypes, minPrice, maxPrice, sort]);
 
-  const toggleRoast = useCallback((level: string) => {
-    setSelectedRoasts((prev) => {
+  const toggleRoastType = useCallback((type: string) => {
+    setSelectedRoastTypes((prev) => {
       const s = new Set(prev);
-      if (s.has(level)) s.delete(level);
-      else s.add(level);
+      if (s.has(type)) s.delete(type);
+      else s.add(type);
       return s;
     });
   }, []);
 
-  const removeRoast = useCallback((level: string) => {
-    setSelectedRoasts((prev) => {
+  const removeRoastType = useCallback((type: string) => {
+    setSelectedRoastTypes((prev) => {
       const s = new Set(prev);
-      s.delete(level);
+      s.delete(type);
       return s;
     });
   }, []);
 
   const resetFilters = useCallback(() => {
     setQuery("");
-    setSelectedRoasts(new Set());
+    setSelectedRoastTypes(new Set());
     setMinPrice(priceBounds.min);
     setMaxPrice(priceBounds.max);
     setSort("featured");
-  }, [priceBounds. min, priceBounds.max]);
+  }, [priceBounds.min, priceBounds.max]);
 
   const clearPriceFilter = useCallback(() => {
     setMinPrice(priceBounds.min);
@@ -336,11 +338,12 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
       });
     }
 
-    selectedRoasts.forEach((roast) => {
-      tags. push({
-        type: "roast",
-        label: `Roast: ${roast. charAt(0).toUpperCase() + roast.slice(1)}`,
-        onRemove: () => removeRoast(roast),
+    // ✅ Roast type tags
+    selectedRoastTypes.forEach((type) => {
+      tags.push({
+        type: "roastType",
+        label: `Type: ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+        onRemove: () => removeRoastType(type),
       });
     });
 
@@ -363,13 +366,13 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
     return tags;
   }, [
     debouncedQuery,
-    selectedRoasts,
+    selectedRoastTypes,
     minPrice,
     maxPrice,
     priceBounds,
     isPriceFilterActive,
     clearSearchQuery,
-    removeRoast,
+    removeRoastType,
     clearPriceFilter,
   ]);
 
@@ -377,21 +380,22 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
     if (typeof window === "undefined") return;
     document.body.style.overflow = filtersOpen ? "hidden" : "";
     return () => {
-      document. body.style.overflow = "";
+      document.body.style.overflow = "";
     };
   }, [filtersOpen]);
 
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (debouncedQuery) count++;
-    if (selectedRoasts.size > 0) count += selectedRoasts.size;
+    if (selectedRoastTypes.size > 0) count += selectedRoastTypes.size;
     if (isPriceFilterActive) count++;
     return count;
-  }, [debouncedQuery, selectedRoasts, isPriceFilterActive]);
+  }, [debouncedQuery, selectedRoastTypes, isPriceFilterActive]);
 
   if (error) {
     return (
-<main className="mt-32 md:mt-24 lg:mt-20 sm:mt-16 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <main className="mt-32 md:mt-24 lg:mt-20 sm:mt-16 min-h-screen bg-gradient-to-b from-white to-gray-50 py-8 sm:py-12">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mt-20 border-2 border-dashed border-red-200 rounded-3xl bg-red-50 p-16 text-center">
             <h3 className="text-3xl font-bold text-red-900 mb-4">
               Error Loading Products
@@ -409,7 +413,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
         input,
         select,
         textarea {
-          font-size: 16px ! important;
+          font-size: 16px !important;
         }
       `}</style>
 
@@ -431,7 +435,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl leading-relaxed">
               Curated selection of single origins and blends, freshly roasted to
-              order. {" "}
+              order.{" "}
             </p>
           </div>
 
@@ -444,7 +448,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
               />
               <input
                 value={query}
-                onChange={(e) => setQuery(e. target.value)}
+                onChange={(e) => setQuery(e.target.value)}
                 aria-label="Search coffees"
                 className="w-full pl-12 pr-4 py-3 rounded-2xl border-2 border-gray-200 bg-white outline-none text-base font-medium transition-all focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 hover:border-gray-300 shadow-sm"
                 style={{ fontSize: "16px" }}
@@ -523,7 +527,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
               <span className="text-gray-600 text-sm">
                 {filtered.length === 1 ? "Product" : "Products"}
               </span>
-              {! loading && filtered.length !== products.length && (
+              {!loading && filtered.length !== products.length && (
                 <span className="text-gray-400 text-xs">
                   of {products.length} total
                 </span>
@@ -553,7 +557,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
           {/* Loading State */}
           {loading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {Array. from({ length: 8 }). map((_, i) => (
+              {Array.from({ length: 8 }).map((_, i) => (
                 <div
                   key={i}
                   className="bg-gray-200 rounded-2xl h-96 animate-pulse"
@@ -563,7 +567,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
           )}
 
           {/* Products Grid */}
-          {! loading && (
+          {!loading && (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 md:justify-items-center lg:justify-items-stretch">
               {filtered.map((p, i) => (
                 <div
@@ -642,7 +646,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                   />
                   <input
                     value={query}
-                    onChange={(e) => setQuery(e.target. value)}
+                    onChange={(e) => setQuery(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 transition-all"
                     style={{ fontSize: "16px" }}
                   />
@@ -680,27 +684,33 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 </select>
               </div>
 
-              {/* Roast Level */}
-              <div>
-                <label className="text-sm font-bold text-gray-900 block mb-3">
-                  Roast level
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {["light", "medium", "dark"].map((r) => (
-                    <button
-                      key={r}
-                      onClick={() => toggleRoast(r)}
-                      className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
-                        selectedRoasts.has(r)
-                          ? "bg-gray-900 text-white border-gray-900 shadow-md"
-                          : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
+              {/* ✅ Roast Type Filter (replaces Roast Level) */}
+              {availableRoastTypes.length > 0 && (
+                <div>
+                  <label className="text-sm font-bold text-gray-900 block mb-3">
+                    Roast type
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {availableRoastTypes.map((type) => (
+                      <button
+                        key={type}
+                        onClick={() => toggleRoastType(type)}
+                        className={`px-5 py-2.5 rounded-lg border-2 text-sm font-semibold capitalize transition-all ${
+                          selectedRoastTypes.has(type)
+                            ? "bg-gray-900 text-white border-gray-900 shadow-md"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                  {/* ✅ Graceful note if some products have no roast type */}
+                  <p className="text-xs text-gray-400 mt-2">
+                    Some coffees may not be assigned a roast type and will be excluded when filtering.
+                  </p>
                 </div>
-              </div>
+              )}
 
               {/* Price Range */}
               <div>
@@ -717,7 +727,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                       value={minPrice === "" ? "" : minPrice}
                       onChange={(e) =>
                         setMinPrice(
-                          e.target.value === "" ? "" : Number(e. target.value)
+                          e.target.value === "" ? "" : Number(e.target.value)
                         )
                       }
                       className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
@@ -734,7 +744,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                       value={maxPrice === "" ? "" : maxPrice}
                       onChange={(e) =>
                         setMaxPrice(
-                          e. target.value === "" ? "" : Number(e.target.value)
+                          e.target.value === "" ? "" : Number(e.target.value)
                         )
                       }
                       className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
@@ -744,8 +754,8 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                   </div>
                 </div>
                 <div className="text-xs text-gray-500 mt-2 font-medium">
-                  Range: £{priceBounds. min. toFixed(2)} — £
-                  {priceBounds. max.toFixed(2)}
+                  Range: £{priceBounds.min.toFixed(2)} — £
+                  {priceBounds.max.toFixed(2)}
                 </div>
               </div>
 
@@ -757,7 +767,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 <select
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (! v) setQuery("");
+                    if (!v) setQuery("");
                     else setQuery(v);
                   }}
                   className="w-full rounded-xl border-2 border-gray-200 px-4 py-3 text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 outline-none transition-all"
@@ -789,7 +799,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 className="w-full px-6 py-3 rounded-lg bg-gray-900 text-white font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl"
               >
                 Show {filtered.length}{" "}
-                {filtered. length === 1 ? "result" : "results"}
+                {filtered.length === 1 ? "result" : "results"}
               </button>
             </div>
           </aside>

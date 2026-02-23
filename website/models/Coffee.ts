@@ -1,5 +1,3 @@
-
-
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface ICoffee extends Document {
@@ -11,6 +9,7 @@ export interface ICoffee extends Document {
   img?: string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter"; // ✅ Added roastType field
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -64,6 +63,12 @@ const CoffeeSchema = new Schema<ICoffee>(
       enum: ["light", "medium", "dark"],
       default: null,
     },
+    roastType: {
+      type: String,
+      enum: ["espresso", "filter"], // either 'espresso' or 'filter'
+      default: null,
+      index: true, // index for fast filtering by roast type
+    },
     process: {
       type: String,
       trim: true,
@@ -102,8 +107,8 @@ const CoffeeSchema = new Schema<ICoffee>(
 // Text index for search (include story so it's searchable)
 CoffeeSchema.index({ name: "text", origin: "text", notes: "text", story: "text" });
 
-// Compound index for filtering best sellers with other criteria
-CoffeeSchema.index({ bestSeller: 1, createdAt: -1 });
+// Compound index for filtering by roastType and best sellers, ordered by creation date
+CoffeeSchema.index({ roastType: 1, bestSeller: 1, createdAt: -1 });
 
 // Prevent model recompilation in Next.js dev mode
 export default mongoose.models.Coffee ||

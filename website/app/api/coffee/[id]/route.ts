@@ -4,7 +4,7 @@ import CoffeeVariant from "@/models/CoffeeVariant";
 import dbConnect from "@/lib/dbConnect";
 import mongoose from "mongoose";
 import { verifyAuthForApi } from "@/lib/auth";
-import { v2 as cloudinary } from 'cloudinary';  // ✅ Cloudinary import
+import { v2 as cloudinary } from "cloudinary";  // ✅ Cloudinary import
 
 // ✅ Configure Cloudinary
 cloudinary.config({
@@ -33,6 +33,7 @@ interface CoffeeDetail {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter";
   img: string;  // ✅ Cloudinary public ID
   images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
   notes?: string;
@@ -156,6 +157,7 @@ export async function GET(
           name: 1,
           origin: 1,
           roastLevel: 1,
+          roastType: 1,     // <-- include roastType in projection
           img: 1,
           images: 1,  // ✅ Include images array in response
           notes: 1,
@@ -279,6 +281,7 @@ export async function PATCH(
       img,
       images,  // ✅ This now contains Cloudinary public IDs (images + videos)
       roastLevel,
+      roastType, // <-- accept roastType from request body
       process,
       altitude,
       harvest,
@@ -297,6 +300,7 @@ export async function PATCH(
       img?: string;  // ✅ Cloudinary public ID
       images?: string[];  // ✅ Array of Cloudinary public IDs
       roastLevel?: "light" | "medium" | "dark";
+      roastType?: "espresso" | "filter";
       process?: string;
       altitude?: string;
       harvest?: string;
@@ -306,8 +310,10 @@ export async function PATCH(
       bestSeller?: boolean;
     }
 
+    const allowedRoastTypes = ["espresso", "filter"];
+
     const updateData: UpdateCoffeeData = {};
-    if (slug !== undefined) updateData.slug = slug;
+    if (slug !== undefined) updateData.slug = slug.toLowerCase();
     if (name !== undefined) updateData.name = name;
     if (origin !== undefined) updateData.origin = origin;
     if (notes !== undefined) updateData.notes = notes;
@@ -315,6 +321,20 @@ export async function PATCH(
     if (img !== undefined) updateData.img = img;  // ✅ Update main image (Cloudinary public ID)
     if (images !== undefined) updateData.images = images;  // ✅ Update images array (Cloudinary public IDs)
     if (roastLevel !== undefined) updateData.roastLevel = roastLevel;
+    if (roastType !== undefined) {
+      if (!allowedRoastTypes.includes(roastType)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Invalid roastType. Allowed values: ${allowedRoastTypes.join(
+              ", "
+            )}`,
+          },
+          { status: 400 }
+        );
+      }
+      updateData.roastType = roastType;
+    }
     if (process !== undefined) updateData.process = process;
     if (altitude !== undefined) updateData.altitude = altitude;
     if (harvest !== undefined) updateData.harvest = harvest;
@@ -432,12 +452,9 @@ export async function DELETE(
     if (publicIdsToDelete.size > 0) {
       const deletePromises = Array.from(publicIdsToDelete).map(async (publicId) => {
         try {
-          // Determine if it's a video or image
-          const isVideo = publicId.includes('/video/') || 
-                         publicId.includes('. mp4') || 
-                         publicId.includes('.mov') || 
-                         publicId.includes('.webm') ||
-                         publicId.toLowerCase().includes('video');
+          // Determine if it's a video or image (best-effort; if you store the resource_type separately that's preferred)
+          const lower = publicId.toLowerCase();
+          const isVideo = lower.includes('/video/') || lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.includes('video');
           
           const resourceType = isVideo ? 'video' : 'image';
           

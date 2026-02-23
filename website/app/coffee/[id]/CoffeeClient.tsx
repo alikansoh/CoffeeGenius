@@ -58,7 +58,8 @@ interface ApiCoffee {
   img: string;
   images?: string[];
   notes?: string;
-  roastLevel?: "light" | "medium" | "dark";
+  roastLevel?: "light" | "medium" | "dark"; // kept for compatibility but not used in UI
+  roastType?: "espresso" | "filter"; // <-- added roastType
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -87,7 +88,7 @@ export interface ExtendedProduct {
   price: number;
   prices?: Record<string, number>;
   img: string;
-  roastLevel?: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter"; // <-- added roastType
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -140,69 +141,39 @@ const GRIND_OPTIONS: {
   { value: "aeropress", label: "AeroPress", description: "Fine-medium grind" },
 ];
 
-const ROAST_LEVEL_INFO: Record<
-  string,
-  { intensity: number; color: string; description: string }
+// Simple attractive roast type badge (small + clean)
+const ROAST_TYPE_META: Record<
+  "espresso" | "filter",
+  { label: string; desc: string; pill: string; text: string }
 > = {
-  light: {
-    intensity: 33,
-    color: "bg-amber-300",
-    description:
-      "Light roast — brighter acidity, a delicate body, and pronounced origin-driven flavors such as floral, citrus, and tea-like notes.",
+  espresso: {
+    label: "Espresso",
+    desc: "Rich, concentrated — great for pressure extraction.",
+    pill: "bg-gradient-to-r from-amber-400 to-amber-600",
+    text: "text-white",
   },
-  medium: {
-    intensity: 66,
-    color: "bg-amber-600",
-    description:
-      "Medium roast — balanced acidity and body with rounded sweetness; expect caramel, nutty and milk-chocolate undertones while still retaining some origin character.",
-  },
-  dark: {
-    intensity: 100,
-    color: "bg-amber-900",
-    description:
-      "Dark roast — lower acidity with pronounced roast character and fuller body; expect deep chocolate, toasted or caramelized notes and a bolder, more robust cup.",
+  filter: {
+    label: "Filter",
+    desc: "Clean and bright — ideal for pour-over and drip.",
+    pill: "bg-gradient-to-r from-sky-300 to-sky-500",
+    text: "text-white",
   },
 };
 
-export function RoastLevelIndicator({
-  level,
-}: {
-  level?: ExtendedProduct["roastLevel"];
-}) {
-  if (!level) return null;
-
-  const levelMap: Record<NonNullable<ExtendedProduct["roastLevel"]>, number> = {
-    light: 1,
-    medium: 2,
-    dark: 3,
-  };
-  const numeric = levelMap[level];
-
+function SimpleRoastType({ type }: { type: "espresso" | "filter" }) {
+  const meta = ROAST_TYPE_META[type];
   return (
-    <div className="inline-flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
-      <div className="flex items-center gap-1">
-        {[1, 2, 3].map((bean) => (
-          <div key={bean} className="w-4 h-4">
-            <Image
-              src={bean <= numeric ? "/bean-filled.svg" : "/bean.svg"}
-              alt={
-                bean <= numeric ? `${level} roast bean filled` : "bean outline"
-              }
-              width={16}
-              height={16}
-              className="w-4 h-4"
-            />
-          </div>
-        ))}
-      </div>
-
-      <div className="h-4 w-px bg-gray-200" />
-
-      <div className="flex flex-col">
-        <span className="text-xs text-gray-700 uppercase tracking-wider font-semibold">
-          {level}
+    <div className="flex items-center gap-3">
+      <div
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-full shadow-sm ${meta.pill}`}
+        aria-hidden
+      >
+        <Coffee className={`w-4 h-4 ${meta.text}`} />
+        <span className={`font-semibold text-sm ${meta.text} capitalize`}>
+          {meta.label}
         </span>
       </div>
+      <p className="text-xs text-gray-500">{meta.desc}</p>
     </div>
   );
 }
@@ -259,7 +230,9 @@ export default function ProductDetailPage() {
   const addItem = useCart((s) => s.addItem);
 
   const [product, setProduct] = useState<ExtendedProduct | null>(null);
-  const [relatedProducts, setRelatedProducts] = useState<ExtendedProduct[]>([]);
+  const [relatedProducts, setRelatedProducts] = useState<ExtendedProduct[]>(
+    []
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -386,7 +359,7 @@ export default function ProductDetailPage() {
           price: apiCoffee.minPrice,
           prices,
           img: apiCoffee.img,
-          roastLevel: apiCoffee.roastLevel,
+          roastType: apiCoffee.roastType, // <-- include roastType
           process: apiCoffee.process,
           altitude: apiCoffee.altitude,
           harvest: apiCoffee.harvest,
@@ -426,10 +399,16 @@ export default function ProductDetailPage() {
             const others: ApiCoffee[] = allData.data.filter(
               (coffee: ApiCoffee) => coffee._id !== apiCoffee._id
             );
-            const sameRoast = others.filter(
-              (c) => c.roastLevel === apiCoffee.roastLevel
-            );
-            let selectedForRelated: ApiCoffee[] = sameRoast.slice(0, 4);
+
+            // Prefer matching roastType when available
+            let sameType: ApiCoffee[] = [];
+            if (apiCoffee.roastType) {
+              sameType = others.filter(
+                (c) => c.roastType === apiCoffee.roastType
+              );
+            }
+
+            let selectedForRelated: ApiCoffee[] = sameType.slice(0, 4);
 
             if (selectedForRelated.length < 4) {
               const needed = 4 - selectedForRelated.length;
@@ -459,7 +438,7 @@ export default function ProductDetailPage() {
                   price: coffee.minPrice,
                   prices: relatedPrices,
                   img: coffee.img,
-                  roastLevel: coffee.roastLevel,
+                  roastType: coffee.roastType, // <-- propagate roastType
                   availableGrinds: coffee.availableGrinds,
                   bestSeller: coffee.bestSeller,
                 } as ExtendedProduct;
@@ -641,9 +620,6 @@ export default function ProductDetailPage() {
       ?.split(",")
       .map((n) => n.trim())
       .filter(Boolean) ?? [];
-  const roastInfo = product.roastLevel
-    ? ROAST_LEVEL_INFO[product.roastLevel]
-    : null;
 
   const toggleAccordion = (section: string) => {
     setActiveAccordion((prev) => (prev === section ? null : section));
@@ -741,6 +717,13 @@ export default function ProductDetailPage() {
               </p>
               <p className="text-sm text-gray-500">per {selectedSize}</p>
             </div>
+
+            {/* Mobile: show simple roast type inline under title if present */}
+            {product.roastType && (
+              <div className="mt-2">
+                <SimpleRoastType type={product.roastType} />
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 md:gap-12 lg:gap-12">
@@ -872,14 +855,15 @@ export default function ProductDetailPage() {
                       <p>
                         <strong>Origin:</strong> {product.origin}
                       </p>
-                      {product.roastLevel && (
+
+                      {/* Show roastType if present (replaced roastLevel) */}
+                      {product.roastType && (
                         <p>
-                          <strong>Roast Level:</strong>{" "}
-                          <span className="capitalize">
-                            {product.roastLevel}
-                          </span>
+                          <strong>Roast Type:</strong>{" "}
+                          <span className="capitalize">{product.roastType}</span>
                         </p>
                       )}
+
                       {product.process && (
                         <p>
                           <strong>Process:</strong> {product.process}
@@ -1052,18 +1036,14 @@ export default function ProductDetailPage() {
                 </div>
               </div>
 
-              {product.roastLevel && (
-                <div>
-                  <RoastLevelIndicator level={product.roastLevel} />
-                  {roastInfo && (
-                    <p className="mt-3 text-xs sm:text-sm text-gray-600">
-                      {roastInfo.description}
-                    </p>
-                  )}
+              {/* Show roastType if present (desktop) - simple, attractive */}
+              {product.roastType && (
+                <div className="mb-3">
+                  <SimpleRoastType type={product.roastType} />
                 </div>
               )}
 
-            {/* ── Enhanced Story Section ── */}
+              {/* ── Enhanced Story Section ── */}
 <div className="border-2 border-amber-100 rounded-2xl overflow-hidden shadow-sm bg-white">
   <button
     onClick={() => toggleAccordion("story")}
@@ -1169,9 +1149,7 @@ export default function ProductDetailPage() {
               </div>
               <span className="text-sm font-bold text-gray-800">
                 {product.cupping_score}
-                <span className="text-xs font-normal text-gray-400">
-                  /100
-                </span>
+                <span className="text-xs font-normal text-gray-400">/100</span>
               </span>
             </div>
           </div>

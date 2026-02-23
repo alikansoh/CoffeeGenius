@@ -21,7 +21,7 @@ import {
   isVideo,
 } from "@/app/utils/cloudinary";
 
-type RoastLevel = "light" | "medium" | "dark";
+type RoastType = "espresso" | "filter";
 
 interface CoffeeData {
   _id: string;
@@ -31,7 +31,7 @@ interface CoffeeData {
   notes: string[];
   img: string;
   images: string[];
-  roastLevel: RoastLevel | "";
+  roastType: RoastType | "";
   process: string;
   altitude: string;
   harvest: string;
@@ -76,10 +76,9 @@ interface UploadApiResponse {
   message?: string;
 }
 
-const ROAST_LEVELS: { value: RoastLevel; label: string }[] = [
-  { value: "light", label: "Light" },
-  { value: "medium", label: "Medium" },
-  { value: "dark", label: "Dark" },
+const ROAST_TYPES: { value: RoastType; label: string }[] = [
+  { value: "espresso", label: "Espresso" },
+  { value: "filter", label: "Filter" },
 ];
 
 function Toast({
@@ -171,7 +170,7 @@ export default function AdminEditCoffeePage() {
     notes: [],
     img: "",
     images: [],
-    roastLevel: "",
+    roastType: "",
     process: "",
     altitude: "",
     harvest: "",
@@ -248,7 +247,7 @@ export default function AdminEditCoffeePage() {
         notes: c.notes ? c.notes.split(",").map((n: string) => n.trim()) : [],
         img: c.img || "",
         images: images,
-        roastLevel: c.roastLevel || "",
+        roastType: c.roastType || "",
         process: c.process || "",
         altitude: c.altitude || "",
         harvest: c.harvest || "",
@@ -498,7 +497,7 @@ export default function AdminEditCoffeePage() {
         story: formData.story || undefined, // <-- include story in PATCH payload
         img: mainImage,
         images: orderedImages,
-        roastLevel: formData.roastLevel || undefined,
+        roastType: formData.roastType || undefined, // <-- send roastType
         process: formData.process || undefined,
         altitude: formData.altitude || undefined,
         harvest: formData.harvest || undefined,
@@ -775,27 +774,40 @@ export default function AdminEditCoffeePage() {
               <h2 className="text-lg font-bold text-gray-900 mb-4">Roast & Details</h2>
               <div className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Roast Level</label>
+                  <label className="block text-sm font-bold text-gray-900 mb-3">Roast Type</label>
                   <div className="grid grid-cols-3 gap-3">
-                    {ROAST_LEVELS.map((roast) => (
+                    {ROAST_TYPES.map((rt) => (
                       <button
-                        key={roast.value}
+                        key={rt.value}
                         type="button"
-                        onClick={() => setField("roastLevel", roast.value)}
+                        onClick={() => setField("roastType", rt.value)}
                         className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                          formData.roastLevel === roast.value
+                          formData.roastType === rt.value
                             ? "border-gray-900 bg-gray-900 text-white"
                             : "border-gray-300 hover:border-gray-900 text-gray-700"
                         }`}
                       >
-                        {roast.label}
+                        {rt.label}
                       </button>
                     ))}
+                    <button
+                      key="none"
+                      type="button"
+                      onClick={() => setField("roastType", "")}
+                      className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
+                        formData.roastType === ""
+                          ? "border-gray-900 bg-gray-900 text-white"
+                          : "border-gray-300 hover:border-gray-900 text-gray-700"
+                      }`}
+                    >
+                      None
+                    </button>
                   </div>
-                  {formData.roastLevel && (
+                  <p className="text-xs text-gray-500 mt-2">Don&apos;t select anything if roast type is not applicable.</p>
+                  {formData.roastType && (
                     <button
                       type="button"
-                      onClick={() => setField("roastLevel", "")}
+                      onClick={() => setField("roastType", "")}
                       className="mt-2 text-xs text-gray-500 hover:text-gray-700 font-medium"
                     >
                       Clear selection
