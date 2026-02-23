@@ -12,7 +12,7 @@ import {
   X,
   ArrowLeft,
 } from "lucide-react";
-import { getCloudinaryThumbnail } from "@/app/utils/cloudinary";  // ✅ Import helper
+import { getCloudinaryThumbnail } from "@/app/utils/cloudinary";
 
 export interface Coffee {
   _id: string;
@@ -22,6 +22,30 @@ export interface Coffee {
   img?: string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
+  roastType?: string | null; // ✅ Added
+}
+
+// ✅ Roast type badge config (same as ProductCard)
+const roastTypeConfig: Record<string, { bg: string; text: string; icon: string }> = {
+  espresso:   { bg: "bg-amber-100",   text: "text-amber-900",  icon: "☕" },
+  filter:     { bg: "bg-sky-100",     text: "text-sky-900",    icon: "🫖" },
+  "cold-brew":{ bg: "bg-indigo-100",  text: "text-indigo-900", icon: "🧊" },
+  omni:       { bg: "bg-emerald-100", text: "text-emerald-900",icon: "✺" },
+};
+
+function RoastTypeBadge({ type }: { type: string }) {
+  const config = roastTypeConfig[type.toLowerCase()] ?? {
+    bg: "bg-stone-100",
+    text: "text-stone-700",
+    icon: "◦",
+  };
+  const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, " ");
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg} ${config.text} text-[11px] font-semibold`}>
+      <span className="text-xs">{config.icon}</span>
+      {label}
+    </span>
+  );
 }
 
 type ToastType = "error" | "success";
@@ -77,20 +101,19 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
     const fetchCoffees = async () => {
       setLoading(true);
       try {
-        const res = await window.fetch("/api/coffee? limit=100", {
+        const res = await window.fetch("/api/coffee?limit=100", {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },...(sendCookies ?  { credentials: "include" as RequestCredentials } : {}),
+          headers: { "Content-Type": "application/json" },
+          ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
         });
 
         if (!res.ok) {
-          const text = await res.text(). catch(() => null);
-          throw new Error(`Fetch failed: ${res.status} ${text ??  ""}`);
+          const text = await res.text().catch(() => null);
+          throw new Error(`Fetch failed: ${res.status} ${text ?? ""}`);
         }
 
         const data = await res.json();
-        setCoffees(data?. data || data?. coffees || data || []);
+        setCoffees(data?.data || data?.coffees || data || []);
       } catch (err) {
         console.error(err);
         setError("Failed to load coffees");
@@ -103,13 +126,13 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
 
   const filtered = coffees.filter(
     (c) =>
-      c.name. toLowerCase().includes(search.toLowerCase()) ||
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
       c.origin.toLowerCase().includes(search.toLowerCase()) ||
       c.slug.toLowerCase().includes(search.toLowerCase())
   );
 
   const handleDelete = async (id: string, name: string) => {
-    if (! confirm(`Delete "${name}"?  This action cannot be undone.`)) return;
+    if (!confirm(`Delete "${name}"? This action cannot be undone.`)) return;
 
     try {
       const res = await window.fetch(`/api/coffee/${encodeURIComponent(id)}`, {
@@ -119,7 +142,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
       });
 
       if (!res.ok) {
-        const text = await res.text(). catch(() => null);
+        const text = await res.text().catch(() => null);
         throw new Error(`Delete failed: ${res.status} ${text ?? ""}`);
       }
 
@@ -134,9 +157,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
   return (
     <>
       <style jsx global>{`
-        input {
-          font-size: 16px ! important;
-        }
+        input { font-size: 16px !important; }
       `}</style>
 
       <main className="min-h-screen bg-gray-50 pb-12">
@@ -146,16 +167,14 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => router. push("/admin")}
+                  onClick={() => router.push("/admin")}
                   className="inline-flex items-center justify-center p-2 sm:p-2.5 rounded-xl hover:bg-gray-100 transition-colors text-gray-900"
                   aria-label="Back to admin"
                 >
                   <ArrowLeft size={20} />
                 </button>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-                    Manage Coffees
-                  </h1>
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Coffees</h1>
                   <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
                     View, edit, and manage your coffee products
                   </p>
@@ -197,7 +216,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
             </div>
           </div>
 
-          {/* Desktop Table View */}
+          {/* Desktop Table */}
           <div className="hidden lg:block bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -206,7 +225,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Image</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Name</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Origin</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Roast</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Roast Type</th>
                     <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Slug</th>
                     <th className="px-6 py-4 text-right text-xs font-bold text-gray-900 uppercase tracking-wide">Actions</th>
                   </tr>
@@ -227,9 +246,9 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                         <div className="flex flex-col items-center justify-center gap-3">
                           <CoffeeIcon size={48} className="text-gray-300" />
                           <p className="text-gray-900 font-medium">
-                            {search ?  "No coffees match your search" : "No coffees found"}
+                            {search ? "No coffees match your search" : "No coffees found"}
                           </p>
-                          {! search && (
+                          {!search && (
                             <button
                               onClick={() => router.push("/admin/coffee/create")}
                               className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all font-medium text-sm"
@@ -246,9 +265,9 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                       <tr key={coffee._id} className="hover:bg-gray-50 transition-colors">
                         <td className="px-6 py-4">
                           <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200">
-                            {coffee.img ?  (
+                            {coffee.img ? (
                               <Image
-                                src={getCloudinaryThumbnail(coffee.img, 200)}  
+                                src={getCloudinaryThumbnail(coffee.img, 200)}
                                 alt={coffee.name}
                                 width={64}
                                 height={64}
@@ -267,11 +286,10 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-600">{coffee.origin}</div>
                         </td>
+                        {/* ✅ Roast type column */}
                         <td className="px-6 py-4">
-                          {coffee.roastLevel ?  (
-                            <span className="inline-block px-3 py-1 bg-gray-100 text-gray-900 text-xs font-medium rounded-full capitalize">
-                              {coffee.roastLevel}
-                            </span>
+                          {coffee.roastType ? (
+                            <RoastTypeBadge type={coffee.roastType} />
                           ) : (
                             <span className="text-gray-400 text-xs">—</span>
                           )}
@@ -289,7 +307,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                               Edit
                             </button>
                             <button
-                              onClick={() => handleDelete(coffee._id, coffee. name)}
+                              onClick={() => handleDelete(coffee._id, coffee.name)}
                               className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl border-2 border-red-200 hover:bg-red-100 transition-all font-medium"
                             >
                               <Trash2 size={14} />
@@ -342,7 +360,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     <div className="w-20 h-20 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200 flex-shrink-0">
                       {coffee.img ? (
                         <Image
-                          src={getCloudinaryThumbnail(coffee.img, 200)} 
+                          src={getCloudinaryThumbnail(coffee.img, 200)}
                           alt={coffee.name}
                           width={80}
                           height={80}
@@ -357,10 +375,13 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-900 mb-1 truncate">{coffee.name}</h3>
                       <p className="text-sm text-gray-600 mb-2">{coffee.origin}</p>
-                      {coffee.roastLevel && (
-                        <span className="inline-block px-2 py-1 bg-gray-100 text-gray-900 text-xs font-medium rounded-full capitalize mb-2">
-                          {coffee.roastLevel}
-                        </span>
+                      {/* ✅ Roast type badge on mobile */}
+                      {coffee.roastType ? (
+                        <div className="mb-2">
+                          <RoastTypeBadge type={coffee.roastType} />
+                        </div>
+                      ) : (
+                        <span className="inline-block text-xs text-gray-400 mb-2">No roast type</span>
                       )}
                       <p className="text-xs text-gray-500 font-mono truncate">{coffee.slug}</p>
                     </div>
@@ -387,10 +408,10 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
           </div>
 
           {/* Stats */}
-          {! loading && coffees.length > 0 && (
+          {!loading && coffees.length > 0 && (
             <div className="mt-6 p-4 bg-white border-2 border-gray-200 rounded-xl">
               <div className="text-sm text-gray-600">
-                Showing <span className="font-bold text-gray-900">{filtered. length}</span> of{" "}
+                Showing <span className="font-bold text-gray-900">{filtered.length}</span> of{" "}
                 <span className="font-bold text-gray-900">{coffees.length}</span> coffees
               </div>
             </div>
@@ -398,7 +419,6 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
         </div>
       </main>
 
-      {/* Toasts */}
       {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
       {success && <Toast message={success} type="success" onClose={() => setSuccess(null)} />}
     </>
