@@ -29,7 +29,7 @@ export type Product = {
   img?: string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: string | null; // ✅ Added
+  roastType?: string | null;
   grinds?: string[];
   stock?: number;
   availableSizes?: Array<{ size: string; price: number; availableGrinds?: string[]; totalStock?: number }>;
@@ -158,20 +158,17 @@ export default function ProductCard({
   }, [cardImagePublicIdOrUrl]);
 
   const availableSizes = useMemo(() => {
-    return product.availableSizes && product.availableSizes.length > 0
-      ? product.availableSizes
-          .map((s) => s.size)
-          .sort((a, b) => {
-            const sizeOrder: Record<string, number> = { "250g": 1, "500g": 2, "1kg": 3 };
-            return (sizeOrder[a] || 999) - (sizeOrder[b] || 999);
-          })
+    const sizes = product.availableSizes && product.availableSizes.length > 0
+      ? product.availableSizes.map((s) => ({ size: s.size, price: s.price }))
       : product.prices
-      ? Object.keys(product.prices).sort((a, b) => {
-          const sizeOrder: Record<string, number> = { "250g": 1, "500g": 2, "1kg": 3 };
-          return (sizeOrder[a] || 999) - (sizeOrder[b] || 999);
-        })
-      : ["250g"];
-  }, [product.availableSizes, product.prices]);
+      ? Object.entries(product.prices).map(([k, v]) => ({ size: k, price: v }))
+      : [{ size: "250g", price: product.minPrice ?? product.price ?? 0 }];
+
+    // sort by friendly order if available
+    const sizeOrder: Record<string, number> = { "250g": 1, "500g": 2, "1kg": 3 };
+    sizes.sort((a, b) => (sizeOrder[a.size] || 999) - (sizeOrder[b.size] || 999));
+    return sizes;
+  }, [product.availableSizes, product.prices, product.minPrice, product.price]);
 
   const availableGrindsForSize = useMemo(() => {
     if (!size) return [];
@@ -210,7 +207,7 @@ export default function ProductCard({
   };
 
   useEffect(() => {
-    if (availableSizes.length > 0 && !size) setSize(availableSizes[0]);
+    if (availableSizes.length > 0 && !size) setSize(availableSizes[0].size);
   }, [availableSizes, size]);
 
   useEffect(() => {
@@ -297,7 +294,33 @@ export default function ProductCard({
     return (product.prices && product.prices[s]) ?? product.minPrice ?? product.price ?? 0;
   };
 
-  const currentPrice = size ? unitPriceForSize(size) : product.minPrice ?? product.price ?? 0;
+  // Determine the minimum priced size and price (so we can show price & corresponding weight)
+  const displayedMin = useMemo(() => {
+    // Prefer availableSizes array if present (contains explicit price)
+    if (product.availableSizes && product.availableSizes.length > 0) {
+      let min = product.availableSizes[0];
+      for (const s of product.availableSizes) {
+        if (s.price < min.price) min = s;
+      }
+      return { price: min.price, size: min.size };
+    }
+
+    // Otherwise look at prices object
+    if (product.prices && Object.keys(product.prices).length > 0) {
+      const entries = Object.entries(product.prices);
+      let minEntry = entries[0];
+      for (const e of entries) {
+        if (e[1] < minEntry[1]) minEntry = e;
+      }
+      return { price: minEntry[1], size: minEntry[0] };
+    }
+
+    // fallback to minPrice (if provided) or product.price
+    const p = product.minPrice ?? product.price ?? 0;
+    // try to pick a sensible size label if availableSizes exist (already handled), else "250g"
+    return { price: p, size: product.availableSizes?.[0]?.size ?? "250g" };
+  }, [product.availableSizes, product.prices, product.minPrice, product.price]);
+
   const availableStock = selectedVariant?.stock ?? 0;
   const isOutOfStock = selectedVariant ? availableStock === 0 : false;
 
@@ -401,10 +424,11 @@ export default function ProductCard({
 
             <div className="mt-auto mb-4">
               <div className="flex items-baseline gap-2">
+                {/* Always show minimum price and its corresponding weight */}
                 <span className="text-2xl font-bold text-gray-900">
-                  £{currentPrice.toFixed(2)}
+                  £{displayedMin.price.toFixed(2)}
                 </span>
-                <span className="text-xs text-gray-500 font-medium">{size || "250g"}</span>
+                <span className="text-xs text-gray-500 font-medium">{displayedMin.size}</span>
               </div>
             </div>
 
@@ -481,12 +505,8 @@ export default function ProductCard({
               )}
             </div>
             <div className="flex items-center gap-2 mt-1">
-              {product.origin && (
-                <p className="text-xs text-gray-500">{product.origin}</p>
-              )}
-              {product.roastType && (
-                <RoastTypeBadge type={product.roastType} size="sm" />
-              )}
+              {product.origin && <p className="text-xs text-gray-500">{product.origin}</p>}
+              {product.roastType && <RoastTypeBadge type={product.roastType} size="sm" />}
             </div>
           </div>
 
@@ -499,19 +519,19 @@ export default function ProductCard({
               <div className="flex gap-2">
                 {availableSizes.map((s) => (
                   <button
-                    key={s}
+                    key={s.size}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSize(s);
+                      setSize(s.size);
                     }}
                     className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all border-2 ${
-                      size === s
+                      size === s.size
                         ? "bg-gray-900 text-white border-gray-900 shadow-sm"
                         : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
                     }`}
                   >
-                    <div className="font-bold">{s}</div>
-                    <div className="text-xs opacity-75 mt-1">£{unitPriceForSize(s).toFixed(2)}</div>
+                    <div className="font-bold">{s.size}</div>
+                    <div className="text-xs opacity-75 mt-1">£{unitPriceForSize(s.size).toFixed(2)}</div>
                   </button>
                 ))}
               </div>
@@ -562,9 +582,7 @@ export default function ProductCard({
                 >
                   −
                 </button>
-                <div className="flex-1 text-center font-bold text-lg text-gray-900">
-                  {quantity}
-                </div>
+                <div className="flex-1 text-center font-bold text-lg text-gray-900">{quantity}</div>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -592,12 +610,7 @@ export default function ProductCard({
             <button
               onClick={submitQuickAdd}
               disabled={
-                processing ||
-                !size ||
-                !grind ||
-                !selectedVariant ||
-                isOutOfStock ||
-                availableGrindsForSize.length === 0
+                processing || !size || !grind || !selectedVariant || isOutOfStock || availableGrindsForSize.length === 0
               }
               className="flex-1 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >

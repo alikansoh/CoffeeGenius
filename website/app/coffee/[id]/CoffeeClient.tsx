@@ -965,47 +965,51 @@ export default function ProductDetailPage() {
                   </div>
                 )}
 
-                <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
-                  <button
-                    onClick={() => toggleAccordion("shipping")}
-                    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-                    aria-expanded={activeAccordion === "shipping"}
-                  >
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <Truck size={18} className="text-amber-700" />
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
-                        Shipping & Returns
-                      </span>
-                    </div>
-                    {activeAccordion === "shipping" ? (
-                      <ChevronUp size={18} className="text-gray-600" />
-                    ) : (
-                      <ChevronDown size={18} className="text-gray-600" />
-                    )}
-                  </button>
-                  {activeAccordion === "shipping" && (
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-2 sm:space-y-3 text-xs sm:text-sm text-gray-700">
-                      <div>
-                        <strong>Free UK Shipping</strong> on orders over £30
-                      </div>
-                      <div>
-                        <strong>Standard Delivery:</strong> 3-5 business days
-                      </div>
-                      <div>
-                        <strong>Express Delivery:</strong> 1-2 business days
-                        (£5.99)
-                      </div>
-                      <div>
-                        <strong>Returns:</strong> 30-day return policy for
-                        unopened items
-                      </div>
-                      <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                        All coffee is freshly roasted to order. Please allow 1-2
-                        business days for roasting before shipping.
-                      </p>
-                    </div>
-                  )}
-                </div>
+<div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
+  <button
+    onClick={() => toggleAccordion("shipping")}
+    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+    aria-expanded={activeAccordion === "shipping"}
+  >
+    <div className="flex items-center gap-2 sm:gap-3">
+      <Truck size={18} className="text-amber-700" />
+      <span className="font-bold text-gray-900 text-sm sm:text-base">
+        Shipping &amp; Returns
+      </span>
+    </div>
+    {activeAccordion === "shipping" ? (
+      <ChevronUp size={18} className="text-gray-600" />
+    ) : (
+      <ChevronDown size={18} className="text-gray-600" />
+    )}
+  </button>
+  {activeAccordion === "shipping" && (
+    <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-2 sm:space-y-3 text-xs sm:text-sm text-gray-700">
+      <div>
+        <strong>Standard UK Delivery:</strong> £5.00 — 2–4 business days
+      </div>
+      <div>
+        <strong>Returns:</strong> Coffee beans cannot be returned (perishable).
+        Wrong or damaged items? Contact us within 7 days for a free replacement
+        or full refund.
+      </div>
+      <div>
+        <strong>Equipment &amp; Merchandise:</strong> 30-day return window for
+        unused, unopened items. Customer pays return shipping.
+      </div>
+      <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
+        All coffee is freshly roasted to order. Please allow 1–3 business days
+        for roasting before dispatch.{" "}
+        <a
+          href="/shipping"
+          className="text-indigo-600 hover:underline font-medium"
+        >
+          Full Shipping &amp; Returns policy →
+        </a>
+      </p>
+    </div>
+  )}
+</div>
               </div>
             </div>
 
