@@ -742,7 +742,7 @@ export default function ProductDetailPage() {
                       src={getVideoThumbnail(currentMediaItem)}
                       alt={`${product.name} - Video`}
                       fill
-                      className="object-cover"
+                      className="object-contain"
                       priority
                     />
                     <button
@@ -766,7 +766,7 @@ export default function ProductDetailPage() {
                     src={getCloudinaryUrl(currentMediaItem, "large")}
                     alt={`${product.name} - Image ${selectedImageIndex + 1}`}
                     fill
-                    className="object-cover"
+                    className="object-contain"
                     priority
                   />
                 )}
@@ -806,7 +806,7 @@ export default function ProductDetailPage() {
                                 index + 1
                               }`}
                               fill
-                              className="object-cover"
+                              className="object-contain"
                             />
                             <div className="absolute inset-0 flex items-center justify-center">
                               <div className="bg-black/40 rounded-full p-1.5">
@@ -822,7 +822,7 @@ export default function ProductDetailPage() {
                             src={getCloudinaryUrl(mediaItem, "thumbnail")}
                             alt={`${product.name} thumbnail ${index + 1}`}
                             fill
-                            className="object-cover"
+                            className="object-contain"
                           />
                         )}
                       </button>
@@ -1390,7 +1390,7 @@ export default function ProductDetailPage() {
                         }
                         alt={p.name}
                         fill
-                        className="object-cover group-hover:scale-105 transition-transform duration-300"
+                        className="object-contain group-hover:scale-105 transition-transform duration-300"
                       />
                     </div>
                     <div className="p-3 sm:p-4">
