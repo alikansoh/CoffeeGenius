@@ -21,8 +21,6 @@ import {
   isVideo,
 } from "@/app/utils/cloudinary";
 
-type RoastType = "espresso" | "filter";
-
 interface CoffeeData {
   _id: string;
   slug: string;
@@ -31,7 +29,6 @@ interface CoffeeData {
   notes: string[];
   img: string;
   images: string[];
-  roastType: RoastType | "";
   process: string;
   altitude: string;
   harvest: string;
@@ -39,7 +36,7 @@ interface CoffeeData {
   variety: string;
   brewing: string;
   bestSeller: boolean;
-  story: string; // <-- added story
+  story: string;
 }
 
 interface PendingFile {
@@ -75,11 +72,6 @@ interface UploadApiResponse {
   }>;
   message?: string;
 }
-
-const ROAST_TYPES: { value: RoastType; label: string }[] = [
-  { value: "espresso", label: "Espresso" },
-  { value: "filter", label: "Filter" },
-];
 
 function Toast({
   message,
@@ -170,7 +162,6 @@ export default function AdminEditCoffeePage() {
     notes: [],
     img: "",
     images: [],
-    roastType: "",
     process: "",
     altitude: "",
     harvest: "",
@@ -178,7 +169,7 @@ export default function AdminEditCoffeePage() {
     variety: "",
     brewing: "",
     bestSeller: false,
-    story: "", // initialize story
+    story: "",
   });
 
   const [originalData, setOriginalData] = useState<CoffeeData | null>(null);
@@ -247,7 +238,6 @@ export default function AdminEditCoffeePage() {
         notes: c.notes ? c.notes.split(",").map((n: string) => n.trim()) : [],
         img: c.img || "",
         images: images,
-        roastType: c.roastType || "",
         process: c.process || "",
         altitude: c.altitude || "",
         harvest: c.harvest || "",
@@ -255,7 +245,7 @@ export default function AdminEditCoffeePage() {
         variety: c.variety || "",
         brewing: c.brewing || "",
         bestSeller: c.bestSeller || false,
-        story: c.story || "", // include story from server
+        story: c.story || "",
       };
 
       // Choose main and order images with detected map
@@ -266,7 +256,7 @@ export default function AdminEditCoffeePage() {
       const normalized = { ...formatted, img: main, images: orderedImages };
       setFormData(normalized);
       setOriginalData(normalized);
-    } catch (err) {
+    } catch {
       setToast({ type: "error", message: "Failed to load coffee" });
     } finally {
       setLoading(false);
@@ -311,7 +301,6 @@ export default function AdminEditCoffeePage() {
     const { name, value } = e.target;
 
     if (name === "cupping_score") {
-      // Accept decimals: parseFloat, allow empty string, clamp between 0 and 100
       const parsed = parseFloat(value);
       const n = value === "" || Number.isNaN(parsed) ? "" : Math.min(100, Math.max(0, parsed));
       setField("cupping_score", n as CoffeeData["cupping_score"]);
@@ -326,15 +315,12 @@ export default function AdminEditCoffeePage() {
         .replace(/\s+/g, "-")
         .replace(/[^\w-]/g, "")
         .replace(/-+/g, "-");
-      // update name and slug together
       setFormData((p) => ({ ...p, name: value, slug: newSlug }));
       setErrors((s) => ({ ...s, name: "" }));
       return;
     }
 
-    // Generic handler: includes "story" textarea (name="story")
     const key = name as keyof CoffeeData;
-    // cast via unknown to avoid explicit any
     setField(key, value as unknown as CoffeeData[typeof key]);
     setErrors((s) => ({ ...s, [name]: "" }));
   };
@@ -352,7 +338,8 @@ export default function AdminEditCoffeePage() {
     setNoteInput("");
   };
 
-  const removeNote = (n: string) => setFormData((p) => ({ ...p, notes: p.notes.filter((x) => x !== n) }));
+  const removeNote = (n: string) =>
+    setFormData((p) => ({ ...p, notes: p.notes.filter((x) => x !== n) }));
 
   const handleFiles = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -404,7 +391,10 @@ export default function AdminEditCoffeePage() {
     const next: Record<string, string> = {};
     if (!formData.name.trim()) next.name = "Name is required";
     if (!formData.origin.trim()) next.origin = "Origin is required";
-    if (formData.cupping_score !== "" && (formData.cupping_score < 0 || formData.cupping_score > 100))
+    if (
+      formData.cupping_score !== "" &&
+      (formData.cupping_score < 0 || formData.cupping_score > 100)
+    )
       next.cupping_score = "Score must be 0-100";
     setErrors(next);
     return Object.keys(next).length === 0;
@@ -494,10 +484,9 @@ export default function AdminEditCoffeePage() {
         name: formData.name,
         origin: formData.origin,
         notes: formData.notes.join(", "),
-        story: formData.story || undefined, // <-- include story in PATCH payload
+        story: formData.story || undefined,
         img: mainImage,
         images: orderedImages,
-        roastType: formData.roastType || undefined, // <-- send roastType
         process: formData.process || undefined,
         altitude: formData.altitude || undefined,
         harvest: formData.harvest || undefined,
@@ -542,21 +531,16 @@ export default function AdminEditCoffeePage() {
       if (!res.ok) throw new Error("Delete failed");
       setToast({ type: "success", message: "Coffee deleted!" });
       setTimeout(() => router.push("/admin/coffee"), 1200);
-    } catch (err) {
+    } catch {
       setToast({ type: "error", message: "Failed to delete" });
       setDeleting(false);
     }
   };
 
   const hasChanges =
-    JSON.stringify(
-      // Normalize ordering for deterministic comparison (main first)
-      { ...formData, images: formData.images || [] }
-    ) !==
+    JSON.stringify({ ...formData, images: formData.images || [] }) !==
       JSON.stringify(
-        originalData
-          ? { ...originalData, images: originalData.images || [] }
-          : null
+        originalData ? { ...originalData, images: originalData.images || [] } : null
       ) || pendingFiles.length > 0;
 
   const getPendingVideoPosterDataUrl = (label = "NEW VIDEO") => {
@@ -634,6 +618,7 @@ export default function AdminEditCoffeePage() {
           className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8"
         >
           <div className="lg:col-span-2 space-y-6">
+            {/* Basic Information */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Basic Information</h2>
               <div className="space-y-4">
@@ -654,14 +639,17 @@ export default function AdminEditCoffeePage() {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-900 mb-2">
-                    Slug (URL) <span className="text-gray-500 text-xs font-normal">• Auto-updates with name</span>
+                    Slug (URL){" "}
+                    <span className="text-gray-500 text-xs font-normal">• Auto-updates with name</span>
                   </label>
                   <input
                     value={formData.slug}
                     disabled
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl bg-gray-50 text-gray-600 cursor-not-allowed"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Slug automatically updates when you change the name</p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Slug automatically updates when you change the name
+                  </p>
                 </div>
 
                 <div>
@@ -708,6 +696,7 @@ export default function AdminEditCoffeePage() {
               </div>
             </section>
 
+            {/* Tasting Notes */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Tasting Notes</h2>
               <div className="flex gap-2 mb-3">
@@ -753,10 +742,12 @@ export default function AdminEditCoffeePage() {
               )}
             </section>
 
-            {/* Story - long form description (added) */}
+            {/* Story / Description */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Story / Description</h2>
-              <p className="text-sm text-gray-600 mb-3">Add a longer narrative about this coffee (markdown or plain text).</p>
+              <p className="text-sm text-gray-600 mb-3">
+                Add a longer narrative about this coffee (markdown or plain text).
+              </p>
               <textarea
                 name="story"
                 value={formData.story}
@@ -770,130 +761,95 @@ export default function AdminEditCoffeePage() {
               </p>
             </section>
 
+            {/* Details (roastType removed) */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Roast & Details</h2>
-              <div className="space-y-6">
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Details</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Roast Type</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    {ROAST_TYPES.map((rt) => (
-                      <button
-                        key={rt.value}
-                        type="button"
-                        onClick={() => setField("roastType", rt.value)}
-                        className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                          formData.roastType === rt.value
-                            ? "border-gray-900 bg-gray-900 text-white"
-                            : "border-gray-300 hover:border-gray-900 text-gray-700"
-                        }`}
-                      >
-                        {rt.label}
-                      </button>
-                    ))}
-                    <button
-                      key="none"
-                      type="button"
-                      onClick={() => setField("roastType", "")}
-                      className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                        formData.roastType === ""
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 hover:border-gray-900 text-gray-700"
-                      }`}
-                    >
-                      None
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">Don&apos;t select anything if roast type is not applicable.</p>
-                  {formData.roastType && (
-                    <button
-                      type="button"
-                      onClick={() => setField("roastType", "")}
-                      className="mt-2 text-xs text-gray-500 hover:text-gray-700 font-medium"
-                    >
-                      Clear selection
-                    </button>
-                  )}
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Process</label>
+                  <input
+                    name="process"
+                    value={formData.process}
+                    onChange={handleInputChange}
+                    placeholder="Washed, Natural, Honey"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Process</label>
-                    <input
-                      name="process"
-                      value={formData.process}
-                      onChange={handleInputChange}
-                      placeholder="Washed, Natural, Honey"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Variety</label>
-                    <input
-                      name="variety"
-                      value={formData.variety}
-                      onChange={handleInputChange}
-                      placeholder="Typica, Bourbon, SL28"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Altitude</label>
-                    <input
-                      name="altitude"
-                      value={formData.altitude}
-                      onChange={handleInputChange}
-                      placeholder="1,500 - 2,000m"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Harvest Season</label>
-                    <input
-                      name="harvest"
-                      value={formData.harvest}
-                      onChange={handleInputChange}
-                      placeholder="November - January"
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Cupping Score (0-100)</label>
-                    <input
-                      name="cupping_score"
-                      type="number"
-                      min={0}
-                      max={100}
-                      step={0.1}
-                      value={formData.cupping_score === "" ? "" : formData.cupping_score}
-                      onChange={handleInputChange}
-                      placeholder="85.5"
-                      className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
-                        errors.cupping_score ? "border-red-400" : "border-gray-300"
-                      }`}
-                    />
-                    {errors.cupping_score && <p className="text-xs text-red-600 mt-1">{errors.cupping_score}</p>}
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Variety</label>
+                  <input
+                    name="variety"
+                    value={formData.variety}
+                    onChange={handleInputChange}
+                    placeholder="Typica, Bourbon, SL28"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Altitude</label>
+                  <input
+                    name="altitude"
+                    value={formData.altitude}
+                    onChange={handleInputChange}
+                    placeholder="1,500 - 2,000m"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Harvest Season</label>
+                  <input
+                    name="harvest"
+                    value={formData.harvest}
+                    onChange={handleInputChange}
+                    placeholder="November - January"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-gray-900 mb-2">
+                    Cupping Score (0-100)
+                  </label>
+                  <input
+                    name="cupping_score"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={formData.cupping_score === "" ? "" : formData.cupping_score}
+                    onChange={handleInputChange}
+                    placeholder="85.5"
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
+                      errors.cupping_score ? "border-red-400" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.cupping_score && (
+                    <p className="text-xs text-red-600 mt-1">{errors.cupping_score}</p>
+                  )}
                 </div>
               </div>
             </section>
 
+            {/* Brewing Guide */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Brewing Guide</h2>
-              <p className="text-sm text-gray-600 mb-3">Add brewing instructions per line (e.g., Method: Instructions)</p>
+              <p className="text-sm text-gray-600 mb-3">
+                Add brewing instructions per line (e.g., Method: Instructions)
+              </p>
               <textarea
                 name="brewing"
                 rows={5}
                 value={formData.brewing}
                 onChange={handleInputChange}
-                placeholder="Espresso: 18-20g dose, 25-30s&#10;Pour Over: 1:16 ratio, 3-4 minute brew"
+                placeholder={"Espresso: 18-20g dose, 25-30s\nPour Over: 1:16 ratio, 3-4 minute brew"}
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none transition-all"
               />
             </section>
           </div>
 
+          {/* RIGHT: Images & Actions */}
           <aside className="space-y-6">
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Images & Videos</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Images &amp; Videos</h3>
 
               <div
                 onDrop={(e) => {
@@ -937,14 +893,23 @@ export default function AdminEditCoffeePage() {
                       </>
                     ) : (
                       <>
-                        <Image src={getCloudinaryUrl(formData.img, "medium")} alt="Main image" fill className="object-cover" />
+                        <Image
+                          src={getCloudinaryUrl(formData.img, "medium")}
+                          alt="Main image"
+                          fill
+                          className="object-cover"
+                        />
                         <button
                           type="button"
                           onClick={() => {
                             const firstImage = formData.images.find(
                               (imgId) => imgId !== formData.img && !isVideoId(imgId)
                             );
-                            const { main, orderedImages } = pickMain(formData.images, firstImage, videoMap);
+                            const { main, orderedImages } = pickMain(
+                              formData.images,
+                              firstImage,
+                              videoMap
+                            );
                             setFormData((p) => ({ ...p, img: main, images: orderedImages }));
                           }}
                           className="absolute top-2 right-2 p-2 bg-white rounded-full shadow-lg hover:shadow-xl transition-all z-10"
@@ -961,7 +926,9 @@ export default function AdminEditCoffeePage() {
                 ) : (
                   <div className="text-center">
                     <UploadCloud className="mx-auto text-gray-400 mb-3" size={40} />
-                    <div className="text-sm font-medium text-gray-900 mb-1">Drag & drop images/videos here</div>
+                    <div className="text-sm font-medium text-gray-900 mb-1">
+                      Drag &amp; drop images/videos here
+                    </div>
                     <div className="text-xs text-gray-500 mb-4">Supports: JPG, PNG, MP4, MOV</div>
                     <div className="flex justify-center gap-2">
                       <button
@@ -1112,7 +1079,9 @@ export default function AdminEditCoffeePage() {
                                 unoptimized
                               />
                               <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-                                <span className="text-xs font-bold text-white bg-amber-600 px-2 py-1 rounded">NEW</span>
+                                <span className="text-xs font-bold text-white bg-amber-600 px-2 py-1 rounded">
+                                  NEW
+                                </span>
                               </div>
                             </>
                           )}
@@ -1148,6 +1117,7 @@ export default function AdminEditCoffeePage() {
               )}
             </section>
 
+            {/* Actions */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <div className="flex flex-col gap-3">
                 <button
@@ -1183,10 +1153,11 @@ export default function AdminEditCoffeePage() {
           </aside>
         </form>
 
+        {/* Delete Confirmation Modal */}
         {showDeleteConfirm && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border-2 border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Delete coffee? </h3>
+              <h3 className="text-lg font-bold text-gray-900">Delete coffee?</h3>
               <p className="text-sm mt-2 text-gray-600">
                 Are you sure you want to delete <strong>{formData.name}</strong>? This cannot be undone.
               </p>
@@ -1218,12 +1189,16 @@ export default function AdminEditCoffeePage() {
           </div>
         )}
 
+        {/* Video Player Modal */}
         {playingVideoSrc && (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
             onClick={() => setPlayingVideoSrc(null)}
           >
-            <div className="relative w-full max-w-3xl aspect-video bg-black" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="relative w-full max-w-3xl aspect-video bg-black"
+              onClick={(e) => e.stopPropagation()}
+            >
               <video src={playingVideoSrc} controls autoPlay playsInline className="w-full h-full" />
               <button
                 onClick={() => setPlayingVideoSrc(null)}

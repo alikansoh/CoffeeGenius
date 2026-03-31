@@ -4,9 +4,8 @@ import CoffeeVariant from "@/models/CoffeeVariant";
 import dbConnect from "@/lib/dbConnect";
 import mongoose from "mongoose";
 import { verifyAuthForApi } from "@/lib/auth";
-import { v2 as cloudinary } from "cloudinary";  // ✅ Cloudinary import
+import { v2 as cloudinary } from "cloudinary";
 
-// ✅ Configure Cloudinary
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
@@ -22,6 +21,7 @@ interface CoffeeVariantData {
   _id: string;
   size: string;
   grind: string;
+  roastType: "espresso" | "filter" | "omni"; // ← added "omni"
   price: number;
   stock: number;
   coffeeId: string;
@@ -33,11 +33,12 @@ interface CoffeeDetail {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter";
-  img: string;  // ✅ Cloudinary public ID
-  images?: string[];  // ✅ Array of Cloudinary public IDs (images + videos)
+  roastType?: "espresso" | "filter" | "omni"; // ← added single roastType
+  roastTypes: ("espresso" | "filter" | "omni")[]; // ← added "omni"
+  img: string;
+  images?: string[];
   notes?: string;
-  story?: string; // <-- added
+  story?: string;
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -57,8 +58,6 @@ interface CoffeeDetail {
 /**
  * GET /api/coffee/[id]
  * Get a single coffee by ID or slug with all variant details
- *
- * PROTECTED: Requires an authenticated user. 
  */
 export async function GET(
   request: NextRequest,
@@ -71,17 +70,16 @@ export async function GET(
 
     if (!coffeeId) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee ID is required",
-        },
+        { success: false, message: "Coffee ID is required" },
         { status: 400 }
       );
     }
 
     const isValidObjectId = mongoose.Types.ObjectId.isValid(coffeeId);
 
-    const matchFilter: { $or: Array<{ slug?: string; _id?: mongoose.Types.ObjectId }> } = {
+    const matchFilter: {
+      $or: Array<{ slug?: string; _id?: mongoose.Types.ObjectId }>;
+    } = {
       $or: [{ slug: coffeeId.toLowerCase() }],
     };
 
@@ -90,9 +88,7 @@ export async function GET(
     }
 
     const coffees = (await Coffee.aggregate([
-      {
-        $match: matchFilter,
-      },
+      { $match: matchFilter },
       {
         $lookup: {
           from: "coffeevariants",
@@ -128,15 +124,71 @@ export async function GET(
                     $cond: [
                       { $in: ["$$this.grind", "$$value"] },
                       "$$value",
-                      {
-                        $concatArrays: ["$$value", ["$$this.grind"]],
-                      },
+                      { $concatArrays: ["$$value", ["$$this.grind"]] },
                     ],
                   },
                 },
               },
               [],
             ],
+          },
+          // All unique roast types across variants
+          roastTypes: {
+            $cond: [
+              { $gt: [{ $size: "$variants" }, 0] },
+              {
+                $reduce: {
+                  input: "$variants",
+                  initialValue: [],
+                  in: {
+                    $cond: [
+                      { $in: ["$$this.roastType", "$$value"] },
+                      "$$value",
+                      { $concatArrays: ["$$value", ["$$this.roastType"]] },
+                    ],
+                  },
+                },
+              },
+              [],
+            ],
+          },
+          // Single roastType derived from variants:
+          // - 0 variants  → stored value on coffee doc (or null)
+          // - 1 unique    → that value
+          // - 2+ unique   → "omni"
+          roastType: {
+            $let: {
+              vars: {
+                allTypes: {
+                  $reduce: {
+                    input: "$variants",
+                    initialValue: [],
+                    in: {
+                      $cond: [
+                        { $in: ["$$this.roastType", "$$value"] },
+                        "$$value",
+                        {
+                          $concatArrays: ["$$value", ["$$this.roastType"]],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+              in: {
+                $cond: [
+                  { $eq: [{ $size: "$$allTypes" }, 0] },
+                  { $ifNull: ["$roastType", null] },
+                  {
+                    $cond: [
+                      { $eq: [{ $size: "$$allTypes" }, 1] },
+                      { $arrayElemAt: ["$$allTypes", 0] },
+                      "omni",
+                    ],
+                  },
+                ],
+              },
+            },
           },
           totalStock: {
             $cond: [
@@ -145,9 +197,7 @@ export async function GET(
               0,
             ],
           },
-          bestSeller: {
-            $ifNull: ["$bestSeller", false],
-          },
+          bestSeller: { $ifNull: ["$bestSeller", false] },
         },
       },
       {
@@ -157,11 +207,12 @@ export async function GET(
           name: 1,
           origin: 1,
           roastLevel: 1,
-          roastType: 1,     // <-- include roastType in projection
+          roastType: 1,   // ← was missing — this is why it never appeared
+          roastTypes: 1,
           img: 1,
-          images: 1,  // ✅ Include images array in response
+          images: 1,
           notes: 1,
-          story: 1,   // <-- include story in projection
+          story: 1,
           process: 1,
           altitude: 1,
           harvest: 1,
@@ -181,10 +232,7 @@ export async function GET(
 
     if (!coffees.length) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee not found",
-        },
+        { success: false, message: "Coffee not found" },
         { status: 404 }
       );
     }
@@ -225,10 +273,7 @@ export async function GET(
     };
 
     return NextResponse.json(
-      {
-        success: true,
-        data: transformedCoffee,
-      },
+      { success: true, data: transformedCoffee },
       { status: 200 }
     );
   } catch (error) {
@@ -246,7 +291,7 @@ export async function GET(
 
 /**
  * PATCH /api/coffee/[id]
- * Update a coffee by ID or slug (previously admin-only; now any authenticated user)
+ * Update a coffee by ID or slug
  */
 export async function PATCH(
   request: NextRequest,
@@ -262,10 +307,7 @@ export async function PATCH(
 
     if (!coffeeId) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee ID is required",
-        },
+        { success: false, message: "Coffee ID is required" },
         { status: 400 }
       );
     }
@@ -277,11 +319,10 @@ export async function PATCH(
       name,
       origin,
       notes,
-      story,   // <-- accept story from request body
+      story,
       img,
-      images,  // ✅ This now contains Cloudinary public IDs (images + videos)
+      images,
       roastLevel,
-      roastType, // <-- accept roastType from request body
       process,
       altitude,
       harvest,
@@ -296,11 +337,10 @@ export async function PATCH(
       name?: string;
       origin?: string;
       notes?: string;
-      story?: string; // <-- include story in update type
-      img?: string;  // ✅ Cloudinary public ID
-      images?: string[];  // ✅ Array of Cloudinary public IDs
+      story?: string;
+      img?: string;
+      images?: string[];
       roastLevel?: "light" | "medium" | "dark";
-      roastType?: "espresso" | "filter";
       process?: string;
       altitude?: string;
       harvest?: string;
@@ -310,31 +350,15 @@ export async function PATCH(
       bestSeller?: boolean;
     }
 
-    const allowedRoastTypes = ["espresso", "filter"];
-
     const updateData: UpdateCoffeeData = {};
     if (slug !== undefined) updateData.slug = slug.toLowerCase();
     if (name !== undefined) updateData.name = name;
     if (origin !== undefined) updateData.origin = origin;
     if (notes !== undefined) updateData.notes = notes;
-    if (story !== undefined) updateData.story = story; // <-- set story if provided
-    if (img !== undefined) updateData.img = img;  // ✅ Update main image (Cloudinary public ID)
-    if (images !== undefined) updateData.images = images;  // ✅ Update images array (Cloudinary public IDs)
+    if (story !== undefined) updateData.story = story;
+    if (img !== undefined) updateData.img = img;
+    if (images !== undefined) updateData.images = images;
     if (roastLevel !== undefined) updateData.roastLevel = roastLevel;
-    if (roastType !== undefined) {
-      if (!allowedRoastTypes.includes(roastType)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Invalid roastType. Allowed values: ${allowedRoastTypes.join(
-              ", "
-            )}`,
-          },
-          { status: 400 }
-        );
-      }
-      updateData.roastType = roastType;
-    }
     if (process !== undefined) updateData.process = process;
     if (altitude !== undefined) updateData.altitude = altitude;
     if (harvest !== undefined) updateData.harvest = harvest;
@@ -343,7 +367,6 @@ export async function PATCH(
     if (brewing !== undefined) updateData.brewing = brewing;
     if (bestSeller !== undefined) updateData.bestSeller = bestSeller;
 
-    // Try to find by slug first, then by ID
     let coffee = await Coffee.findOne({ slug: coffeeId.toLowerCase() });
 
     if (!coffee && mongoose.Types.ObjectId.isValid(coffeeId)) {
@@ -352,15 +375,11 @@ export async function PATCH(
 
     if (!coffee) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee not found",
-        },
+        { success: false, message: "Coffee not found" },
         { status: 404 }
       );
     }
 
-    // Update coffee
     Object.assign(coffee, updateData);
     await coffee.save();
 
@@ -403,15 +422,11 @@ export async function DELETE(
 
     if (!coffeeId) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee ID is required",
-        },
+        { success: false, message: "Coffee ID is required" },
         { status: 400 }
       );
     }
 
-    // Try to find by slug first, then by ID
     let coffee = await Coffee.findOne({ slug: coffeeId.toLowerCase() });
 
     if (!coffee && mongoose.Types.ObjectId.isValid(coffeeId)) {
@@ -420,66 +435,59 @@ export async function DELETE(
 
     if (!coffee) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "Coffee not found",
-        },
+        { success: false, message: "Coffee not found" },
         { status: 404 }
       );
     }
 
-    // ✅ Delete images from Cloudinary
-    const cloudinaryDeleteResults = {
-      images: 0,
-      videos: 0,
-      errors: 0,
-    };
+    const cloudinaryDeleteResults = { images: 0, videos: 0, errors: 0 };
 
-    // Collect all unique public IDs to delete
     const publicIdsToDelete = new Set<string>();
-    
-    if (coffee.img) {
-      publicIdsToDelete.add(coffee.img);
-    }
-    
+    if (coffee.img) publicIdsToDelete.add(coffee.img);
     if (coffee.images && Array.isArray(coffee.images)) {
       coffee.images.forEach((publicId: string) => {
         if (publicId) publicIdsToDelete.add(publicId);
       });
     }
 
-    // Delete from Cloudinary
     if (publicIdsToDelete.size > 0) {
-      const deletePromises = Array.from(publicIdsToDelete).map(async (publicId) => {
-        try {
-          // Determine if it's a video or image (best-effort; if you store the resource_type separately that's preferred)
-          const lower = publicId.toLowerCase();
-          const isVideo = lower.includes('/video/') || lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.webm') || lower.includes('video');
-          
-          const resourceType = isVideo ? 'video' : 'image';
-          
-          await cloudinary.uploader.destroy(publicId, { resource_type: resourceType });
-          
-          if (isVideo) {
-            cloudinaryDeleteResults.videos++;
-          } else {
-            cloudinaryDeleteResults.images++;
+      const deletePromises = Array.from(publicIdsToDelete).map(
+        async (publicId) => {
+          try {
+            const lower = publicId.toLowerCase();
+            const isVideo =
+              lower.includes("/video/") ||
+              lower.endsWith(".mp4") ||
+              lower.endsWith(".mov") ||
+              lower.endsWith(".webm") ||
+              lower.includes("video");
+
+            const resourceType = isVideo ? "video" : "image";
+            await cloudinary.uploader.destroy(publicId, {
+              resource_type: resourceType,
+            });
+
+            if (isVideo) {
+              cloudinaryDeleteResults.videos++;
+            } else {
+              cloudinaryDeleteResults.images++;
+            }
+          } catch (error) {
+            console.error(
+              `Failed to delete ${publicId} from Cloudinary:`,
+              error
+            );
+            cloudinaryDeleteResults.errors++;
           }
-        } catch (error) {
-          console.error(`Failed to delete ${publicId} from Cloudinary:`, error);
-          cloudinaryDeleteResults.errors++;
         }
-      });
+      );
 
       await Promise.all(deletePromises);
     }
 
-    // Delete all variants associated with this coffee
     const deletedVariants = await CoffeeVariant.deleteMany({
       coffeeId: coffee._id,
     });
-
-    // Delete the coffee from database
     await Coffee.findByIdAndDelete(coffee._id);
 
     return NextResponse.json(
@@ -494,7 +502,8 @@ export async function DELETE(
             images: cloudinaryDeleteResults.images,
             videos: cloudinaryDeleteResults.videos,
             errors: cloudinaryDeleteResults.errors,
-            total: cloudinaryDeleteResults.images + cloudinaryDeleteResults.videos,
+            total:
+              cloudinaryDeleteResults.images + cloudinaryDeleteResults.videos,
           },
         },
       },

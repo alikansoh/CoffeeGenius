@@ -28,84 +28,20 @@ export type Product = {
   prices?: Record<string, number>;
   img?: string;
   images?: string[];
-  roastLevel?: "light" | "medium" | "dark";
-  roastType?: string | null;
   grinds?: string[];
   stock?: number;
-  availableSizes?: Array<{ size: string; price: number; availableGrinds?: string[]; totalStock?: number }>;
+  roastType?: "espresso" | "filter" | "omni" | null;
+  availableSizes?: Array<{
+    size: string;
+    price: number;
+    availableGrinds?: string[];
+    totalStock?: number;
+  }>;
   availableGrinds?: string[];
   minPrice?: number;
   variants?: Variant[];
   bestSeller?: boolean;
 };
-
-const roastTypeConfig: Record<string, { bg: string; text: string; icon: string; sublabel: string }> = {
-  espresso: {
-    bg: "bg-amber-100",
-    text: "text-amber-900",
-    icon: "☕",
-    sublabel: "Best for espresso machines",
-  },
-  filter: {
-    bg: "bg-sky-100",
-    text: "text-sky-900",
-    icon: "🫖",
-    sublabel: "Pour over, drip & more",
-  },
-  "cold-brew": {
-    bg: "bg-indigo-100",
-    text: "text-indigo-900",
-    icon: "🧊",
-    sublabel: "Slow steeped & smooth",
-  },
-  omni: {
-    bg: "bg-emerald-100",
-    text: "text-emerald-900",
-    icon: "✺",
-    sublabel: "Works any way you brew",
-  },
-};
-
-function getRoastTypeConfig(type: string) {
-  return (
-    roastTypeConfig[type.toLowerCase()] ?? {
-      bg: "bg-stone-100",
-      text: "text-stone-700",
-      icon: "◦",
-      sublabel: type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, " "),
-    }
-  );
-}
-
-export function RoastTypeBadge({ type, size = "md" }: { type: string; size?: "sm" | "md" }) {
-  const config = getRoastTypeConfig(type);
-  const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, " ");
-
-  if (size === "sm") {
-    return (
-      <span
-        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg} ${config.text} text-[11px] font-semibold`}
-      >
-        <span className="text-xs">{config.icon}</span>
-        {label}
-      </span>
-    );
-  }
-
-  return (
-    <div className={`inline-flex items-center gap-3 px-3.5 py-2.5 rounded-2xl ${config.bg}`}>
-      <span className="text-xl leading-none">{config.icon}</span>
-      <div className="flex flex-col">
-        <span className={`text-[11px] font-bold uppercase tracking-widest ${config.text}`}>
-          {label}
-        </span>
-        <span className={`text-[10px] font-medium opacity-70 ${config.text}`}>
-          {config.sublabel}
-        </span>
-      </div>
-    </div>
-  );
-}
 
 export default function ProductCard({
   product,
@@ -158,13 +94,13 @@ export default function ProductCard({
   }, [cardImagePublicIdOrUrl]);
 
   const availableSizes = useMemo(() => {
-    const sizes = product.availableSizes && product.availableSizes.length > 0
-      ? product.availableSizes.map((s) => ({ size: s.size, price: s.price }))
-      : product.prices
-      ? Object.entries(product.prices).map(([k, v]) => ({ size: k, price: v }))
-      : [{ size: "250g", price: product.minPrice ?? product.price ?? 0 }];
+    const sizes =
+      product.availableSizes && product.availableSizes.length > 0
+        ? product.availableSizes.map((s) => ({ size: s.size, price: s.price }))
+        : product.prices
+        ? Object.entries(product.prices).map(([k, v]) => ({ size: k, price: v }))
+        : [{ size: "250g", price: product.minPrice ?? product.price ?? 0 }];
 
-    // sort by friendly order if available
     const sizeOrder: Record<string, number> = { "250g": 1, "500g": 2, "1kg": 3 };
     sizes.sort((a, b) => (sizeOrder[a.size] || 999) - (sizeOrder[b.size] || 999));
     return sizes;
@@ -203,7 +139,10 @@ export default function ProductCard({
       medium: "Medium grind",
       fine: "Fine grind",
     };
-    return grindMap[grindValue] || grindValue.charAt(0).toUpperCase() + grindValue.slice(1);
+    return (
+      grindMap[grindValue] ||
+      grindValue.charAt(0).toUpperCase() + grindValue.slice(1)
+    );
   };
 
   useEffect(() => {
@@ -291,12 +230,15 @@ export default function ProductCard({
       const sizeData = product.availableSizes.find((sz) => sz.size === s);
       return sizeData?.price ?? product.minPrice ?? product.price ?? 0;
     }
-    return (product.prices && product.prices[s]) ?? product.minPrice ?? product.price ?? 0;
+    return (
+      (product.prices && product.prices[s]) ??
+      product.minPrice ??
+      product.price ??
+      0
+    );
   };
 
-  // Determine the minimum priced size and price (so we can show price & corresponding weight)
   const displayedMin = useMemo(() => {
-    // Prefer availableSizes array if present (contains explicit price)
     if (product.availableSizes && product.availableSizes.length > 0) {
       let min = product.availableSizes[0];
       for (const s of product.availableSizes) {
@@ -305,7 +247,6 @@ export default function ProductCard({
       return { price: min.price, size: min.size };
     }
 
-    // Otherwise look at prices object
     if (product.prices && Object.keys(product.prices).length > 0) {
       const entries = Object.entries(product.prices);
       let minEntry = entries[0];
@@ -315,14 +256,36 @@ export default function ProductCard({
       return { price: minEntry[1], size: minEntry[0] };
     }
 
-    // fallback to minPrice (if provided) or product.price
     const p = product.minPrice ?? product.price ?? 0;
-    // try to pick a sensible size label if availableSizes exist (already handled), else "250g"
     return { price: p, size: product.availableSizes?.[0]?.size ?? "250g" };
   }, [product.availableSizes, product.prices, product.minPrice, product.price]);
 
   const availableStock = selectedVariant?.stock ?? 0;
   const isOutOfStock = selectedVariant ? availableStock === 0 : false;
+
+  const ROAST_TYPE_META: Record<
+    "espresso" | "filter" | "omni",
+    { label: string; pill: string; text: string; icon: string }
+  > = {
+    espresso: {
+      label: "Espresso",
+      pill: "bg-gradient-to-r from-amber-400 to-amber-600",
+      text: "text-white",
+      icon: "☕",
+    },
+    filter: {
+      label: "Filter",
+      pill: "bg-gradient-to-r from-sky-300 to-sky-500",
+      text: "text-white",
+      icon: "🫖",
+    },
+    omni: {
+      label: "Omni Roast",
+      pill: "bg-gradient-to-r from-emerald-400 to-emerald-600",
+      text: "text-white",
+      icon: "✺",
+    },
+  };
 
   return (
     <div
@@ -366,7 +329,6 @@ export default function ProductCard({
                 <span>Best Seller</span>
               </div>
             )}
-
             <Image
               src={cardImageSrc}
               alt={product.name}
@@ -379,13 +341,17 @@ export default function ProductCard({
 
           <div className="p-5 flex flex-col flex-1">
             <div className="mb-3">
-              {product.roastType && (
-                <div className="mb-2">
-                  <RoastTypeBadge type={product.roastType} />
-                </div>
-              )}
-              <div className="flex items-center gap-2 mb-1">
+              <div className="flex items-start justify-between gap-2 mb-1">
                 <h3 className="text-lg font-bold text-gray-900">{product.name}</h3>
+                {/* Roast type badge */}
+                {product.roastType && (
+                  <span
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 ${ROAST_TYPE_META[product.roastType].pill} ${ROAST_TYPE_META[product.roastType].text}`}
+                  >
+                    <span>{ROAST_TYPE_META[product.roastType].icon}</span>
+                    {ROAST_TYPE_META[product.roastType].label}
+                  </span>
+                )}
               </div>
               {product.origin && (
                 <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">
@@ -424,11 +390,12 @@ export default function ProductCard({
 
             <div className="mt-auto mb-4">
               <div className="flex items-baseline gap-2">
-                {/* Always show minimum price and its corresponding weight */}
                 <span className="text-2xl font-bold text-gray-900">
                   £{displayedMin.price.toFixed(2)}
                 </span>
-                <span className="text-xs text-gray-500 font-medium">{displayedMin.size}</span>
+                <span className="text-xs text-gray-500 font-medium">
+                  {displayedMin.size}
+                </span>
               </div>
             </div>
 
@@ -436,7 +403,9 @@ export default function ProductCard({
               <>
                 <div
                   className={`hidden lg:block transition-all duration-300 ${
-                    isHovered && isLargeScreen ? "opacity-100" : "opacity-0 pointer-events-none"
+                    isHovered && isLargeScreen
+                      ? "opacity-100"
+                      : "opacity-0 pointer-events-none"
                   }`}
                 >
                   <div className="flex gap-2">
@@ -504,10 +473,18 @@ export default function ProductCard({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 mt-1">
-              {product.origin && <p className="text-xs text-gray-500">{product.origin}</p>}
-              {product.roastType && <RoastTypeBadge type={product.roastType} size="sm" />}
-            </div>
+            {product.origin && (
+              <p className="text-xs text-gray-500 mt-1">{product.origin}</p>
+            )}
+            {/* Roast type badge on back */}
+            {product.roastType && (
+              <span
+                className={`inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-full text-[11px] font-semibold ${ROAST_TYPE_META[product.roastType].pill} ${ROAST_TYPE_META[product.roastType].text}`}
+              >
+                <span>{ROAST_TYPE_META[product.roastType].icon}</span>
+                {ROAST_TYPE_META[product.roastType].label}
+              </span>
+            )}
           </div>
 
           <div className="space-y-4 flex-1">
@@ -531,13 +508,15 @@ export default function ProductCard({
                     }`}
                   >
                     <div className="font-bold">{s.size}</div>
-                    <div className="text-xs opacity-75 mt-1">£{unitPriceForSize(s.size).toFixed(2)}</div>
+                    <div className="text-xs opacity-75 mt-1">
+                      £{unitPriceForSize(s.size).toFixed(2)}
+                    </div>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Grind */}
+            {/* Grind / Brew Method */}
             <div>
               <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
                 Brew Method
@@ -582,7 +561,9 @@ export default function ProductCard({
                 >
                   −
                 </button>
-                <div className="flex-1 text-center font-bold text-lg text-gray-900">{quantity}</div>
+                <div className="flex-1 text-center font-bold text-lg text-gray-900">
+                  {quantity}
+                </div>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -610,11 +591,20 @@ export default function ProductCard({
             <button
               onClick={submitQuickAdd}
               disabled={
-                processing || !size || !grind || !selectedVariant || isOutOfStock || availableGrindsForSize.length === 0
+                processing ||
+                !size ||
+                !grind ||
+                !selectedVariant ||
+                isOutOfStock ||
+                availableGrindsForSize.length === 0
               }
               className="flex-1 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
-              {processing ? "Adding..." : isOutOfStock ? "Out of Stock" : "Add to cart"}
+              {processing
+                ? "Adding..."
+                : isOutOfStock
+                ? "Out of Stock"
+                : "Add to cart"}
             </button>
           </div>
         </div>

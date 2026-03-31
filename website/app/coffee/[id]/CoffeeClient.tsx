@@ -12,11 +12,12 @@ import {
   Package,
   Truck,
   ChevronDown,
-  ChevronUp,
   AlertCircle,
   Star,
   Play,
   X,
+  Minus,
+  Plus,
 } from "lucide-react";
 import useCart, { CartItem } from "../../store/CartStore";
 import {
@@ -38,6 +39,7 @@ interface Variant {
   createdAt: string;
   updatedAt: string;
   inStock?: boolean;
+  RostType?: "espresso" | "filter" | "omni";
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
 }
 
@@ -58,8 +60,8 @@ interface ApiCoffee {
   img: string;
   images?: string[];
   notes?: string;
-  roastLevel?: "light" | "medium" | "dark"; // kept for compatibility but not used in UI
-  roastType?: "espresso" | "filter"; // <-- added roastType
+  roastLevel?: "light" | "medium" | "dark";
+  roastType?: "espresso" | "filter" | "omni";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -88,7 +90,7 @@ export interface ExtendedProduct {
   price: number;
   prices?: Record<string, number>;
   img: string;
-  roastType?: "espresso" | "filter"; // <-- added roastType
+  roastType?: "espresso" | "filter" | "omni";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -141,40 +143,69 @@ const GRIND_OPTIONS: {
   { value: "aeropress", label: "AeroPress", description: "Fine-medium grind" },
 ];
 
-// Simple attractive roast type badge (small + clean)
 const ROAST_TYPE_META: Record<
-  "espresso" | "filter",
-  { label: string; desc: string; pill: string; text: string }
+  "espresso" | "filter" | "omni",
+  {
+    label: string;
+    desc: string;
+    pill: string;
+    text: string;
+    icon: string;
+    badge: string;
+  }
 > = {
   espresso: {
-    label: "Espresso",
+    label: "Espresso Roast",
     desc: "Rich, concentrated — great for pressure extraction.",
-    pill: "bg-gradient-to-r from-amber-400 to-amber-600",
+    pill: "bg-zinc-900",
     text: "text-white",
+    icon: "☕",
+    badge: "bg-zinc-100 text-zinc-800 border border-zinc-200",
   },
   filter: {
-    label: "Filter",
+    label: "Filter Roast",
     desc: "Clean and bright — ideal for pour-over and drip.",
-    pill: "bg-gradient-to-r from-sky-300 to-sky-500",
+    pill: "bg-slate-700",
     text: "text-white",
+    icon: "🫖",
+    badge: "bg-slate-100 text-slate-800 border border-slate-200",
+  },
+  omni: {
+    label: "Espresso & Filter",
+    desc: "Versatile roast — works beautifully as espresso or filter.",
+    pill: "bg-zinc-800",
+    text: "text-white",
+    icon: "✦",
+    badge: "bg-zinc-100 text-zinc-700 border border-zinc-200",
   },
 };
 
-function SimpleRoastType({ type }: { type: "espresso" | "filter" }) {
+function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" }) {
   const meta = ROAST_TYPE_META[type];
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-3 flex-wrap">
       <div
-        className={`flex items-center gap-2 px-3 py-1.5 rounded-full shadow-sm ${meta.pill}`}
-        aria-hidden
+        className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full ${meta.pill}`}
       >
-        <Coffee className={`w-4 h-4 ${meta.text}`} />
-        <span className={`font-semibold text-sm ${meta.text} capitalize`}>
+        <span className="text-sm">{meta.icon}</span>
+        <span className={`font-semibold text-sm tracking-wide ${meta.text}`}>
           {meta.label}
         </span>
       </div>
-      <p className="text-xs text-gray-500">{meta.desc}</p>
+      <p className="text-xs text-zinc-400">{meta.desc}</p>
     </div>
+  );
+}
+
+function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" }) {
+  const meta = ROAST_TYPE_META[type];
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${meta.badge}`}
+    >
+      <span>{meta.icon}</span>
+      {meta.label}
+    </span>
   );
 }
 
@@ -189,7 +220,7 @@ function ReadMore({
 
   if (!text) {
     return (
-      <p className="text-sm italic" style={{ color: "rgba(139, 94, 60, 0.5)" }}>
+      <p className="text-sm italic text-zinc-400">
         No story available for this coffee.
       </p>
     );
@@ -201,24 +232,64 @@ function ReadMore({
 
   return (
     <div>
-      <p
-        className="text-sm leading-relaxed whitespace-pre-wrap"
-        style={{ color: "rgba(60, 30, 10, 0.82)", letterSpacing: "0.01em" }}
-      >
+      <p className="text-sm leading-relaxed whitespace-pre-wrap text-zinc-600">
         {displayed}
       </p>
       {isLong && (
         <button
           onClick={() => setExpanded((s) => !s)}
           aria-expanded={expanded}
-          className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest transition-colors focus:outline-none group"
-          style={{ color: "#c8924a" }}
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-zinc-900 hover:text-zinc-600 transition-colors focus:outline-none"
         >
           <span>{expanded ? "Read less" : "Read more"}</span>
-          <span className="inline-block transition-transform group-hover:translate-y-px">
+          <span className="inline-block transition-transform">
             {expanded ? "↑" : "↓"}
           </span>
         </button>
+      )}
+    </div>
+  );
+}
+
+/* ── Step Label — refined numbered indicator ── */
+function StepLabel({
+  step,
+  label,
+  active,
+  done,
+}: {
+  step: number;
+  label: string;
+  active: boolean;
+  done: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div
+        className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-bold transition-all duration-300 flex-shrink-0
+          ${
+            done
+              ? "bg-zinc-900 text-white"
+              : active
+              ? "bg-zinc-900 text-white ring-4 ring-zinc-900/10"
+              : "bg-zinc-100 text-zinc-400 border border-zinc-200"
+          }`}
+      >
+        {done ? <Check size={11} strokeWidth={3} /> : step}
+      </div>
+      <span
+        className={`text-[13px] font-semibold tracking-wide transition-colors ${
+          active || done ? "text-zinc-900" : "text-zinc-400"
+        }`}
+      >
+        {label}
+      </span>
+      {done && (
+        <div className="ml-auto">
+          <span className="text-[11px] font-medium text-zinc-400 bg-zinc-50 px-2 py-0.5 rounded-full border border-zinc-100">
+            Done
+          </span>
+        </div>
       )}
     </div>
   );
@@ -230,15 +301,16 @@ export default function ProductDetailPage() {
   const addItem = useCart((s) => s.addItem);
 
   const [product, setProduct] = useState<ExtendedProduct | null>(null);
-  const [relatedProducts, setRelatedProducts] = useState<ExtendedProduct[]>(
-    []
-  );
+  const [relatedProducts, setRelatedProducts] = useState<ExtendedProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [selectedSize, setSelectedSize] = useState<SizeOption>("250g");
   const [userSelectedGrind, setUserSelectedGrind] =
     useState<GrindOption | null>(null);
+  const [selectedRoastStyle, setSelectedRoastStyle] = useState<
+    "espresso" | "filter" | null
+  >(null);
   const [userSelectedImageIndex, setUserSelectedImageIndex] = useState<
     number | null
   >(null);
@@ -250,6 +322,10 @@ export default function ProductDetailPage() {
 
   const [videoMap, setVideoMap] = useState<Record<string, boolean>>({});
   const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
+
+  const [selectedRoastFilter, setSelectedRoastFilter] = useState<
+    "all" | "espresso" | "filter" | "omni"
+  >("all");
 
   const productId = params?.id as string;
 
@@ -359,7 +435,7 @@ export default function ProductDetailPage() {
           price: apiCoffee.minPrice,
           prices,
           img: apiCoffee.img,
-          roastType: apiCoffee.roastType, // <-- include roastType
+          roastType: apiCoffee.roastType,
           process: apiCoffee.process,
           altitude: apiCoffee.altitude,
           harvest: apiCoffee.harvest,
@@ -376,18 +452,28 @@ export default function ProductDetailPage() {
           story: apiCoffee.story || "",
         };
 
-        // ✅ Set product and stop loading immediately
         setProduct(transformedProduct);
         setSelectedSize(Object.keys(prices)[0] || "250g");
+        setUserSelectedGrind(null);
+
+        if (apiCoffee.roastType === "omni") {
+          setSelectedRoastStyle("espresso");
+        } else if (
+          apiCoffee.roastType === "espresso" ||
+          apiCoffee.roastType === "filter"
+        ) {
+          setSelectedRoastStyle(apiCoffee.roastType);
+        } else {
+          setSelectedRoastStyle(null);
+        }
+
         setLoading(false);
         setError(null);
 
-        // ✅ Detect videos in background
         detectAllPublicIds(allImages).then((detectedVideoMap) => {
           setVideoMap(detectedVideoMap);
         });
 
-        // ✅ Fetch related products in background
         fetch("/api/coffee")
           .then((allResponse) => {
             if (!allResponse.ok) return;
@@ -400,7 +486,6 @@ export default function ProductDetailPage() {
               (coffee: ApiCoffee) => coffee._id !== apiCoffee._id
             );
 
-            // Prefer matching roastType when available
             let sameType: ApiCoffee[] = [];
             if (apiCoffee.roastType) {
               sameType = others.filter(
@@ -430,7 +515,7 @@ export default function ProductDetailPage() {
                 }
 
                 return {
-                  id: coffee._1 || coffee.slug,
+                  id: coffee._id || coffee.slug,
                   slug: coffee.slug,
                   name: coffee.name,
                   origin: coffee.origin,
@@ -438,7 +523,7 @@ export default function ProductDetailPage() {
                   price: coffee.minPrice,
                   prices: relatedPrices,
                   img: coffee.img,
-                  roastType: coffee.roastType, // <-- propagate roastType
+                  roastType: coffee.roastType,
                   availableGrinds: coffee.availableGrinds,
                   bestSeller: coffee.bestSeller,
                 } as ExtendedProduct;
@@ -462,14 +547,12 @@ export default function ProductDetailPage() {
   }, [productId, detectAllPublicIds]);
 
   const productImages = useMemo(() => {
-    const allMedia = product?.images || [product?.img || "/test.webp"];
-    return allMedia;
+    return product?.images || [product?.img || "/test.webp"];
   }, [product]);
 
   const { imageItems, videoItems } = useMemo(() => {
     const images: string[] = [];
     const videos: string[] = [];
-
     productImages.forEach((item) => {
       if (isVideoId(item)) {
         videos.push(item);
@@ -477,7 +560,6 @@ export default function ProductDetailPage() {
         images.push(item);
       }
     });
-
     return { imageItems: images, videoItems: videos };
   }, [productImages, isVideoId]);
 
@@ -485,8 +567,45 @@ export default function ProductDetailPage() {
     return [...imageItems, ...videoItems];
   }, [imageItems, videoItems]);
 
+  const isOmni = product?.roastType === "omni";
+
+  const isSizeAvailableForRoastStyle = useCallback(
+    (size: string): boolean => {
+      if (!product?.variants) return true;
+      if (!isOmni || !selectedRoastStyle) return true;
+
+      const hasExplicitSplit = product.variants.some(
+        (v) => v.RostType === "espresso" || v.RostType === "filter"
+      );
+      if (!hasExplicitSplit) return true;
+
+      return product.variants.some(
+        (v) => v.size === size && v.RostType === selectedRoastStyle
+      );
+    },
+    [product, selectedRoastStyle, isOmni]
+  );
+
   const availableGrindsForSize = useMemo(() => {
     if (!selectedSize || !product) return [];
+
+    if (product.variants && product.variants.length > 0) {
+      const hasExplicitSplit = product.variants.some(
+        (v) => v.RostType === "espresso" || v.RostType === "filter"
+      );
+
+      const matchingVariants = product.variants.filter((v) => {
+        if (v.size !== selectedSize) return false;
+        if (isOmni && selectedRoastStyle && hasExplicitSplit) {
+          return v.RostType === selectedRoastStyle;
+        }
+        return true;
+      });
+
+      if (matchingVariants.length > 0) {
+        return [...new Set(matchingVariants.map((v) => v.grind))];
+      }
+    }
 
     if (product.availableSizes && product.availableSizes.length > 0) {
       const sizeData = product.availableSizes.find(
@@ -498,7 +617,7 @@ export default function ProductDetailPage() {
     }
 
     return product.availableGrinds || [];
-  }, [selectedSize, product]);
+  }, [selectedSize, selectedRoastStyle, product, isOmni]);
 
   const filteredGrindOptions = useMemo(
     () =>
@@ -515,17 +634,50 @@ export default function ProductDetailPage() {
     ) {
       return userSelectedGrind;
     }
-    return ((availableGrindsForSize[0] as GrindOption) ??
-      "whole-bean") as GrindOption;
+    return (availableGrindsForSize[0] as GrindOption) ?? "whole-bean";
   }, [userSelectedGrind, availableGrindsForSize]);
 
   const selectedVariant = useMemo(() => {
     if (!product?.variants || !selectedSize || !selectedGrind) return null;
 
-    return product.variants.find(
-      (v) => v.size === selectedSize && v.grind === selectedGrind
+    const hasExplicitSplit = product.variants.some(
+      (v) => v.RostType === "espresso" || v.RostType === "filter"
     );
-  }, [product?.variants, selectedSize, selectedGrind]);
+
+    return (
+      product.variants.find((v) => {
+        if (v.size !== selectedSize || v.grind !== selectedGrind) return false;
+        if (isOmni && selectedRoastStyle && hasExplicitSplit) {
+          return v.RostType === selectedRoastStyle;
+        }
+        return true;
+      }) ?? null
+    );
+  }, [product, selectedSize, selectedGrind, selectedRoastStyle, isOmni]);
+
+  useEffect(() => {
+    setUserSelectedGrind(null);
+  }, [selectedRoastStyle]);
+
+  useEffect(() => {
+    if (isOmni && selectedRoastStyle && product?.variants) {
+      const hasExplicitSplit = product.variants.some(
+        (v) => v.RostType === "espresso" || v.RostType === "filter"
+      );
+      if (hasExplicitSplit && !isSizeAvailableForRoastStyle(selectedSize)) {
+        const firstAvailable = (product.availableSizes || []).find((s) =>
+          isSizeAvailableForRoastStyle(s.size)
+        );
+        if (firstAvailable) setSelectedSize(firstAvailable.size);
+      }
+    }
+  }, [
+    selectedRoastStyle,
+    product,
+    selectedSize,
+    isSizeAvailableForRoastStyle,
+    isOmni,
+  ]);
 
   useEffect(() => {
     if (selectedSize && availableGrindsForSize.length > 0) {
@@ -544,9 +696,7 @@ export default function ProductDetailPage() {
   }, [userSelectedImageIndex, allDisplayMedia]);
 
   const currentPrice = useMemo(() => {
-    if (selectedVariant) {
-      return selectedVariant.price;
-    }
+    if (selectedVariant) return selectedVariant.price;
     if (!product) return 0;
     return product.prices?.[selectedSize] ?? product.price;
   }, [selectedVariant, product, selectedSize]);
@@ -570,7 +720,7 @@ export default function ProductDetailPage() {
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean);
-    const entries: [string, string][] = lines.map((line, idx) => {
+    return lines.map((line, idx) => {
       const colonIndex = line.indexOf(":");
       if (colonIndex > -1) {
         const label = line.slice(0, colonIndex).trim();
@@ -579,13 +729,24 @@ export default function ProductDetailPage() {
       }
       return [`Guide ${idx + 1}`, line];
     });
-    return entries;
   }, [brewingText]);
 
   const availableSizes = useMemo(
     () => (product?.prices ? Object.keys(product.prices).sort() : ["250g"]),
     [product]
   );
+
+  const filteredRelatedProducts = useMemo(() => {
+    if (selectedRoastFilter === "all") return relatedProducts;
+    return relatedProducts.filter((p) => p.roastType === selectedRoastFilter);
+  }, [relatedProducts, selectedRoastFilter]);
+
+  const availableRoastTabs = useMemo(() => {
+    const types = new Set(
+      relatedProducts.map((p) => p.roastType).filter(Boolean)
+    );
+    return Array.from(types) as ("espresso" | "filter" | "omni")[];
+  }, [relatedProducts]);
 
   useEffect(() => {
     if (!loading && !product) {
@@ -595,10 +756,17 @@ export default function ProductDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
-          <Coffee size={48} className="mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">Loading product... </p>
+          <div className="relative mx-auto mb-6 w-14 h-14">
+            <div className="absolute inset-0 rounded-full bg-zinc-100 animate-ping opacity-60" />
+            <div className="relative w-14 h-14 rounded-full bg-zinc-50 flex items-center justify-center border border-zinc-100">
+              <Coffee size={24} className="text-zinc-600" />
+            </div>
+          </div>
+          <p className="text-zinc-400 text-sm font-medium tracking-wide">
+            Loading…
+          </p>
         </div>
       </div>
     );
@@ -606,10 +774,19 @@ export default function ProductDetailPage() {
 
   if (error || !product) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-white">
         <div className="text-center">
-          <Coffee size={48} className="mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600">{error || "Product not found"}</p>
+          <Coffee size={40} className="mx-auto mb-4 text-zinc-200" />
+          <p className="text-zinc-500 font-medium">
+            {error || "Product not found"}
+          </p>
+          <button
+            onClick={() => router.push("/coffee")}
+            className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-900 text-white text-sm font-semibold hover:bg-zinc-800 transition-colors"
+          >
+            <ArrowLeft size={15} />
+            Back to Shop
+          </button>
         </div>
       </div>
     );
@@ -630,12 +807,10 @@ export default function ProductDetailPage() {
       alert("Please select a valid size and brew method");
       return;
     }
-
     if (isOutOfStock) {
       alert("This item is currently out of stock");
       return;
     }
-
     if (quantity > availableStock) {
       alert(`Only ${availableStock} items available in stock`);
       return;
@@ -656,7 +831,6 @@ export default function ProductDetailPage() {
     };
 
     addItem(cartItem, quantity);
-
     setIsAdded(true);
     setTimeout(() => setIsAdded(false), 2000);
   };
@@ -664,6 +838,10 @@ export default function ProductDetailPage() {
   const currentMediaItem =
     allDisplayMedia[selectedImageIndex] || product.img || "/test.webp";
   const isCurrentItemVideo = isVideoId(currentMediaItem);
+
+  const step1Done = isOmni ? selectedRoastStyle !== null : true;
+  const step2Done = step1Done && !!selectedSize;
+  const step3Done = step2Done && !!selectedGrind;
 
   return (
     <>
@@ -673,52 +851,62 @@ export default function ProductDetailPage() {
         textarea {
           font-size: 16px !important;
         }
+
+        /* Hide number input spinners */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield;
+        }
       `}</style>
 
-      <main className="mt-16 sm:mt-0 min-h-screen bg-gradient-to-b from-white to-gray-50">
-        <div className="bg-white border-b border-gray-100">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-3 sm:py-4 md:py-4 lg:py-4">
+      <main className="mt-16 sm:mt-0 min-h-screen bg-zinc-50">
+        {/* ── Back bar ── */}
+        <div className="bg-white border-b border-zinc-100 sticky top-0 z-30">
+          <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-3.5">
             <button
               onClick={() => router.push("/coffee")}
-              className="inline-flex items-center gap-2 cursor-pointer text-gray-600 hover:text-gray-900 font-semibold transition-colors group text-sm sm:text-base"
+              className="inline-flex items-center gap-2 text-zinc-400 hover:text-zinc-900 font-medium transition-colors group text-sm"
               aria-label="Back to shop"
             >
               <ArrowLeft
-                size={18}
-                className="group-hover:-translate-x-1 transition-transform"
+                size={15}
+                className="group-hover:-translate-x-0.5 transition-transform"
               />
               Back to Shop
             </button>
           </div>
         </div>
 
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 lg:px-8 py-6 sm:py-8 md:py-12 lg:py-12">
-          <div className="md:hidden mb-4 sm:mb-6">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-6 sm:py-8 md:py-12">
+          {/* ── Mobile header ── */}
+          <div className="md:hidden mb-5">
             <div className="flex items-center gap-2 mb-2 flex-wrap">
-              <MapPin size={14} className="text-amber-700" />
-              <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">
+              <MapPin size={12} className="text-zinc-400" />
+              <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">
                 {product.origin}
               </p>
               {product.bestSeller && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#8b5e3c] text-white text-[10px] font-bold shadow-md">
-                  <Star size={10} className="fill-white" />
-                  <span>Best Seller</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-zinc-900 text-white text-[10px] font-bold">
+                  <Star size={8} className="fill-white" />
+                  Best Seller
                 </span>
               )}
             </div>
 
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-3 leading-tight">
+            <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 mb-2 leading-tight">
               {product.name}
             </h1>
 
             <div className="flex items-baseline gap-2 mb-3">
-              <p className="text-2xl sm:text-3xl font-bold text-gray-900">
+              <p className="text-2xl font-bold text-zinc-900">
                 £{currentPrice.toFixed(2)}
               </p>
-              <p className="text-sm text-gray-500">per {selectedSize}</p>
+              <p className="text-sm text-zinc-400">/ {selectedSize}</p>
             </div>
 
-            {/* Mobile: show simple roast type inline under title if present */}
             {product.roastType && (
               <div className="mt-2">
                 <SimpleRoastType type={product.roastType} />
@@ -726,13 +914,16 @@ export default function ProductDetailPage() {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 md:gap-12 lg:gap-12">
+          {/* ── Main grid ── */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-10 lg:gap-14">
+            {/* ════ LEFT: Media + Accordions ════ */}
             <div className="space-y-3 sm:space-y-4">
-              <div className="relative aspect-square rounded-2xl sm:rounded-3xl overflow-hidden bg-gray-100 shadow-lg sm:shadow-xl">
+              {/* Main image */}
+              <div className="relative aspect-square rounded-2xl overflow-hidden bg-white border border-zinc-100 shadow-sm">
                 {product.bestSeller && (
-                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-lg">
-                    <Star size={14} className="fill-white" />
-                    <span>Best Seller</span>
+                  <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-bold shadow-md">
+                    <Star size={11} className="fill-white" />
+                    Best Seller
                   </div>
                 )}
 
@@ -750,15 +941,15 @@ export default function ProductDetailPage() {
                       onClick={() =>
                         setPlayingVideoSrc(getCloudinaryVideo(currentMediaItem))
                       }
-                      className="absolute inset-0 flex items-center justify-center"
+                      className="absolute inset-0 flex items-center justify-center group"
                       aria-label="Play video"
                     >
-                      <div className="bg-black/40 rounded-full p-4">
-                        <Play size={48} className="text-white" />
+                      <div className="bg-black/40 group-hover:bg-black/55 rounded-full p-4 transition-colors">
+                        <Play size={40} className="text-white fill-white" />
                       </div>
                     </button>
-                    <div className="absolute top-3 right-3 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded-full">
-                      VIDEO
+                    <div className="absolute top-3 right-3 px-2.5 py-1 bg-red-500 text-white text-[9px] font-bold rounded-full uppercase tracking-wider">
+                      Video
                     </div>
                   </>
                 ) : (
@@ -772,11 +963,12 @@ export default function ProductDetailPage() {
                 )}
               </div>
 
+              {/* Thumbnails */}
               {allDisplayMedia.length > 1 && (
-                <div className="grid grid-cols-4 gap-2 sm:gap-3">
+                <div className="grid grid-cols-4 gap-2">
                   {allDisplayMedia.map((mediaItem, index) => {
                     const isMediaVideo = isVideoId(mediaItem);
-
+                    const isActive = selectedImageIndex === index;
                     return (
                       <button
                         key={index}
@@ -787,10 +979,10 @@ export default function ProductDetailPage() {
                             setUserSelectedImageIndex(index);
                           }
                         }}
-                        className={`relative aspect-square rounded-lg sm:rounded-xl overflow-hidden transition-all focus:outline-none focus:ring-2 focus:ring-amber-300 ${
-                          selectedImageIndex === index
-                            ? "ring-3 sm:ring-4 ring-gray-900 shadow-md sm:shadow-lg"
-                            : "ring-2 ring-gray-200 hover:ring-gray-400"
+                        className={`relative aspect-square rounded-xl overflow-hidden transition-all duration-200 focus:outline-none ${
+                          isActive
+                            ? "ring-2 ring-zinc-900 ring-offset-1"
+                            : "ring-1 ring-zinc-200 hover:ring-zinc-400"
                         }`}
                         aria-label={
                           isMediaVideo
@@ -802,25 +994,21 @@ export default function ProductDetailPage() {
                           <>
                             <Image
                               src={getVideoThumbnail(mediaItem)}
-                              alt={`${product.name} video thumbnail ${
-                                index + 1
-                              }`}
+                              alt={`Video thumbnail ${index + 1}`}
                               fill
                               className="object-contain"
                             />
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <div className="bg-black/40 rounded-full p-1.5">
-                                <Play size={16} className="text-white" />
-                              </div>
-                            </div>
-                            <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-red-600 text-white text-[8px] font-bold rounded">
-                              VIDEO
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                              <Play
+                                size={14}
+                                className="text-white fill-white"
+                              />
                             </div>
                           </>
                         ) : (
                           <Image
                             src={getCloudinaryUrl(mediaItem, "thumbnail")}
-                            alt={`${product.name} thumbnail ${index + 1}`}
+                            alt={`Thumbnail ${index + 1}`}
                             fill
                             className="object-contain"
                           />
@@ -831,596 +1019,894 @@ export default function ProductDetailPage() {
                 </div>
               )}
 
-              <div className="space-y-2 sm:space-y-3 pt-2 sm:pt-4">
-                <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
+              {/* ── Accordions ── */}
+              <div className="space-y-2 pt-2">
+                {/* Product Details */}
+                <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
                   <button
                     onClick={() => toggleAccordion("details")}
-                    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-zinc-50 transition-colors"
                     aria-expanded={activeAccordion === "details"}
                   >
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      <Package size={18} className="text-amber-700" />
-                      <span className="font-bold text-gray-900 text-sm sm:text-base">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+                        <Package size={15} className="text-zinc-600" />
+                      </div>
+                      <span className="font-semibold text-zinc-900 text-sm">
                         Product Details
                       </span>
                     </div>
-                    {activeAccordion === "details" ? (
-                      <ChevronUp size={18} className="text-gray-600" />
-                    ) : (
-                      <ChevronDown size={18} className="text-gray-600" />
-                    )}
+                    <ChevronDown
+                      size={16}
+                      className={`text-zinc-400 transition-transform duration-200 ${
+                        activeAccordion === "details" ? "rotate-180" : ""
+                      }`}
+                    />
                   </button>
                   {activeAccordion === "details" && (
-                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3 text-xs sm:text-sm text-gray-700">
-                      <p>
-                        <strong>Origin:</strong> {product.origin}
-                      </p>
-
-                      {/* Show roastType if present (replaced roastLevel) */}
-                      {product.roastType && (
+                    <div className="px-4 sm:px-5 pb-5 border-t border-zinc-100">
+                      <div className="pt-4 space-y-2.5 text-sm text-zinc-700">
                         <p>
-                          <strong>Roast Type:</strong>{" "}
-                          <span className="capitalize">{product.roastType}</span>
+                          <span className="font-semibold text-zinc-900">
+                            Origin:
+                          </span>{" "}
+                          {product.origin}
                         </p>
-                      )}
-
-                      {product.process && (
-                        <p>
-                          <strong>Process:</strong> {product.process}
-                        </p>
-                      )}
-                      {product.variety && (
-                        <p>
-                          <strong>Variety:</strong> {product.variety}
-                        </p>
-                      )}
-                      {product.altitude && (
-                        <p>
-                          <strong>Altitude:</strong> {product.altitude}
-                        </p>
-                      )}
-                      {product.harvest && (
-                        <p>
-                          <strong>Harvest:</strong> {product.harvest}
-                        </p>
-                      )}
-                      {product.cupping_score && (
-                        <p>
-                          <strong>Cupping Score:</strong>{" "}
-                          {product.cupping_score}/100
-                        </p>
-                      )}
-
-                      {notesArray.length > 0 && (
-                        <div className="mt-2">
-                          <p className="text-xs font-bold text-gray-900 uppercase tracking-wide mb-2">
-                            Tasting Notes
-                          </p>
-                          <div className="flex flex-wrap gap-2">
-                            {notesArray.map((note, idx) => (
-                              <span
-                                key={idx}
-                                className="px-3 py-1.5 rounded-lg bg-amber-50 text-xs sm:text-sm font-semibold text-gray-800 border-2 border-amber-100 shadow-sm"
-                              >
-                                {note}
-                              </span>
-                            ))}
+                        {product.roastType && (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold text-zinc-900">
+                              Roast Profile:
+                            </span>
+                            <RoastTypeBadge type={product.roastType} />
                           </div>
-                        </div>
-                      )}
-
-                      <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                        Our coffee is carefully sourced from trusted farmers and
-                        roasted in small batches to ensure maximum freshness and
-                        flavor. Each bag is roasted to order, guaranteeing you
-                        receive the freshest coffee possible.
-                      </p>
+                        )}
+                        {product.process && (
+                          <p>
+                            <span className="font-semibold text-zinc-900">
+                              Process:
+                            </span>{" "}
+                            {product.process}
+                          </p>
+                        )}
+                        {product.variety && (
+                          <p>
+                            <span className="font-semibold text-zinc-900">
+                              Variety:
+                            </span>{" "}
+                            {product.variety}
+                          </p>
+                        )}
+                        {product.altitude && (
+                          <p>
+                            <span className="font-semibold text-zinc-900">
+                              Altitude:
+                            </span>{" "}
+                            {product.altitude}
+                          </p>
+                        )}
+                        {product.harvest && (
+                          <p>
+                            <span className="font-semibold text-zinc-900">
+                              Harvest:
+                            </span>{" "}
+                            {product.harvest}
+                          </p>
+                        )}
+                        {product.cupping_score && (
+                          <p>
+                            <span className="font-semibold text-zinc-900">
+                              Cupping Score:
+                            </span>{" "}
+                            {product.cupping_score}/100
+                          </p>
+                        )}
+                        {notesArray.length > 0 && (
+                          <div className="mt-3 pt-3 border-t border-zinc-100">
+                            <p className="text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-2.5">
+                              Tasting Notes
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {notesArray.map((note, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-3 py-1.5 rounded-full bg-zinc-100 text-xs font-semibold text-zinc-700 border border-zinc-200"
+                                >
+                                  {note}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <p className="text-zinc-400 text-xs leading-relaxed mt-4 pt-3 border-t border-zinc-100">
+                          Carefully sourced and roasted in small batches for
+                          maximum freshness. Each bag roasted to order.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </div>
 
+                {/* Brewing Guide */}
                 {brewingEntries.length > 0 && (
-                  <div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
+                  <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
                     <button
                       onClick={() => toggleAccordion("brewing")}
-                      className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
+                      className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-zinc-50 transition-colors"
                       aria-expanded={activeAccordion === "brewing"}
                     >
-                      <div className="flex items-center gap-2 sm:gap-3">
-                        <Coffee size={18} className="text-amber-700" />
-                        <span className="font-bold text-gray-900 text-sm sm:text-base">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+                          <Coffee size={15} className="text-zinc-600" />
+                        </div>
+                        <span className="font-semibold text-zinc-900 text-sm">
                           Brewing Guide
                         </span>
                       </div>
-                      {activeAccordion === "brewing" ? (
-                        <ChevronUp size={18} className="text-gray-600" />
-                      ) : (
-                        <ChevronDown size={18} className="text-gray-600" />
-                      )}
+                      <ChevronDown
+                        size={16}
+                        className={`text-zinc-400 transition-transform duration-200 ${
+                          activeAccordion === "brewing" ? "rotate-180" : ""
+                        }`}
+                      />
                     </button>
-
                     {activeAccordion === "brewing" && (
-                      <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-3 text-xs sm:text-sm text-gray-700">
-                        {brewingEntries.map(([label, guide], i) => (
-                          <div
-                            key={`${label}-${i}`}
-                            className="flex items-start gap-3"
-                          >
-                            <div className="flex-shrink-0 w-28 text-xs font-semibold text-gray-900">
-                              {label}
+                      <div className="px-4 sm:px-5 pb-5 border-t border-zinc-100">
+                        <div className="pt-4 space-y-3 text-sm text-zinc-700">
+                          {brewingEntries.map(([label, guide], i) => (
+                            <div
+                              key={`${label}-${i}`}
+                              className="flex items-start gap-3"
+                            >
+                              <div className="flex-shrink-0 w-28 text-xs font-semibold text-zinc-900">
+                                {label}
+                              </div>
+                              <div className="text-zinc-500 whitespace-pre-wrap text-xs leading-relaxed">
+                                {guide}
+                              </div>
                             </div>
-                            <div className="text-gray-700 whitespace-pre-wrap">
-                              {guide}
-                            </div>
-                          </div>
-                        ))}
-
-                        <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-                          Experiment with ratios and brew times to find your
-                          perfect cup. Always use filtered water heated to
-                          92-96°C for best results.
-                        </p>
+                          ))}
+                          <p className="text-zinc-400 text-xs leading-relaxed mt-3 pt-3 border-t border-zinc-100">
+                            Use filtered water at 92–96°C. Adjust ratios to
+                            taste.
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
-<div className="bg-white rounded-xl border-2 border-gray-100 overflow-hidden shadow-sm">
-  <button
-    onClick={() => toggleAccordion("shipping")}
-    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-gray-50 transition-colors"
-    aria-expanded={activeAccordion === "shipping"}
-  >
-    <div className="flex items-center gap-2 sm:gap-3">
-      <Truck size={18} className="text-amber-700" />
-      <span className="font-bold text-gray-900 text-sm sm:text-base">
-        Shipping &amp; Returns
-      </span>
-    </div>
-    {activeAccordion === "shipping" ? (
-      <ChevronUp size={18} className="text-gray-600" />
-    ) : (
-      <ChevronDown size={18} className="text-gray-600" />
-    )}
-  </button>
-  {activeAccordion === "shipping" && (
-    <div className="px-4 sm:px-5 pb-4 sm:pb-5 space-y-2 sm:space-y-3 text-xs sm:text-sm text-gray-700">
-      <div>
-        <strong>Standard UK Delivery:</strong> £5.00 — 2–4 business days
-      </div>
-      <div>
-        <strong>Returns:</strong> Coffee beans cannot be returned (perishable).
-        Wrong or damaged items? Contact us within 7 days for a free replacement
-        or full refund.
-      </div>
-      <div>
-        <strong>Equipment &amp; Merchandise:</strong> 30-day return window for
-        unused, unopened items. Customer pays return shipping.
-      </div>
-      <p className="text-gray-600 leading-relaxed mt-3 sm:mt-4 pt-3 border-t border-gray-200">
-        All coffee is freshly roasted to order. Please allow 1–3 business days
-        for roasting before dispatch.{" "}
-        <a
-          href="/shipping"
-          className="text-indigo-600 hover:underline font-medium"
-        >
-          Full Shipping &amp; Returns policy →
-        </a>
-      </p>
-    </div>
-  )}
-</div>
+                {/* Shipping */}
+                <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+                  <button
+                    onClick={() => toggleAccordion("shipping")}
+                    className="w-full p-4 sm:p-5 flex items-center justify-between text-left hover:bg-zinc-50 transition-colors"
+                    aria-expanded={activeAccordion === "shipping"}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+                        <Truck size={15} className="text-zinc-600" />
+                      </div>
+                      <span className="font-semibold text-zinc-900 text-sm">
+                        Shipping &amp; Returns
+                      </span>
+                    </div>
+                    <ChevronDown
+                      size={16}
+                      className={`text-zinc-400 transition-transform duration-200 ${
+                        activeAccordion === "shipping" ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {activeAccordion === "shipping" && (
+                    <div className="px-4 sm:px-5 pb-5 border-t border-zinc-100">
+                      <div className="pt-4 space-y-2.5 text-sm text-zinc-600">
+                        <div>
+                          <span className="font-semibold text-zinc-900">
+                            Standard UK Delivery:
+                          </span>{" "}
+                          £5.00 — 2–4 business days
+                        </div>
+                        <div>
+                          <span className="font-semibold text-zinc-900">
+                            Returns:
+                          </span>{" "}
+                          Coffee beans cannot be returned. Wrong or damaged?
+                          Contact us within 7 days.
+                        </div>
+                        <div>
+                          <span className="font-semibold text-zinc-900">
+                            Equipment:
+                          </span>{" "}
+                          30-day return window for unused, unopened items.
+                        </div>
+                        <p className="text-zinc-400 text-xs leading-relaxed mt-3 pt-3 border-t border-zinc-100">
+                          All coffee is freshly roasted to order. Allow 1–3
+                          business days before dispatch.{" "}
+                          <a
+                            href="/shipping"
+                            className="text-zinc-700 underline underline-offset-2"
+                          >
+                            Full policy →
+                          </a>
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="space-y-4 sm:space-y-6">
+            {/* ════ RIGHT: Product info + Purchase flow ════ */}
+            <div className="space-y-4">
+              {/* Desktop header */}
               <div className="hidden md:block">
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
-                  <MapPin size={16} className="text-amber-700" />
-                  <p className="text-sm font-bold text-amber-700 uppercase tracking-wide">
+                  <MapPin size={13} className="text-zinc-400" />
+                  <p className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">
                     {product.origin}
                   </p>
                   {product.bestSeller && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#8b5e3c] text-white text-xs font-bold shadow-md">
-                      <Star size={12} className="fill-white" />
-                      <span>Best Seller</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900 text-white text-xs font-bold">
+                      <Star size={10} className="fill-white" />
+                      Best Seller
                     </span>
                   )}
                 </div>
 
-                <h1 className="text-4xl xl:text-5xl font-bold text-gray-900 mb-4 leading-tight">
+                <h1 className="text-3xl lg:text-4xl font-bold text-zinc-900 mb-3 leading-tight tracking-tight">
                   {product.name}
                 </h1>
 
                 <div className="flex items-baseline gap-3 mb-4">
-                  <p className="text-4xl font-bold text-gray-900">
+                  <p className="text-3xl lg:text-4xl font-bold text-zinc-900">
                     £{currentPrice.toFixed(2)}
                   </p>
-                  <p className="text-lg text-gray-500">per {selectedSize}</p>
+                  <p className="text-sm text-zinc-400">/ {selectedSize}</p>
                 </div>
+
+                {product.roastType && (
+                  <div className="mb-1">
+                    <SimpleRoastType type={product.roastType} />
+                  </div>
+                )}
               </div>
 
-              {/* Show roastType if present (desktop) - simple, attractive */}
-              {product.roastType && (
-                <div className="mb-3">
-                  <SimpleRoastType type={product.roastType} />
-                </div>
-              )}
-
-              {/* ── Enhanced Story Section ── */}
-<div className="border-2 border-amber-100 rounded-2xl overflow-hidden shadow-sm bg-white">
-  <button
-    onClick={() => toggleAccordion("story")}
-    className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-amber-50/50 transition-colors"
-    aria-expanded={activeAccordion === "story"}
-  >
-    <div className="flex items-center gap-3">
-      {/* Decorative coffee icon with warm background */}
-      <div className="flex-shrink-0 w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center">
-        <Coffee className="w-4 h-4 text-amber-700" />
-      </div>
-      <div>
-        <span className="font-bold text-base text-gray-900 block leading-tight">
-          Origin Story
-        </span>
-        {product.origin && (
-          <span className="text-xs text-amber-600 font-semibold uppercase tracking-wider">
-            {product.origin}
-          </span>
-        )}
-      </div>
-    </div>
-    <div
-      className="flex-shrink-0 w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center transition-transform duration-200"
-      style={{
-        transform:
-          activeAccordion === "story" ? "rotate(180deg)" : "rotate(0deg)",
-      }}
-    >
-      <ChevronDown className="w-4 h-4 text-gray-500" />
-    </div>
-  </button>
-
-  {activeAccordion === "story" && (
-    <div className="border-t border-amber-100">
-      {/* Decorative amber top strip */}
-      <div className="h-1 w-full bg-gradient-to-r from-amber-300 via-amber-500 to-amber-300 opacity-60" />
-
-      <div className="px-5 pt-5 pb-6">
-        {/* Metadata pills row */}
-        {(product.origin ||
-          product.variety ||
-          product.altitude ||
-          product.harvest) && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {product.origin && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-xs font-semibold text-amber-800">
-                <MapPin size={10} />
-                {product.origin}
-              </span>
-            )}
-            {product.variety && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-green-50 border border-green-200 text-xs font-semibold text-green-800">
-                🌱 {product.variety}
-              </span>
-            )}
-            {product.altitude && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 border border-sky-200 text-xs font-semibold text-sky-800">
-                ⛰ {product.altitude}
-              </span>
-            )}
-            {product.harvest && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-xs font-semibold text-orange-800">
-                🗓 {product.harvest}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Decorative quote mark */}
-        <div
-          className="text-6xl font-serif leading-none mb-1 select-none"
-          style={{ color: "rgba(200, 146, 74, 0.25)", lineHeight: 1 }}
-          aria-hidden="true"
-        >
-          &ldquo;
-        </div>
-
-        {/* Story text with ReadMore */}
-        <div className="pl-1">
-          <ReadMore text={product.story} maxChars={320} />
-        </div>
-
-        {/* Divider + cupping score (if available) */}
-        {product.cupping_score && (
-          <div className="mt-5 pt-4 border-t border-amber-100 flex items-center justify-between">
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-              Cupping Score
-            </span>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-0.5">
-                {[...Array(5)].map((_, i) => (
-                  <Star
-                    key={i}
-                    size={12}
-                    className={
-                      i < Math.round((product.cupping_score! / 100) * 5)
-                        ? "fill-amber-400 text-amber-400"
-                        : "text-gray-200 fill-gray-200"
-                    }
+              {/* ── Origin Story ── */}
+              <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden">
+                <button
+                  onClick={() => toggleAccordion("story")}
+                  className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-zinc-50 transition-colors"
+                  aria-expanded={activeAccordion === "story"}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-100 flex items-center justify-center">
+                      <Coffee className="w-4 h-4 text-zinc-600" />
+                    </div>
+                    <div>
+                      <span className="font-semibold text-sm text-zinc-900 block">
+                        Origin Story
+                      </span>
+                      {product.origin && (
+                        <span className="text-[11px] text-zinc-400 font-medium uppercase tracking-widest">
+                          {product.origin}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <ChevronDown
+                    className={`w-4 h-4 text-zinc-400 transition-transform duration-200 ${
+                      activeAccordion === "story" ? "rotate-180" : ""
+                    }`}
                   />
-                ))}
-              </div>
-              <span className="text-sm font-bold text-gray-800">
-                {product.cupping_score}
-                <span className="text-xs font-normal text-gray-400">/100</span>
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  )}
-</div>
-{/* ── End Enhanced Story Section ── */}
+                </button>
 
-              <div>
-                <label className="text-xs sm:text-sm font-bold text-gray-900 block mb-2 sm:mb-3">
-                  Select Size
-                </label>
-                <div className="grid grid-cols-2 gap-2 sm:gap-3">
-                  {availableSizes.map((size) => {
-                    const price = product.prices?.[size] ?? product.price;
-                    return (
-                      <button
-                        key={size}
-                        onClick={() => setSelectedSize(size)}
-                        className={`p-3 sm:p-4 rounded-xl border-2 cursor-pointer text-left transition-all ${
-                          selectedSize === size
-                            ? "bg-gray-900 text-white border-gray-900 shadow-lg"
-                            : "bg-white text-gray-900 border-gray-200 hover:border-gray-900"
-                        }`}
-                        aria-pressed={selectedSize === size}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-bold text-base sm:text-lg">
-                            {size}
-                          </span>
-                          {selectedSize === size && (
-                            <Check size={18} className="text-white" />
+                {activeAccordion === "story" && (
+                  <div className="border-t border-zinc-100">
+                    <div className="px-5 pt-5 pb-6">
+                      {(product.origin ||
+                        product.variety ||
+                        product.altitude ||
+                        product.harvest) && (
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {product.origin && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-700">
+                              <MapPin size={9} />
+                              {product.origin}
+                            </span>
+                          )}
+                          {product.variety && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-700">
+                              🌱 {product.variety}
+                            </span>
+                          )}
+                          {product.altitude && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-700">
+                              ⛰ {product.altitude}
+                            </span>
+                          )}
+                          {product.harvest && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 border border-zinc-200 text-xs font-semibold text-zinc-700">
+                              🗓 {product.harvest}
+                            </span>
                           )}
                         </div>
-                        <span
-                          className={`text-xs sm:text-sm font-semibold ${
-                            selectedSize === size
-                              ? "text-gray-300"
-                              : "text-gray-600"
-                          }`}
-                        >
-                          £{price.toFixed(2)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+                      )}
+
+                      <ReadMore text={product.story} maxChars={320} />
+
+                      {product.cupping_score && (
+                        <div className="mt-5 pt-4 border-t border-zinc-100 flex items-center justify-between">
+                          <span className="text-xs font-bold text-zinc-400 uppercase tracking-widest">
+                            Cupping Score
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="flex gap-0.5">
+                              {[...Array(5)].map((_, i) => (
+                                <Star
+                                  key={i}
+                                  size={12}
+                                  className={
+                                    i <
+                                    Math.round(
+                                      (product.cupping_score! / 100) * 5
+                                    )
+                                      ? "fill-zinc-800 text-zinc-800"
+                                      : "text-zinc-200 fill-zinc-200"
+                                  }
+                                />
+                              ))}
+                            </div>
+                            <span className="text-sm font-bold text-zinc-800">
+                              {product.cupping_score}
+                              <span className="text-xs font-normal text-zinc-400">
+                                /100
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <label className="text-xs sm:text-sm font-bold text-gray-900">
-                    Grind type
-                  </label>
-                  <span className="text-xs text-gray-500">
-                    {filteredGrindOptions.length} available
-                  </span>
+              {/* ════ PURCHASE FLOW CARD ════ */}
+              <div className="bg-white rounded-2xl border border-zinc-200 overflow-hidden shadow-sm">
+                {/* Card header */}
+                <div className="px-5 py-3.5 border-b border-zinc-100 bg-zinc-50/60">
+                  <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-[0.12em]">
+                    Customise your order
+                  </p>
                 </div>
-                {filteredGrindOptions.length > 0 ? (
-                  <div className="space-y-2">
-                    {filteredGrindOptions.map((grind) => (
-                      <button
-                        key={grind.value}
-                        onClick={() => setUserSelectedGrind(grind.value)}
-                        className={`w-full p-3 sm:p-4 rounded-xl border-2 text-left cursor-pointer transition-all ${
-                          selectedGrind === grind.value
-                            ? "bg-gray-900 text-white border-gray-900 shadow-lg"
-                            : "bg-white text-gray-900 border-gray-200 hover:border-gray-900"
-                        }`}
-                        aria-pressed={selectedGrind === grind.value}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-bold text-sm sm:text-base">
-                              {grind.label}
-                            </p>
-                            <p
-                              className={`text-xs sm:text-sm ${
-                                selectedGrind === grind.value
-                                  ? "text-gray-300"
-                                  : "text-gray-600"
+
+                <div className="divide-y divide-zinc-100">
+                  {/* ── STEP: Brewing Style (omni only) ── */}
+                  {isOmni && (
+                    <div className="px-5 py-5">
+                      <StepLabel
+                        step={1}
+                        label="Choose your brewing style"
+                        active={!step1Done}
+                        done={step1Done}
+                      />
+
+                      <div className="mb-4 px-3.5 py-3 rounded-xl bg-zinc-50 border border-zinc-100 flex items-start gap-2.5">
+                        <span className="text-base mt-0.5 flex-shrink-0">
+                          ✦
+                        </span>
+                        <p className="text-xs text-zinc-500 leading-relaxed">
+                          This versatile roast is optimised for both{" "}
+                          <span className="font-semibold text-zinc-700">
+                            espresso
+                          </span>{" "}
+                          and{" "}
+                          <span className="font-semibold text-zinc-700">
+                            filter
+                          </span>{" "}
+                          brewing. Select your preferred style.
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        {(["espresso", "filter"] as const).map((style) => {
+                          const meta = ROAST_TYPE_META[style];
+                          const isSelected = selectedRoastStyle === style;
+
+                          const sizesForStyle = availableSizes.filter(
+                            (size) => {
+                              if (!product.variants) return true;
+                              const hasExplicitSplit = product.variants.some(
+                                (v) =>
+                                  v.RostType === "espresso" ||
+                                  v.RostType === "filter"
+                              );
+                              if (!hasExplicitSplit) return true;
+                              return product.variants!.some(
+                                (v) => v.size === size && v.RostType === style
+                              );
+                            }
+                          );
+
+                          return (
+                            <button
+                              key={style}
+                              onClick={() => setSelectedRoastStyle(style)}
+                              className={`relative p-4 rounded-xl text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-300 focus:ring-offset-1
+                                ${
+                                  isSelected
+                                    ? "bg-zinc-900 border-2 border-zinc-900 shadow-sm"
+                                    : "bg-white border-2 border-zinc-200 hover:border-zinc-400"
+                                }`}
+                              aria-pressed={isSelected}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-lg">{meta.icon}</span>
+                                {isSelected && (
+                                  <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center">
+                                    <Check
+                                      size={11}
+                                      className="text-zinc-900"
+                                      strokeWidth={3}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                              <p
+                                className={`font-bold text-sm mb-0.5 ${
+                                  isSelected ? "text-white" : "text-zinc-900"
+                                }`}
+                              >
+                                {meta.label}
+                              </p>
+                              <p
+                                className={`text-xs leading-snug ${
+                                  isSelected ? "text-zinc-400" : "text-zinc-500"
+                                }`}
+                              >
+                                {meta.desc}
+                              </p>
+                              <p
+                                className={`text-[10px] font-semibold mt-2 uppercase tracking-wide ${
+                                  isSelected ? "text-zinc-500" : "text-zinc-400"
+                                }`}
+                              >
+                                {sizesForStyle.length} size
+                                {sizesForStyle.length !== 1 ? "s" : ""}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── STEP: Size ── */}
+                  <div
+                    className={`px-5 py-5 transition-opacity duration-200 ${
+                      isOmni && !step1Done
+                        ? "opacity-30 pointer-events-none"
+                        : "opacity-100"
+                    }`}
+                  >
+                    <StepLabel
+                      step={isOmni ? 2 : 1}
+                      label="Select a size"
+                      active={step1Done && !step2Done}
+                      done={step2Done}
+                    />
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {availableSizes.map((size) => {
+                        const price = product.prices?.[size] ?? product.price;
+                        const unavailable = isOmni
+                          ? !isSizeAvailableForRoastStyle(size)
+                          : false;
+                        const isSelected = selectedSize === size;
+
+                        return (
+                          <button
+                            key={size}
+                            onClick={() => {
+                              if (!unavailable) setSelectedSize(size);
+                            }}
+                            disabled={unavailable}
+                            className={`relative p-3.5 rounded-xl text-left transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-300 focus:ring-offset-1
+                              ${
+                                unavailable
+                                  ? "bg-zinc-50 border-2 border-zinc-100 cursor-not-allowed opacity-40"
+                                  : isSelected
+                                  ? "bg-zinc-900 border-2 border-zinc-900 shadow-sm cursor-pointer"
+                                  : "bg-white border-2 border-zinc-200 hover:border-zinc-400 cursor-pointer"
+                              }`}
+                            aria-pressed={!unavailable && isSelected}
+                            aria-disabled={unavailable}
+                          >
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span
+                                className={`font-bold text-base ${
+                                  unavailable
+                                    ? "text-zinc-300"
+                                    : isSelected
+                                    ? "text-white"
+                                    : "text-zinc-900"
+                                }`}
+                              >
+                                {size}
+                              </span>
+                              {!unavailable && isSelected && (
+                                <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center">
+                                  <Check
+                                    size={11}
+                                    className="text-zinc-900"
+                                    strokeWidth={3}
+                                  />
+                                </div>
+                              )}
+                            </div>
+                            <span
+                              className={`text-xs font-medium ${
+                                unavailable
+                                  ? "text-zinc-300"
+                                  : isSelected
+                                  ? "text-zinc-400"
+                                  : "text-zinc-500"
                               }`}
                             >
-                              {grind.description}
-                            </p>
-                          </div>
-                          {selectedGrind === grind.value && (
-                            <Check size={18} className="text-white" />
-                          )}
-                        </div>
-                      </button>
-                    ))}
+                              £{price.toFixed(2)}
+                            </span>
+                            {unavailable && (
+                              <span className="absolute top-2 right-2 text-[9px] font-bold text-zinc-300 uppercase tracking-wide">
+                                N/A
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                ) : (
-                  <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-xl text-center text-sm text-gray-600">
-                    No brew methods available for this size
-                  </div>
-                )}
-              </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-2 sm:mb-3">
-                  <label className="text-xs sm:text-sm font-bold text-gray-900">
-                    Quantity
-                  </label>
-                </div>
-                <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="flex items-center border-2 border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm">
-                    <button
-                      onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-                      disabled={isOutOfStock || !selectedVariant}
-                      className="px-4 sm:px-5 py-2.5 cursor-pointer sm:py-3 hover:bg-gray-50 font-bold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Decrease quantity"
-                    >
-                      −
-                    </button>
-                    <input
-                      type="number"
-                      value={quantity}
-                      onChange={(e) => {
-                        const val = Math.max(1, parseInt(e.target.value) || 1);
-                        setQuantity(Math.min(val, availableStock || 999));
-                      }}
-                      disabled={isOutOfStock || !selectedVariant}
-                      max={availableStock}
-                      className="w-12 sm:w-16 text-center font-bold text-base sm:text-lg outline-none disabled:opacity-50"
-                      min="1"
-                      style={{ fontSize: "16px" }}
-                      aria-label="Quantity"
+                  {/* ── STEP: Grind ── */}
+                  <div
+                    className={`px-5 py-5 transition-opacity duration-200 ${
+                      !step2Done
+                        ? "opacity-30 pointer-events-none"
+                        : "opacity-100"
+                    }`}
+                  >
+                    <StepLabel
+                      step={isOmni ? 3 : 2}
+                      label="Pick your grind"
+                      active={step2Done && !step3Done}
+                      done={step3Done}
                     />
-                    <button
-                      onClick={() =>
-                        setQuantity((q) =>
-                          Math.min(q + 1, availableStock || 999)
-                        )
-                      }
-                      disabled={isOutOfStock || !selectedVariant}
-                      className="px-4 sm:px-5 cursor-pointer py-2.5 sm:py-3 hover:bg-gray-50 font-bold text-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
+
+                    {filteredGrindOptions.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-1.5">
+                        {filteredGrindOptions.map((grind) => {
+                          const isSelected = selectedGrind === grind.value;
+                          return (
+                            <button
+                              key={grind.value}
+                              onClick={() => setUserSelectedGrind(grind.value)}
+                              className={`w-full px-4 py-3 rounded-xl border-2 text-left cursor-pointer transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-zinc-300 focus:ring-offset-1
+                                ${
+                                  isSelected
+                                    ? "bg-zinc-900 border-zinc-900 shadow-sm"
+                                    : "bg-white border-zinc-200 hover:border-zinc-400"
+                                }`}
+                              aria-pressed={isSelected}
+                            >
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  {/* Selection indicator dot */}
+                                  <div
+                                    className={`w-4 h-4 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
+                                      isSelected
+                                        ? "border-white bg-white"
+                                        : "border-zinc-300 bg-transparent"
+                                    }`}
+                                  >
+                                    {isSelected && (
+                                      <div className="w-2 h-2 rounded-full bg-zinc-900" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <p
+                                      className={`font-semibold text-sm ${
+                                        isSelected
+                                          ? "text-white"
+                                          : "text-zinc-900"
+                                      }`}
+                                    >
+                                      {grind.label}
+                                    </p>
+                                    <p
+                                      className={`text-xs mt-0.5 ${
+                                        isSelected
+                                          ? "text-zinc-400"
+                                          : "text-zinc-500"
+                                      }`}
+                                    >
+                                      {grind.description}
+                                    </p>
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <Check
+                                    size={15}
+                                    className="text-white flex-shrink-0"
+                                    strokeWidth={2.5}
+                                  />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-xl text-center text-sm text-zinc-400">
+                        No grind options available for this selection
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 text-right">
-                    <p className="text-xs sm:text-sm text-gray-600">Total</p>
-                    <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                      £{totalPrice.toFixed(2)}
-                    </p>
+
+                  {/* ── Quantity + Total ── */}
+                  <div
+                    className={`px-5 py-5 transition-opacity duration-200 ${
+                      !step3Done
+                        ? "opacity-30 pointer-events-none"
+                        : "opacity-100"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-semibold text-zinc-900">
+                        Quantity
+                      </span>
+                      {selectedVariant && (
+                        <span className="text-xs text-zinc-400">
+                          {availableStock} in stock
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-4">
+                      {/* Quantity stepper */}
+                      <div className="flex items-center border-2 border-zinc-200 rounded-xl overflow-hidden bg-white">
+                        <button
+                          onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                          disabled={
+                            isOutOfStock || !selectedVariant || quantity <= 1
+                          }
+                          className="w-11 h-11 flex items-center justify-center hover:bg-zinc-50 text-zinc-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          aria-label="Decrease quantity"
+                        >
+                          <Minus size={14} strokeWidth={2.5} />
+                        </button>
+                        <div className="w-10 text-center">
+                          <input
+                            type="number"
+                            value={quantity}
+                            onChange={(e) => {
+                              const val = Math.max(
+                                1,
+                                parseInt(e.target.value) || 1
+                              );
+                              setQuantity(Math.min(val, availableStock || 999));
+                            }}
+                            disabled={isOutOfStock || !selectedVariant}
+                            max={availableStock}
+                            className="w-full text-center font-bold text-base outline-none disabled:opacity-30 bg-transparent"
+                            min="1"
+                            aria-label="Quantity"
+                          />
+                        </div>
+                        <button
+                          onClick={() =>
+                            setQuantity((q) =>
+                              Math.min(q + 1, availableStock || 999)
+                            )
+                          }
+                          disabled={isOutOfStock || !selectedVariant}
+                          className="w-11 h-11 flex items-center justify-center hover:bg-zinc-50 text-zinc-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          aria-label="Increase quantity"
+                        >
+                          <Plus size={14} strokeWidth={2.5} />
+                        </button>
+                      </div>
+
+                      {/* Total */}
+                      <div className="flex-1 text-right">
+                        <p className="text-[11px] text-zinc-400 font-medium mb-0.5 uppercase tracking-wide">
+                          Total
+                        </p>
+                        <p className="text-2xl font-bold text-zinc-900">
+                          £{totalPrice.toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Add to Cart Button ── */}
+                <div className="px-5 pb-5 pt-1">
+                  <button
+                    onClick={handleAddToCart}
+                    disabled={
+                      isAdded ||
+                      filteredGrindOptions.length === 0 ||
+                      !selectedVariant ||
+                      isOutOfStock ||
+                      quantity > availableStock
+                    }
+                    className={`w-full py-4 cursor-pointer rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2.5
+                      ${
+                        isAdded
+                          ? "bg-zinc-700 text-white"
+                          : isOutOfStock || !selectedVariant
+                          ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                          : "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] shadow-sm hover:shadow"
+                      }`}
+                    aria-disabled={
+                      isAdded ||
+                      filteredGrindOptions.length === 0 ||
+                      !selectedVariant ||
+                      isOutOfStock
+                    }
+                  >
+                    {isAdded ? (
+                      <>
+                        <Check size={18} strokeWidth={3} />
+                        Added to Cart!
+                      </>
+                    ) : isOutOfStock ? (
+                      <>
+                        <AlertCircle size={18} />
+                        Out of Stock
+                      </>
+                    ) : !selectedVariant ? (
+                      <>
+                        <ShoppingCart size={18} />
+                        Complete your selection
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart size={18} />
+                        Add to Cart — £{totalPrice.toFixed(2)}
+                      </>
+                    )}
+                  </button>
+
+                  {/* Trust signals */}
+                  <div className="mt-3 flex items-center justify-center gap-4">
+                    <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                      <Truck size={11} />
+                      UK delivery £5
+                    </span>
+                    <span className="text-zinc-200">·</span>
+                    <span className="text-[11px] text-zinc-400 flex items-center gap-1">
+                      <Coffee size={11} />
+                      Roasted to order
+                    </span>
                   </div>
                 </div>
               </div>
-
-              <button
-                onClick={handleAddToCart}
-                disabled={
-                  isAdded ||
-                  filteredGrindOptions.length === 0 ||
-                  !selectedVariant ||
-                  isOutOfStock ||
-                  quantity > availableStock
-                }
-                className={`w-full py-4 sm:py-5 cursor-pointer rounded-xl sm:rounded-2xl font-bold text-base sm:text-lg transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2 sm:gap-3 ${
-                  isAdded
-                    ? "bg-green-600 text-white"
-                    : isOutOfStock || !selectedVariant
-                    ? "bg-gray-400 text-white cursor-not-allowed"
-                    : "bg-gray-900 text-white hover:bg-gray-800"
-                }`}
-                aria-disabled={
-                  isAdded ||
-                  filteredGrindOptions.length === 0 ||
-                  !selectedVariant ||
-                  isOutOfStock
-                }
-              >
-                {isAdded ? (
-                  <>
-                    <Check size={20} />
-                    Added to Cart!
-                  </>
-                ) : isOutOfStock ? (
-                  <>
-                    <AlertCircle size={20} />
-                    Out of Stock
-                  </>
-                ) : !selectedVariant ? (
-                  <>
-                    <ShoppingCart size={20} />
-                    Select Options
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart size={20} />
-                    Add to Cart
-                  </>
-                )}
-              </button>
             </div>
           </div>
 
+          {/* ════ Related Products ════ */}
           {relatedProducts.length > 0 && (
-            <div className="mt-12 sm:mt-16 pt-12 sm:pt-16 border-t-2 border-gray-100">
-              <h2 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-6 sm:mb-8">
-                You might also like
-              </h2>
-              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-                {relatedProducts.map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => {
-                      setUserSelectedGrind(null);
-                      setUserSelectedImageIndex(null);
-                      router.push(
-                        `/coffee/${encodeURIComponent(p.slug || p.id)}`
-                      );
-                    }}
-                    className="group bg-white rounded-xl cursor-pointer sm:rounded-2xl border-2 border-gray-100 overflow-hidden hover:border-gray-900 hover:shadow-lg transition-all text-left relative"
-                  >
-                    {p.bestSeller && (
-                      <div className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#8b5e3c] text-white text-[10px] font-bold shadow-md">
-                        <Star size={10} className="fill-white" />
-                        <span>Best</span>
-                      </div>
-                    )}
+            <div className="mt-16 pt-12 border-t border-zinc-200">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+                <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">
+                  You might also like
+                </h2>
 
-                    <div className="relative aspect-square">
-                      <Image
-                        src={
-                          p.img
-                            ? getCloudinaryUrl(p.img, "medium")
-                            : "/test.webp"
-                        }
-                        alt={p.name}
-                        fill
-                        className="object-contain group-hover:scale-105 transition-transform duration-300"
-                      />
-                    </div>
-                    <div className="p-3 sm:p-4">
-                      <p className="text-[10px] sm:text-xs font-bold text-amber-700 uppercase tracking-wide mb-1 sm:mb-2">
-                        {p.origin}
-                      </p>
-                      <h3 className="font-bold text-sm sm:text-base text-gray-900 mb-1 sm:mb-2 group-hover:text-amber-700 transition-colors line-clamp-2">
-                        {p.name}
-                      </h3>
-                      <p className="text-base sm:text-lg font-bold text-gray-900">
-                        £
-                        {(Object.values(p.prices || {})[0] ?? p.price).toFixed(
-                          2
-                        )}
-                      </p>
-                    </div>
-                  </button>
-                ))}
+                {availableRoastTabs.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setSelectedRoastFilter("all")}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 border-2 cursor-pointer ${
+                        selectedRoastFilter === "all"
+                          ? "bg-zinc-900 text-white border-zinc-900"
+                          : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400"
+                      }`}
+                    >
+                      All
+                    </button>
+                    {availableRoastTabs.map((type) => {
+                      const meta = ROAST_TYPE_META[type];
+                      const isActive = selectedRoastFilter === type;
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => setSelectedRoastFilter(type)}
+                          className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all duration-200 border-2 cursor-pointer ${
+                            isActive
+                              ? `${meta.pill} text-white border-transparent`
+                              : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-400"
+                          }`}
+                        >
+                          <span>{meta.icon}</span>
+                          {meta.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
+
+              {filteredRelatedProducts.length > 0 ? (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {filteredRelatedProducts.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setUserSelectedGrind(null);
+                        setUserSelectedImageIndex(null);
+                        router.push(
+                          `/coffee/${encodeURIComponent(p.slug || p.id)}`
+                        );
+                      }}
+                      className="group bg-white rounded-2xl cursor-pointer border border-zinc-200 overflow-hidden hover:border-zinc-400 hover:shadow-md transition-all duration-200 text-left relative"
+                    >
+                      {p.bestSeller && (
+                        <div className="absolute top-2.5 left-2.5 z-10 inline-flex items-center gap-1 px-2 py-1 rounded-full bg-zinc-900 text-white text-[10px] font-bold">
+                          <Star size={8} className="fill-white" />
+                          Best
+                        </div>
+                      )}
+
+                      <div className="relative aspect-square bg-zinc-50">
+                        <Image
+                          src={
+                            p.img
+                              ? getCloudinaryUrl(p.img, "medium")
+                              : "/test.webp"
+                          }
+                          alt={p.name}
+                          fill
+                          className="object-contain group-hover:scale-105 transition-transform duration-300"
+                        />
+                      </div>
+                      <div className="p-3.5">
+                        <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest mb-1">
+                          {p.origin}
+                        </p>
+                        {p.roastType && (
+                          <div className="mb-2">
+                            <RoastTypeBadge type={p.roastType} />
+                          </div>
+                        )}
+                        <h3 className="font-bold text-sm text-zinc-900 mb-1.5 group-hover:text-zinc-600 transition-colors line-clamp-2 leading-snug">
+                          {p.name}
+                        </h3>
+                        <p className="text-base font-bold text-zinc-900">
+                          £
+                          {(
+                            Object.values(p.prices || {})[0] ?? p.price
+                          ).toFixed(2)}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-16 text-zinc-400 text-sm">
+                  No products found for this roast type.
+                </div>
+              )}
             </div>
           )}
         </div>
 
+        {/* ── Video Lightbox ── */}
         {playingVideoSrc && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
             onClick={() => setPlayingVideoSrc(null)}
           >
             <div
-              className="relative w-full max-w-4xl aspect-video bg-black"
+              className="relative w-full max-w-4xl aspect-video bg-black rounded-2xl overflow-hidden shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <video
@@ -1432,10 +1918,10 @@ export default function ProductDetailPage() {
               />
               <button
                 onClick={() => setPlayingVideoSrc(null)}
-                className="absolute top-2 right-2 p-2 bg-white rounded-full shadow"
+                className="absolute top-3 right-3 p-2 bg-white/90 hover:bg-white rounded-full shadow-lg transition-colors"
                 aria-label="Close video"
               >
-                <X size={18} />
+                <X size={16} />
               </button>
             </div>
           </div>

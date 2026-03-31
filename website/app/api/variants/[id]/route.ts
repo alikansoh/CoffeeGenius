@@ -72,11 +72,9 @@ export async function GET(request: NextRequest, { params }: Props) {
  * Update variant by ID
  */
 export async function PUT(request: NextRequest, { params }: Props) {
-  // Require authenticated user (no role checks)
   try {
     const auth = await verifyAuthForApi(request);
     if (auth instanceof NextResponse) return auth;
-    // auth present — continue
   } catch (err) {
     console.error("Auth check failed for PUT /api/variants/[id]", err);
     return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
@@ -101,6 +99,22 @@ export async function PUT(request: NextRequest, { params }: Props) {
       );
     }
 
+    // Validate roastType if provided
+    if (body.roastType !== undefined) {
+   // app/api/variants/[id]/route.ts
+
+const validRoastTypes = ["espresso", "filter", "omni"];  // ← add "omni"
+      if (!validRoastTypes.includes(body.roastType)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Invalid roastType "${body.roastType}". Must be one of: ${validRoastTypes.join(", ")}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     const variant = await CoffeeVariant.findById(id);
 
     if (!variant) {
@@ -115,8 +129,8 @@ export async function PUT(request: NextRequest, { params }: Props) {
     }
 
     const coffeeId = variant.coffeeId;
-    const updatableFields = ["size", "grind", "price", "stock"];
-    const updateData: Partial<Pick<ICoffeeVariant, "size" | "grind" | "price" | "stock">> = {};
+    const updatableFields = ["size", "grind", "roastType", "price", "stock"];
+    const updateData: Partial<Pick<ICoffeeVariant, "size" | "grind" | "roastType" | "price" | "stock">> = {};
 
     for (const field of updatableFields) {
       if (field in body) {
@@ -136,6 +150,7 @@ export async function PUT(request: NextRequest, { params }: Props) {
     const totalStock = allVariants.reduce((sum, v) => sum + v.stock, 0);
     const grinds = [...new Set(allVariants.map((v) => v.grind))];
     const availableSizes = [...new Set(allVariants.map((v) => v.size))];
+    const roastTypes = [...new Set(allVariants.map((v) => v.roastType))];
 
     const updatedCoffee = await Coffee.findByIdAndUpdate(
       coffeeId,
@@ -152,7 +167,7 @@ export async function PUT(request: NextRequest, { params }: Props) {
     return NextResponse.json(
       {
         success: true,
-        message: "Variant updated successfully.  Coffee stats recalculated.",
+        message: "Variant updated successfully. Coffee stats recalculated.",
         data: {
           variant: updatedVariant,
           coffee: {
@@ -162,6 +177,7 @@ export async function PUT(request: NextRequest, { params }: Props) {
             totalStock,
             availableGrinds: grinds,
             availableSizes,
+            roastTypes,
             variantCount: allVariants.length,
           },
         },
@@ -186,11 +202,9 @@ export async function PUT(request: NextRequest, { params }: Props) {
  * Delete variant by ID
  */
 export async function DELETE(request: NextRequest, { params }: Props) {
-  // Require authenticated user (no role checks)
   try {
     const auth = await verifyAuthForApi(request);
     if (auth instanceof NextResponse) return auth;
-    // auth present — continue
   } catch (err) {
     console.error("Auth check failed for DELETE /api/variants/[id]", err);
     return NextResponse.json({ success: false, message: "Authentication failed" }, { status: 401 });
@@ -238,7 +252,7 @@ export async function DELETE(request: NextRequest, { params }: Props) {
       return NextResponse.json(
         {
           success: true,
-          message: "Variant deleted.  No variants remaining, coffee deleted too.",
+          message: "Variant deleted. No variants remaining, coffee deleted too.",
         },
         { status: 200 }
       );
@@ -249,8 +263,9 @@ export async function DELETE(request: NextRequest, { params }: Props) {
       const totalStock = remainingVariants.reduce((sum, v) => sum + v.stock, 0);
       const grinds = [...new Set(remainingVariants.map((v) => v.grind))];
       const availableSizes = [...new Set(remainingVariants.map((v) => v.size))];
+      const roastTypes = [...new Set(remainingVariants.map((v) => v.roastType))];
 
-      const updatedCoffee = await Coffee.findByIdAndUpdate(
+      await Coffee.findByIdAndUpdate(
         coffeeId,
         {
           minPrice,
@@ -258,6 +273,8 @@ export async function DELETE(request: NextRequest, { params }: Props) {
           totalStock,
           grinds,
           availableSizes,
+          roastType: roastTypes[0] ?? null,  // ← persist the primary roast type
+
         },
         { new: true }
       );
@@ -265,7 +282,7 @@ export async function DELETE(request: NextRequest, { params }: Props) {
       return NextResponse.json(
         {
           success: true,
-          message: "Variant deleted successfully.  Coffee stats updated.",
+          message: "Variant deleted successfully. Coffee stats updated.",
           data: {
             coffeeId,
             minPrice,
@@ -273,6 +290,7 @@ export async function DELETE(request: NextRequest, { params }: Props) {
             totalStock,
             availableGrinds: grinds,
             availableSizes,
+            roastTypes,
             variantsRemaining: remainingVariants.length,
           },
         },

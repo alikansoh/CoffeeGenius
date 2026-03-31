@@ -60,22 +60,25 @@ export async function generateMetadata({
     };
   }
 
-  // ── Dynamic title — includes roast type & origin when available ─────────
-  const roastLabel = product.roastType
-    ? product.roastType === "espresso"
+  // ── Dynamic title — includes roast type & origin when available ──────────
+  const roastLabel =
+    product.roastType === "espresso"
       ? "Espresso Roast"
-      : "Filter Roast"
-    : "Specialty Coffee";
+      : product.roastType === "filter"
+      ? "Filter Roast"
+      : product.roastType === "omni"
+      ? "Omni Roast"
+      : "Specialty Coffee";
 
   const originLabel = product.origin ? ` from ${product.origin}` : "";
 
   const title = `${product.name}${originLabel} — ${roastLabel} | Coffee Genius`;
 
-  // ── Rich description: pull flavour notes + origin + process ────────────
-  const notesSnippet = product.notes ? ` Tasting notes: ${product.notes}.` : "";
-  const originSnippet = product.origin
-    ? ` Origin: ${product.origin}.`
+  // ── Rich description ─────────────────────────────────────────────────────
+  const notesSnippet = product.notes
+    ? ` Tasting notes: ${product.notes}.`
     : "";
+  const originSnippet = product.origin ? ` Origin: ${product.origin}.` : "";
   const processSnippet = product.process
     ? ` Process: ${product.process}.`
     : "";
@@ -84,20 +87,22 @@ export async function generateMetadata({
     product.description ||
     `Buy ${product.name} — freshly roasted ${roastLabel.toLowerCase()} beans${originLabel}.`;
 
-  const description = `${baseDesc}${notesSnippet}${originSnippet}${processSnippet} Roasted to order in Staines, Surrey. UK delivery.`.slice(
-    0,
-    160
-  );
+  const description =
+    `${baseDesc}${notesSnippet}${originSnippet}${processSnippet} Roasted to order in Staines, Surrey. UK delivery.`.slice(
+      0,
+      160
+    );
 
-  // ── Keywords: product-specific + generic coffee terms ──────────────────
+  // ── Keywords ─────────────────────────────────────────────────────────────
   const keywords = [
     product.name,
-    product.origin && `${product.origin} coffee`,
-    product.origin && `${product.origin} coffee beans`,
-    product.process && `${product.process} process coffee`,
-    product.roastType === "espresso" && "espresso beans",
-    product.roastType === "filter" && "filter coffee beans",
-    product.notes,
+    product.origin ? `${product.origin} coffee` : null,
+    product.origin ? `${product.origin} coffee beans` : null,
+    product.process ? `${product.process} process coffee` : null,
+    product.roastType === "espresso" ? "espresso beans" : null,
+    product.roastType === "filter" ? "filter coffee beans" : null,
+    product.roastType === "omni" ? "omni roast coffee beans" : null,
+    product.notes ?? null,
     "specialty coffee beans UK",
     "buy coffee beans online",
     "freshly roasted coffee",
@@ -116,7 +121,7 @@ export async function generateMetadata({
     .join(", ");
 
   const rawImages = Array.isArray(product.img)
-    ? product.img
+    ? (product.img as string[])
     : product.images ?? [String(product.img)];
 
   const ogImages = rawImages
@@ -130,7 +135,6 @@ export async function generateMetadata({
     metadataBase: new URL(SITE_URL),
     alternates: { canonical: `${SITE_URL}/coffee/${encodeURIComponent(id)}` },
 
-    // ── Open Graph ──────────────────────────────────────────────────────
     openGraph: {
       title,
       description,
@@ -146,7 +150,6 @@ export async function generateMetadata({
       locale: "en_GB",
     },
 
-    // ── Twitter / X ──────────────────���──────────────────────────────────
     twitter: {
       card: "summary_large_image",
       title,
@@ -154,7 +157,6 @@ export async function generateMetadata({
       images: ogImages.length ? [ogImages[0]] : [],
     },
 
-    // ── Robots ──────────────────────────────────────────────────────────
     robots: {
       index: true,
       follow: true,
@@ -167,12 +169,11 @@ export async function generateMetadata({
       },
     },
 
-    // ── Other ───────────────────────────────────────────────────────────
     category: "coffee",
   };
 }
 
-// ── Page ────────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────────
 export default async function Page({
   params,
 }: {
@@ -190,7 +191,7 @@ export default async function Page({
   const currency = product.currency ?? "GBP";
 
   const rawImages = Array.isArray(product.img)
-    ? product.img
+    ? (product.img as string[])
     : product.images ?? [String(product.img)];
 
   const normalizedImages = rawImages
@@ -216,7 +217,9 @@ export default async function Page({
         url: productUrl,
         price: parseFloat(v.price.toFixed(2)),
         priceCurrency: currency,
-        availability: `https://schema.org/${v.stock > 0 ? "InStock" : "OutOfStock"}`,
+        availability: `https://schema.org/${
+          v.stock > 0 ? "InStock" : "OutOfStock"
+        }`,
         sku: v.sku,
         shippingDetails: {
           "@type": "OfferShippingDetails",
@@ -272,7 +275,9 @@ export default async function Page({
           url: productUrl,
           price: parseFloat(s.price.toFixed(2)),
           priceCurrency: currency,
-          availability: `https://schema.org/${(s.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"}`,
+          availability: `https://schema.org/${
+            (s.totalStock ?? 0) > 0 ? "InStock" : "OutOfStock"
+          }`,
         })),
       };
     }
@@ -289,7 +294,7 @@ export default async function Page({
     };
   }
 
-  // ── Product JSON-LD ──────────────────────────────────────────────────────���
+  // ── Product JSON-LD ───────────────────────────────────────────────────────
   const hasOffers = Boolean(offers);
   const hasRating = Boolean(product.aggregateRating);
   const shouldRenderProductJsonLd = hasOffers || hasRating;
@@ -302,7 +307,9 @@ export default async function Page({
     description: product.description ?? product.notes ?? "",
     sku: product.sku ?? product.variants?.[0]?.sku,
     category: "Coffee Beans",
-    ...(product.brand && { brand: { "@type": "Brand", name: product.brand } }),
+    ...(product.brand && {
+      brand: { "@type": "Brand", name: product.brand },
+    }),
     ...(product.origin && {
       countryOfOrigin: { "@type": "Country", name: product.origin },
     }),
@@ -342,7 +349,11 @@ export default async function Page({
         "@type": "ListItem",
         position: 3,
         name: product.name,
-        item: { "@type": "WebPage", "@id": productUrl, name: product.name },
+        item: {
+          "@type": "WebPage",
+          "@id": productUrl,
+          name: product.name,
+        },
       },
     ],
   };

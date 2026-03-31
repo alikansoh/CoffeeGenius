@@ -5,18 +5,17 @@ export interface ICoffee extends Document {
   name: string;
   origin?: string;
   notes?: string;
-  story?: string; // ✅ Added story field
+  story?: string;
   img?: string;
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter"; // ✅ Added roastType field
   process?: string;
   altitude?: string;
   harvest?: string;
   cupping_score?: number;
   variety?: string;
   brewing?: string;
-  bestSeller?: boolean;  // ✅ Added best seller flag
+  bestSeller?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,7 +46,6 @@ const CoffeeSchema = new Schema<ICoffee>(
     },
     story: {
       type: String,
-      // store longer narrative/description (markdown or HTML as needed)
       default: null,
     },
     img: {
@@ -62,12 +60,6 @@ const CoffeeSchema = new Schema<ICoffee>(
       type: String,
       enum: ["light", "medium", "dark"],
       default: null,
-    },
-    roastType: {
-      type: String,
-      enum: ["espresso", "filter"], // either 'espresso' or 'filter'
-      default: null,
-      index: true, // index for fast filtering by roast type
     },
     process: {
       type: String,
@@ -93,10 +85,10 @@ const CoffeeSchema = new Schema<ICoffee>(
     brewing: {
       type: String,
     },
-    bestSeller: {  // ✅ Best seller field
+    bestSeller: {
       type: Boolean,
       default: false,
-      index: true,  // ✅ Index for fast querying
+      index: true,
     },
   },
   {
@@ -104,11 +96,11 @@ const CoffeeSchema = new Schema<ICoffee>(
   }
 );
 
-// Text index for search (include story so it's searchable)
+// Text index for search
 CoffeeSchema.index({ name: "text", origin: "text", notes: "text", story: "text" });
 
-// Compound index for filtering by roastType and best sellers, ordered by creation date
-CoffeeSchema.index({ roastType: 1, bestSeller: 1, createdAt: -1 });
+// Compound index for filtering by best sellers ordered by creation date
+CoffeeSchema.index({ bestSeller: 1, createdAt: -1 });
 
 // Prevent model recompilation in Next.js dev mode
 export default mongoose.models.Coffee ||

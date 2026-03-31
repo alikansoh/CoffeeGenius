@@ -38,8 +38,7 @@ interface ApiCoffee {
   origin: string;
   notes?: string;
   img: string;
-  roastLevel: "light" | "medium" | "dark";
-  roastType?: string; // ✅ Optional — some coffees may not have this
+  roastType?: "espresso" | "filter" | "omni";
   createdAt: string;
   variantCount: number;
   minPrice: number;
@@ -64,9 +63,7 @@ function useTypewriter(phrases: string[]) {
     const currentPhrase = phrases[phraseIndex];
 
     if (!isDeleting && text === currentPhrase) {
-      const pauseTimeout = setTimeout(() => {
-        setIsDeleting(true);
-      }, 2000);
+      const pauseTimeout = setTimeout(() => setIsDeleting(true), 2000);
       return () => clearTimeout(pauseTimeout);
     }
 
@@ -81,7 +78,8 @@ function useTypewriter(phrases: string[]) {
     const timeout = setTimeout(
       () => {
         setText((current) => {
-          if (isDeleting) return currentPhrase.substring(0, current.length - 1);
+          if (isDeleting)
+            return currentPhrase.substring(0, current.length - 1);
           return currentPhrase.substring(0, current.length + 1);
         });
       },
@@ -94,6 +92,12 @@ function useTypewriter(phrases: string[]) {
   return text;
 }
 
+const ROAST_TYPE_LABELS: Record<string, string> = {
+  espresso: "Espresso ☕",
+  filter: "Filter 🫖",
+  omni: "Omni Roast ✺",
+};
+
 export default function ShopPage({ params }: { params: { slug?: string } }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -101,7 +105,9 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
 
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState(query);
-  const [selectedRoastTypes, setSelectedRoastTypes] = useState<Set<string>>(new Set()); // ✅ Replaced selectedRoasts
+  const [selectedRoastTypes, setSelectedRoastTypes] = useState<Set<string>>(
+    new Set()
+  );
   const [minPrice, setMinPrice] = useState<number | "">(0);
   const [maxPrice, setMaxPrice] = useState<number | "">(0);
   const [sort, setSort] = useState<SortOption>("featured");
@@ -120,17 +126,8 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
         if (!response.ok) throw new Error("Failed to fetch products");
         const data = await response.json();
 
-        console.log("📦 API Response:", data);
-
         const transformedProducts: Product[] = data.data.map(
           (coffee: ApiCoffee) => {
-            console.log(`☕ Coffee: ${coffee.name}`, {
-              hasVariants: !!coffee.variants,
-              variantCount: coffee.variants?.length || 0,
-              bestSeller: coffee.bestSeller,
-              roastType: coffee.roastType, // ✅ Log roastType
-            });
-
             const prices: Record<string, number> = {};
             if (coffee.availableSizes && coffee.availableSizes.length > 0) {
               coffee.availableSizes.forEach((sizeObj: SizePrice) => {
@@ -149,8 +146,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
               price: coffee.minPrice,
               prices,
               img: coffee.img,
-              roastLevel: coffee.roastLevel,
-              roastType: coffee.roastType ?? null, // ✅ Pass roastType (null if missing)
+              roastType: coffee.roastType ?? null,
               grinds: coffee.availableGrinds,
               availableSizes: coffee.availableSizes,
               minPrice: coffee.minPrice,
@@ -160,7 +156,6 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
           }
         );
 
-        console.log("✅ Transformed products:", transformedProducts);
         setProducts(transformedProducts);
 
         if (transformedProducts.length > 0) {
@@ -168,14 +163,11 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
             const firstSize = Object.values(p.prices || {})[0];
             return firstSize || p.price;
           });
-          const min = Math.min(
-            ...prices.filter((price): price is number => price !== undefined)
+          const validPrices = prices.filter(
+            (price): price is number => price !== undefined
           );
-          const max = Math.max(
-            ...prices.filter((price): price is number => price !== undefined)
-          );
-          setMinPrice(min);
-          setMaxPrice(max);
+          setMinPrice(Math.min(...validPrices));
+          setMaxPrice(Math.max(...validPrices));
         }
 
         setError(null);
@@ -198,25 +190,28 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
   const origins = useMemo(() => {
     const s = new Set<string>();
     for (const p of products) if (p.origin) s.add(p.origin);
-    return Array.from(s).sort();
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
-  // ✅ Dynamically collect available roast types from products (excluding nulls)
-  const availableRoastTypes = useMemo(() => {
+  const availableRoastTypes = useMemo((): string[] => {
     const s = new Set<string>();
-    for (const p of products) if (p.roastType) s.add(p.roastType);
-    return Array.from(s).sort();
+    for (const p of products) {
+      if (p.roastType) s.add(p.roastType);
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
   }, [products]);
 
   const priceBounds = useMemo(() => {
     if (products.length === 0) return { min: 0, max: 100 };
-    const prices = products.map((p) => {
-      const firstSize = Object.values(p.prices || {})[0];
-      return firstSize || p.price;
-    });
+    const prices = products
+      .map((p) => {
+        const firstSize = Object.values(p.prices || {})[0];
+        return firstSize || p.price;
+      })
+      .filter((p): p is number => p !== undefined);
     return {
-      min: Math.min(...prices.filter((p) => p !== undefined)),
-      max: Math.max(...prices.filter((p) => p !== undefined)),
+      min: Math.min(...prices),
+      max: Math.max(...prices),
     };
   }, [products]);
 
@@ -243,7 +238,6 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
       );
     }
 
-    // ✅ Filter by roast type (skip if no roastType on product)
     if (selectedRoastTypes.size > 0) {
       out = out.filter((p) =>
         p.roastType ? selectedRoastTypes.has(p.roastType) : false
@@ -319,9 +313,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
     setMaxPrice(priceBounds.max);
   }, [priceBounds.min, priceBounds.max]);
 
-  const clearSearchQuery = useCallback(() => {
-    setQuery("");
-  }, []);
+  const clearSearchQuery = useCallback(() => setQuery(""), []);
 
   const isPriceFilterActive =
     (typeof minPrice === "number" && minPrice !== priceBounds.min) ||
@@ -338,11 +330,10 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
       });
     }
 
-    // ✅ Roast type tags
     selectedRoastTypes.forEach((type) => {
       tags.push({
         type: "roastType",
-        label: `Type: ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+        label: `Type: ${ROAST_TYPE_LABELS[type] ?? type}`,
         onRemove: () => removeRoastType(type),
       });
     });
@@ -387,7 +378,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
   const activeFiltersCount = useMemo(() => {
     let count = 0;
     if (debouncedQuery) count++;
-    if (selectedRoastTypes.size > 0) count += selectedRoastTypes.size;
+    count += selectedRoastTypes.size;
     if (isPriceFilterActive) count++;
     return count;
   }, [debouncedQuery, selectedRoastTypes, isPriceFilterActive]);
@@ -429,13 +420,12 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 All Coffees
               </p>
             </div>
-
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-gray-900 mb-4 tracking-tight">
               Explore Our Roasts
             </h1>
             <p className="text-lg text-gray-600 max-w-2xl leading-relaxed">
               Curated selection of single origins and blends, freshly roasted to
-              order.{" "}
+              order.
             </p>
           </div>
 
@@ -453,7 +443,6 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 className="w-full pl-12 pr-4 py-3 rounded-2xl border-2 border-gray-200 bg-white outline-none text-base font-medium transition-all focus:border-gray-900 focus:ring-4 focus:ring-gray-900/5 hover:border-gray-300 shadow-sm"
                 style={{ fontSize: "16px" }}
               />
-
               {query === "" && typewriterText && (
                 <div
                   aria-hidden
@@ -623,7 +612,6 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 <h3 className="text-xl font-bold text-gray-900">Filters</h3>
                 <p className="text-sm text-gray-500 mt-1">Refine your search</p>
               </div>
-
               <button
                 onClick={() => setFiltersOpen(false)}
                 className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
@@ -650,7 +638,6 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                     className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-gray-200 outline-none text-base focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10 transition-all"
                     style={{ fontSize: "16px" }}
                   />
-
                   {query === "" && typewriterText && (
                     <div
                       aria-hidden
@@ -684,14 +671,14 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 </select>
               </div>
 
-              {/* ✅ Roast Type Filter (replaces Roast Level) */}
+              {/* Roast Type Filter */}
               {availableRoastTypes.length > 0 && (
                 <div>
                   <label className="text-sm font-bold text-gray-900 block mb-3">
-                    Roast type
+                    Roast Type
                   </label>
                   <div className="flex flex-wrap gap-2">
-                    {availableRoastTypes.map((type) => (
+                    {availableRoastTypes.map((type: string) => (
                       <button
                         key={type}
                         onClick={() => toggleRoastType(type)}
@@ -701,13 +688,13 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                             : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
                         }`}
                       >
-                        {type}
+                        {ROAST_TYPE_LABELS[type] ?? type}
                       </button>
                     ))}
                   </div>
-                  {/* ✅ Graceful note if some products have no roast type */}
                   <p className="text-xs text-gray-400 mt-2">
-                    Some coffees may not be assigned a roast type and will be excluded when filtering.
+                    Coffees without a roast type will be hidden when this filter
+                    is active.
                   </p>
                 </div>
               )}
@@ -783,7 +770,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
                 </select>
               </div>
 
-              {/* Reset Button */}
+              {/* Reset */}
               <button
                 onClick={resetFilters}
                 className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-gray-200 text-gray-700 font-semibold hover:bg-gray-50 hover:border-gray-900 transition-all"

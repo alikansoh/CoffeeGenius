@@ -21,31 +21,6 @@ export interface Coffee {
   origin: string;
   img?: string;
   images?: string[];
-  roastLevel?: "light" | "medium" | "dark";
-  roastType?: string | null; // ✅ Added
-}
-
-// ✅ Roast type badge config (same as ProductCard)
-const roastTypeConfig: Record<string, { bg: string; text: string; icon: string }> = {
-  espresso:   { bg: "bg-amber-100",   text: "text-amber-900",  icon: "☕" },
-  filter:     { bg: "bg-sky-100",     text: "text-sky-900",    icon: "🫖" },
-  "cold-brew":{ bg: "bg-indigo-100",  text: "text-indigo-900", icon: "🧊" },
-  omni:       { bg: "bg-emerald-100", text: "text-emerald-900",icon: "✺" },
-};
-
-function RoastTypeBadge({ type }: { type: string }) {
-  const config = roastTypeConfig[type.toLowerCase()] ?? {
-    bg: "bg-stone-100",
-    text: "text-stone-700",
-    icon: "◦",
-  };
-  const label = type.charAt(0).toUpperCase() + type.slice(1).replace(/-/g, " ");
-  return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${config.bg} ${config.text} text-[11px] font-semibold`}>
-      <span className="text-xs">{config.icon}</span>
-      {label}
-    </span>
-  );
 }
 
 type ToastType = "error" | "success";
@@ -157,7 +132,9 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
   return (
     <>
       <style jsx global>{`
-        input { font-size: 16px !important; }
+        input {
+          font-size: 16px !important;
+        }
       `}</style>
 
       <main className="min-h-screen bg-gray-50 pb-12">
@@ -197,7 +174,10 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
           {/* Search */}
           <div className="mb-6">
             <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <Search
+                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                size={18}
+              />
               <input
                 type="text"
                 value={search}
@@ -222,18 +202,27 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
               <table className="w-full">
                 <thead className="bg-gray-50 border-b-2 border-gray-200">
                   <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Image</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Name</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Origin</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Roast Type</th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">Slug</th>
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-900 uppercase tracking-wide">Actions</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Image
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Name
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Origin
+                    </th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Slug
+                    </th>
+                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-900 uppercase tracking-wide">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                   {loading ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
+                      <td colSpan={5} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center gap-3">
                           <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
                           <p className="text-sm text-gray-600">Loading coffees...</p>
@@ -242,7 +231,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     </tr>
                   ) : filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-16 text-center">
+                      <td colSpan={5} className="px-6 py-16 text-center">
                         <div className="flex flex-col items-center justify-center gap-3">
                           <CoffeeIcon size={48} className="text-gray-300" />
                           <p className="text-gray-900 font-medium">
@@ -286,21 +275,17 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-600">{coffee.origin}</div>
                         </td>
-                        {/* ✅ Roast type column */}
-                        <td className="px-6 py-4">
-                          {coffee.roastType ? (
-                            <RoastTypeBadge type={coffee.roastType} />
-                          ) : (
-                            <span className="text-gray-400 text-xs">—</span>
-                          )}
-                        </td>
                         <td className="px-6 py-4">
                           <div className="text-sm text-gray-500 font-mono">{coffee.slug}</div>
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center justify-end gap-2">
                             <button
-                              onClick={() => router.push(`/admin/coffee/edit/${encodeURIComponent(coffee._id)}`)}
+                              onClick={() =>
+                                router.push(
+                                  `/admin/coffee/edit/${encodeURIComponent(coffee._id)}`
+                                )
+                              }
                               className="inline-flex items-center gap-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-xl hover:bg-gray-800 transition-all font-medium"
                             >
                               <PencilIcon size={14} />
@@ -375,20 +360,14 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-900 mb-1 truncate">{coffee.name}</h3>
                       <p className="text-sm text-gray-600 mb-2">{coffee.origin}</p>
-                      {/* ✅ Roast type badge on mobile */}
-                      {coffee.roastType ? (
-                        <div className="mb-2">
-                          <RoastTypeBadge type={coffee.roastType} />
-                        </div>
-                      ) : (
-                        <span className="inline-block text-xs text-gray-400 mb-2">No roast type</span>
-                      )}
                       <p className="text-xs text-gray-500 font-mono truncate">{coffee.slug}</p>
                     </div>
                   </div>
                   <div className="flex gap-2 mt-4 pt-4 border-t-2 border-gray-100">
                     <button
-                      onClick={() => router.push(`/admin/coffee/edit/${encodeURIComponent(coffee._id)}`)}
+                      onClick={() =>
+                        router.push(`/admin/coffee/edit/${encodeURIComponent(coffee._id)}`)
+                      }
                       className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm rounded-xl hover:bg-gray-800 transition-all font-medium"
                     >
                       <PencilIcon size={14} />

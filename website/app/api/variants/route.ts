@@ -63,13 +63,24 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { coffeeId, sku, size, grind, price, stock, img } = body;
+    const { coffeeId, sku, size, grind, roastType, price, stock, img } = body;
 
-    if (!coffeeId || !sku || !size || !grind || price === undefined || stock === undefined) {
+    if (!coffeeId || !sku || !size || !grind || !roastType || price === undefined || stock === undefined) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing required fields: coffeeId, sku, size, grind, price, stock",
+          message: "Missing required fields: coffeeId, sku, size, grind, roastType, price, stock",
+        },
+        { status: 400 }
+      );
+    }
+
+    const validRoastTypes = ["espresso", "filter", "omni"];  // ← add "omni"
+    if (!validRoastTypes.includes(roastType)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Invalid roastType "${roastType}". Must be one of: ${validRoastTypes.join(", ")}`,
         },
         { status: 400 }
       );
@@ -80,6 +91,7 @@ export async function POST(request: NextRequest) {
       sku,
       size,
       grind,
+      roastType,
       price,
       stock,
       img,

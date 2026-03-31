@@ -16,6 +16,7 @@ interface CoffeeVariantData {
   sku: string;
   size: string;
   grind: string;
+  roastType: "espresso" | "filter";
   price: number;
   stock: number;
   img: string;
@@ -29,7 +30,6 @@ interface CoffeeAggregateResult {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter";
   img: string;
   images?: string[];
   notes?: string;
@@ -47,6 +47,7 @@ interface CoffeeAggregateResult {
   variantCount: number;
   minPrice: number;
   availableGrinds: string[];
+  roastTypes: ("espresso" | "filter")[];
   totalStock: number;
 }
 
@@ -56,7 +57,7 @@ interface TransformedCoffee {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter";
+  roastTypes: ("espresso" | "filter")[];
   img: string;
   images?: string[];
   notes?: string;
@@ -82,8 +83,6 @@ interface TransformedCoffee {
  * GET /api/coffee
  * Get all coffees with variant count, base price, and available sizes with prices and grinds
  * Query params: search, limit, page, bestSeller, roastType
- *
- * PROTECTED: Requires an authenticated user.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -91,14 +90,17 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get("search") ?? undefined;
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100", 10), 100);
+    const limit = Math.min(
+      parseInt(searchParams.get("limit") || "100", 10),
+      100
+    );
     const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
     const bestSeller = searchParams.get("bestSeller");
     const roastTypeParam = searchParams.get("roastType"); // optional filter: "espresso" | "filter"
 
     const allowedRoastTypes = ["espresso", "filter"];
 
-    // Build search filter
+    // Build coffee-level match filter
     const matchFilter: Record<string, unknown> = {};
 
     if (search) {
@@ -111,19 +113,12 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Filter by best seller if requested
     if (bestSeller === "true") {
       matchFilter.bestSeller = true;
     }
 
-    // Filter by roastType if provided and valid
-    if (roastTypeParam && allowedRoastTypes.includes(roastTypeParam)) {
-      matchFilter.roastType = roastTypeParam;
-    }
-
     const skip = (page - 1) * limit;
 
-    // Get coffees with aggregation to include variant data
     const coffees = (await Coffee.aggregate([
       ...(Object.keys(matchFilter).length > 0 ? [{ $match: matchFilter }] : []),
       {
@@ -134,6 +129,17 @@ export async function GET(request: NextRequest) {
           as: "variants",
         },
       },
+      // Filter by roastType at variant level — only keep coffees that have at least one
+      // variant matching the requested roastType
+      ...(roastTypeParam && allowedRoastTypes.includes(roastTypeParam)
+        ? [
+            {
+              $match: {
+                "variants.roastType": roastTypeParam,
+              },
+            },
+          ]
+        : []),
       {
         $addFields: {
           variantCount: { $size: "$variants" },
@@ -163,6 +169,26 @@ export async function GET(request: NextRequest) {
               [],
             ],
           },
+          // Derive roastTypes from variants
+          roastTypes: {
+            $cond: [
+              { $gt: [{ $size: "$variants" }, 0] },
+              {
+                $reduce: {
+                  input: "$variants",
+                  initialValue: [],
+                  in: {
+                    $cond: [
+                      { $in: ["$$this.roastType", "$$value"] },
+                      "$$value",
+                      { $concatArrays: ["$$value", ["$$this.roastType"]] },
+                    ],
+                  },
+                },
+              },
+              [],
+            ],
+          },
           totalStock: {
             $cond: [
               { $gt: [{ $size: "$variants" }, 0] },
@@ -170,7 +196,6 @@ export async function GET(request: NextRequest) {
               0,
             ],
           },
-          // Ensure bestSeller has a boolean default
           bestSeller: { $ifNull: ["$bestSeller", false] },
         },
       },
@@ -188,7 +213,7 @@ export async function GET(request: NextRequest) {
           img: 1,
           images: 1,
           roastLevel: 1,
-          roastType: 1,
+          roastTypes: 1,
           process: 1,
           altitude: 1,
           harvest: 1,
@@ -207,7 +232,6 @@ export async function GET(request: NextRequest) {
       },
     ])) as CoffeeAggregateResult[];
 
-    // Transform coffees to extract availableSizes with their available grinds
     const transformedCoffees: TransformedCoffee[] = coffees.map((coffee) => {
       const sizeMap = new Map<
         string,
@@ -225,15 +249,11 @@ export async function GET(request: NextRequest) {
 
         const sizeData = sizeMap.get(variant.size)!;
 
-        // Set minimum price for this size
         if (variant.price < sizeData.price) {
           sizeData.price = variant.price;
         }
 
-        // Add grind option
         sizeData.grinds.add(variant.grind);
-
-        // Accumulate stock across all grinds for this size
         sizeData.totalStock += variant.stock;
       });
 
@@ -259,7 +279,7 @@ export async function GET(request: NextRequest) {
         name: coffee.name,
         origin: coffee.origin,
         roastLevel: coffee.roastLevel,
-        roastType: coffee.roastType,
+        roastTypes: coffee.roastTypes,
         img: coffee.img,
         images: coffee.images,
         notes: coffee.notes,
@@ -320,7 +340,6 @@ export async function GET(request: NextRequest) {
  * PROTECTED: Requires an authenticated user.
  */
 export async function POST(request: NextRequest) {
-  // require authentication
   const auth = await verifyAuthForApi(request);
   if (auth instanceof NextResponse) return auth;
 
@@ -337,7 +356,6 @@ export async function POST(request: NextRequest) {
       img,
       images,
       roastLevel,
-      roastType,
       process,
       altitude,
       harvest,
@@ -358,24 +376,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate roastType if provided
-    const allowedRoastTypes = ["espresso", "filter"];
-    if (roastType && !allowedRoastTypes.includes(roastType)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Invalid roastType. Allowed values: ${allowedRoastTypes.join(
-            ", "
-          )}`,
-        },
-        { status: 400 }
-      );
-    }
-
     // Check if slug already exists
-    const existing = await Coffee.findOne({
-      slug: slug.toLowerCase(),
-    });
+    const existing = await Coffee.findOne({ slug: slug.toLowerCase() });
 
     if (existing) {
       return NextResponse.json(
@@ -396,7 +398,6 @@ export async function POST(request: NextRequest) {
       img,
       images,
       roastLevel,
-      roastType: roastType ?? null,
       process,
       altitude,
       harvest,

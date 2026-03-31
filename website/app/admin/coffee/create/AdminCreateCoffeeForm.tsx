@@ -15,8 +15,6 @@ import {
   Film,
 } from "lucide-react";
 
-type RoastType = "espresso" | "filter";
-
 interface CoffeeFormData {
   slug: string;
   name: string;
@@ -24,7 +22,6 @@ interface CoffeeFormData {
   notes: string[];
   img: string;
   images: string[];
-  roastType: RoastType | ""; // <-- replaced roastLevel with roastType
   process: string;
   altitude: string;
   harvest: string;
@@ -92,7 +89,6 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
     notes: [],
     img: "",
     images: [],
-    roastType: "", // <-- initial roastType
     process: "",
     altitude: "",
     harvest: "",
@@ -353,7 +349,6 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         story: formData.story || undefined,
         img: mainImagePublicId,
         images: allImages,
-        roastType: formData.roastType || undefined, // <-- include roastType in payload
         process: formData.process || undefined,
         altitude: formData.altitude || undefined,
         harvest: formData.harvest || undefined,
@@ -598,92 +593,66 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
               </p>
             </section>
 
-            {/* Roast Type & Details (REPLACED Roast Level with Roast Type) */}
+            {/* Details */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Roast Type & Details</h2>
-              <div className="space-y-6">
-                {/* Roast Type */}
+              <h2 className="text-lg font-bold text-gray-900 mb-4">Details</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-900 mb-3">Roast Type</label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <button
-                      key="espresso"
-                      type="button"
-                      onClick={() => setField("roastType", "espresso")}
-                      className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                        formData.roastType === "espresso"
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 hover:border-gray-900 text-gray-700"
-                      }`}
-                    >
-                      Espresso
-                    </button>
-                    <button
-                      key="filter"
-                      type="button"
-                      onClick={() => setField("roastType", "filter")}
-                      className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                        formData.roastType === "filter"
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 hover:border-gray-900 text-gray-700"
-                      }`}
-                    >
-                      Filter
-                    </button>
-                    <button
-                      key="none"
-                      type="button"
-                      onClick={() => setField("roastType", "")}
-                      className={`px-4 py-3 rounded-xl border-2 font-bold transition-all ${
-                        formData.roastType === ""
-                          ? "border-gray-900 bg-gray-900 text-white"
-                          : "border-gray-300 hover:border-gray-900 text-gray-700"
-                      }`}
-                    >
-                      None
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">Don&apos;t select anything if roast type is not applicable.</p>
-                  {formData.roastType && (
-                    <button type="button" onClick={() => setField("roastType", "")} className="mt-2 text-xs text-gray-500 hover:text-gray-700 font-medium">
-                      Clear selection
-                    </button>
-                  )}
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Process</label>
+                  <input
+                    name="process"
+                    value={formData.process}
+                    onChange={handleInputChange}
+                    placeholder="Washed, Natural, Honey"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
                 </div>
-
-                {/* Other Details */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Process</label>
-                    <input name="process" value={formData.process} onChange={handleInputChange} placeholder="Washed, Natural, Honey" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Variety</label>
-                    <input name="variety" value={formData.variety} onChange={handleInputChange} placeholder="Typica, Bourbon, SL28" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Altitude</label>
-                    <input name="altitude" value={formData.altitude} onChange={handleInputChange} placeholder="1,500 - 2,000m" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Harvest Season</label>
-                    <input name="harvest" value={formData.harvest} onChange={handleInputChange} placeholder="November - January" className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all" />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Cupping Score (0-100)</label>
-                    <input
-                      name="cupping_score"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={formData.cupping_score ?? ""}
-                      onChange={handleInputChange}
-                      placeholder="85.5"
-                      className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${errors.cupping_score ? "border-red-400" : "border-gray-300"}`}
-                    />
-                    {errors.cupping_score && <p className="text-xs text-red-600 mt-1">{errors.cupping_score}</p>}
-                  </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Variety</label>
+                  <input
+                    name="variety"
+                    value={formData.variety}
+                    onChange={handleInputChange}
+                    placeholder="Typica, Bourbon, SL28"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Altitude</label>
+                  <input
+                    name="altitude"
+                    value={formData.altitude}
+                    onChange={handleInputChange}
+                    placeholder="1,500 - 2,000m"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Harvest Season</label>
+                  <input
+                    name="harvest"
+                    value={formData.harvest}
+                    onChange={handleInputChange}
+                    placeholder="November - January"
+                    className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-bold text-gray-900 mb-2">Cupping Score (0-100)</label>
+                  <input
+                    name="cupping_score"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={formData.cupping_score ?? ""}
+                    onChange={handleInputChange}
+                    placeholder="85.5"
+                    className={`w-full px-4 py-3 border-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all ${
+                      errors.cupping_score ? "border-red-400" : "border-gray-300"
+                    }`}
+                  />
+                  {errors.cupping_score && <p className="text-xs text-red-600 mt-1">{errors.cupping_score}</p>}
                 </div>
               </div>
             </section>
@@ -692,7 +661,14 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Brewing Guide</h2>
               <p className="text-sm text-gray-600 mb-3">Add brewing instructions per line (e.g., Method: Instructions)</p>
-              <textarea name="brewing" value={formData.brewing} onChange={handleInputChange} placeholder="Espresso: 18-20g dose, 25-30s&#10;Pour Over: 1:16 ratio, 3-4 minute brew" rows={5} className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none transition-all" />
+              <textarea
+                name="brewing"
+                value={formData.brewing}
+                onChange={handleInputChange}
+                placeholder={"Espresso: 18-20g dose, 25-30s\nPour Over: 1:16 ratio, 3-4 minute brew"}
+                rows={5}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent resize-none transition-all"
+              />
             </section>
           </div>
 
@@ -700,7 +676,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
           <aside className="space-y-6">
             {/* Images */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Images & Videos</h3>
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Images &amp; Videos</h3>
               <div
                 onDrop={(e) => {
                   e.preventDefault();
@@ -728,7 +704,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                 ) : (
                   <div className="text-center">
                     <UploadCloud size={40} className="mx-auto text-gray-400 mb-3" />
-                    <div className="text-sm font-medium text-gray-900 mb-1">Drag & drop images or videos here</div>
+                    <div className="text-sm font-medium text-gray-900 mb-1">Drag &amp; drop images or videos here</div>
                     <div className="text-xs text-gray-500 mb-4">Supports: JPG, PNG, MP4, MOV</div>
                     <div className="flex justify-center gap-2">
                       <button
@@ -738,7 +714,13 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                       >
                         Upload
                       </button>
-                      <button type="button" onClick={handlePasteURL} className="px-4 py-2 text-sm border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium">Paste ID</button>
+                      <button
+                        type="button"
+                        onClick={handlePasteURL}
+                        className="px-4 py-2 text-sm border-2 border-gray-300 rounded-xl hover:bg-gray-50 transition-all font-medium"
+                      >
+                        Paste ID
+                      </button>
                     </div>
                   </div>
                 )}
@@ -761,7 +743,11 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                           key={i}
                           onClick={() => handleSetMainImage(i)}
                           className={`relative aspect-square rounded-xl overflow-hidden border-2 transition-all ${
-                            isVideo ? "cursor-not-allowed border-gray-200 opacity-60" : isMain ? "border-green-600 ring-2 ring-green-300 cursor-pointer" : "border-gray-300 hover:border-gray-900 cursor-pointer"
+                            isVideo
+                              ? "cursor-not-allowed border-gray-200 opacity-60"
+                              : isMain
+                              ? "border-green-600 ring-2 ring-green-300 cursor-pointer"
+                              : "border-gray-300 hover:border-gray-900 cursor-pointer"
                           }`}
                         >
                           {isVideo ? (
@@ -816,7 +802,13 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
             {/* Actions */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <div className="flex flex-col gap-3">
-                <button type="button" onClick={handleCancel} className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all">Cancel</button>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
                   disabled={isSaving}
@@ -827,7 +819,7 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
                   {isSaving ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Uploading & Creating...
+                      Uploading &amp; Creating...
                     </div>
                   ) : (
                     "Create Coffee"
@@ -847,10 +839,16 @@ export default function AdminCreateCoffeeForm({ sendCookies = true }: { sendCook
         {showCancelConfirm && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border-2 border-gray-200">
-              <h3 className="text-lg font-bold text-gray-900">Discard changes? </h3>
+              <h3 className="text-lg font-bold text-gray-900">Discard changes?</h3>
               <p className="text-sm text-gray-600 mt-2">You have unsaved changes. Are you sure you want to leave?</p>
               <div className="mt-6 flex gap-3">
-                <button type="button" onClick={() => setShowCancelConfirm(false)} className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all">Continue Editing</button>
+                <button
+                  type="button"
+                  onClick={() => setShowCancelConfirm(false)}
+                  className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all"
+                >
+                  Continue Editing
+                </button>
                 <button
                   type="button"
                   onClick={() => {

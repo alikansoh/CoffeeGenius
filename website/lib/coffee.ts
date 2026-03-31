@@ -14,6 +14,7 @@ export interface ApiVariant {
   sku: string;
   size: string;
   grind: string;
+  roastType: "espresso" | "filter" | "omni";
   price: number;
   stock: number;
   img: string;
@@ -31,7 +32,9 @@ export interface ApiCoffee {
   img: string | string[];
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter"; // <-- added roastType
+  roastType?: "espresso" | "filter" | "omni";
+  /** Derived from variants — all unique roast types across this coffee's variants */
+  roastTypes?: ("espresso" | "filter" | "omni")[];
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -66,7 +69,9 @@ export interface Product {
   prices: Record<string, number>;
   img: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter"; // <-- added roastType
+  roastType?: "espresso" | "filter" | "omni";
+  /** All unique roast types across this coffee's variants */
+  roastTypes: ("espresso" | "filter" | "omni")[];
   grinds: string[];
   availableSizes: ApiSizePrice[];
   minPrice: number;
@@ -74,45 +79,52 @@ export interface Product {
   bestSeller?: boolean;
 }
 
-const CoffeeSchema = new mongoose.Schema({
-  slug: String,
-  name: String,
-  origin: String,
-  description: String,
-  notes: String,
-  img: mongoose.Schema.Types.Mixed,
-  images: [String],
-  roastLevel: { type: String, enum: ['light', 'medium', 'dark'] },
-  roastType: { type: String, enum: ['espresso', 'filter'], default: null }, // <-- added roastType in schema
-  process: String,
-  altitude: String,
-  harvest: String,
-  cupping_score: Number,
-  variety: String,
-  brewing: String,
-  bestSeller: Boolean,
-  variantCount: Number,
-  minPrice: Number,
-  availableGrinds: [String],
-  availableSizes: [mongoose.Schema.Types.Mixed],
-  totalStock: Number,
-  variants: [mongoose.Schema.Types.Mixed],
-  inStock: Boolean,
-  stockStatus: String,
-  story: String,
-  sku: String,
-  brand: String,
-  currency: String,
-  aggregateRating: mongoose.Schema.Types.Mixed,
-  createdAt: Date,
-  updatedAt: Date,
-}, {
-  collection: 'coffees',
-  timestamps: true,
-  strict: false
-});
+const CoffeeSchema = new mongoose.Schema(
+  {
+    slug: String,
+    name: String,
+    origin: String,
+    description: String,
+    notes: String,
+    img: mongoose.Schema.Types.Mixed,
+    images: [String],
+    roastLevel: { type: String, enum: ["light", "medium", "dark"] },
+    roastType: {
+      type: String,
+      enum: ["espresso", "filter", "omni"],
+    },
+    process: String,
+    altitude: String,
+    harvest: String,
+    cupping_score: Number,
+    variety: String,
+    brewing: String,
+    bestSeller: Boolean,
+    variantCount: Number,
+    minPrice: Number,
+    availableGrinds: [String],
+    availableSizes: [mongoose.Schema.Types.Mixed],
+    totalStock: Number,
+    variants: [mongoose.Schema.Types.Mixed],
+    inStock: Boolean,
+    stockStatus: String,
+    story: String,
+    sku: String,
+    brand: String,
+    currency: String,
+    aggregateRating: mongoose.Schema.Types.Mixed,
+    createdAt: Date,
+    updatedAt: Date,
+  },
+  {
+    collection: "coffees",
+    timestamps: true,
+    strict: false,
+  }
+);
 
-const Coffee = mongoose.models.Coffee || mongoose.model('Coffee', CoffeeSchema);
+const Coffee =
+  mongoose.models.Coffee || mongoose.model("Coffee", CoffeeSchema);
 
 export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
   try {
@@ -121,16 +133,15 @@ export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
     const filter = searchQuery
       ? {
           $or: [
-            { name: { $regex: searchQuery, $options: 'i' } },
-            { slug: { $regex: searchQuery, $options: 'i' } },
-            { origin: { $regex: searchQuery, $options: 'i' } },
-            { notes: { $regex: searchQuery, $options: 'i' } },
-          ]
+            { name: { $regex: searchQuery, $options: "i" } },
+            { slug: { $regex: searchQuery, $options: "i" } },
+            { origin: { $regex: searchQuery, $options: "i" } },
+            { notes: { $regex: searchQuery, $options: "i" } },
+          ],
         }
       : {};
 
-    const rawCoffees = await Coffee
-      .find(filter)
+    const rawCoffees = await Coffee.find(filter)
       .sort({ bestSeller: -1, createdAt: -1 })
       .lean()
       .exec();
@@ -143,33 +154,26 @@ export async function getCoffees(searchQuery?: string): Promise<ApiCoffee[]> {
   }
 }
 
-export async function getCoffeeBySlug(slug: string): Promise<ApiCoffee | null> {
+export async function getCoffeeBySlug(
+  slug: string
+): Promise<ApiCoffee | null> {
   try {
     await dbConnect();
 
-    const rawCoffee = await Coffee
-      .findOne({ slug })
-      .lean()
-      .exec();
+    const rawCoffee = await Coffee.findOne({ slug }).lean().exec();
 
     if (!rawCoffee) {
       console.log(`❌ Coffee not found: ${slug}`);
       return null;
     }
 
-    console.log(`✅ Found coffee: ${rawCoffee.name}`);
+    console.log(`✅ Found coffee: ${(rawCoffee as ApiCoffee).name}`);
     return rawCoffee as ApiCoffee;
   } catch (error) {
     console.error("❌ Error fetching coffee by slug:", error);
     return null;
   }
 }
-
-// ─── getCoffeeById ────────────────────────────────────────────────────────────
-// FIXED: Uses $lookup to join the separate `coffeevariants` collection.
-// The old findById() only read the `coffees` document which has no variants
-// embedded — so variants was always empty and offers could never be built
-// for the Product JSON-LD, causing Google's "missing offers" critical error.
 
 export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
   try {
@@ -188,7 +192,6 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
     const results = await Coffee.aggregate([
       { $match: matchFilter },
       {
-        // Join variants from the separate coffeevariants collection
         $lookup: {
           from: "coffeevariants",
           localField: "_id",
@@ -199,7 +202,6 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
       {
         $addFields: {
           variantCount: { $size: "$variants" },
-          // Recalculate minPrice from live variants (ignores stale cached value)
           minPrice: {
             $cond: {
               if: { $gt: [{ $size: "$variants" }, 0] },
@@ -239,6 +241,67 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
               { $ifNull: ["$availableGrinds", []] },
             ],
           },
+          // Collect all unique roast types from variants
+          roastTypes: {
+            $cond: [
+              { $gt: [{ $size: "$variants" }, 0] },
+              {
+                $reduce: {
+                  input: "$variants",
+                  initialValue: [],
+                  in: {
+                    $cond: [
+                      { $in: ["$$this.roastType", "$$value"] },
+                      "$$value",
+                      { $concatArrays: ["$$value", ["$$this.roastType"]] },
+                    ],
+                  },
+                },
+              },
+              { $ifNull: ["$roastTypes", []] },
+            ],
+          },
+          // Derive a single roastType:
+          // - If no variants → use stored roastType on coffee doc (or null)
+          // - If 1 unique roast type across all variants → use that value
+          // - If multiple unique roast types → "omni"
+          roastType: {
+            $let: {
+              vars: {
+                allTypes: {
+                  $reduce: {
+                    input: "$variants",
+                    initialValue: [],
+                    in: {
+                      $cond: [
+                        { $in: ["$$this.roastType", "$$value"] },
+                        "$$value",
+                        {
+                          $concatArrays: ["$$value", ["$$this.roastType"]],
+                        },
+                      ],
+                    },
+                  },
+                },
+              },
+              in: {
+                $cond: [
+                  // No variants or empty — fall back to stored value
+                  { $eq: [{ $size: "$$allTypes" }, 0] },
+                  { $ifNull: ["$roastType", null] },
+                  {
+                    $cond: [
+                      // Exactly one unique roast type — use it
+                      { $eq: [{ $size: "$$allTypes" }, 1] },
+                      { $arrayElemAt: ["$$allTypes", 0] },
+                      // Multiple different roast types — coffee is omni
+                      "omni",
+                    ],
+                  },
+                ],
+              },
+            },
+          },
         },
       },
       { $limit: 1 },
@@ -249,14 +312,23 @@ export async function getCoffeeById(id: string): Promise<ApiCoffee | null> {
       return null;
     }
 
-    const coffee = results[0];
+    const coffee = results[0] as ApiCoffee & {
+      variants: ApiVariant[];
+    };
 
-    // Build availableSizes with per-size grinds and stock from joined variants
-    const sizeMap = new Map<string, { price: number; grinds: string[]; stock: number }>();
-    (coffee.variants as ApiVariant[]).forEach((v) => {
+    const sizeMap = new Map<
+      string,
+      { price: number; grinds: string[]; stock: number }
+    >();
+
+    (coffee.variants ?? []).forEach((v) => {
       const existing = sizeMap.get(v.size);
       if (!existing) {
-        sizeMap.set(v.size, { price: v.price, grinds: [v.grind], stock: v.stock });
+        sizeMap.set(v.size, {
+          price: v.price,
+          grinds: [v.grind],
+          stock: v.stock,
+        });
       } else {
         if (v.price < existing.price) existing.price = v.price;
         if (!existing.grinds.includes(v.grind)) existing.grinds.push(v.grind);
@@ -295,10 +367,34 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       prices["250g"] = coffee.minPrice ?? 0;
     }
 
-    // Handle img as string or array
     const imgUrl = Array.isArray(coffee.img)
       ? coffee.img[0] || ""
       : coffee.img || "";
+
+    // Derive roastTypes from variants if not already aggregated
+    const roastTypes: ("espresso" | "filter" | "omni")[] =
+      coffee.roastTypes ??
+      [
+        ...new Set(
+          (coffee.variants ?? [])
+            .map((v) => v.roastType)
+            .filter(
+              (rt): rt is "espresso" | "filter" | "omni" => !!rt
+            )
+        ),
+      ];
+
+    // Derive single roastType:
+    // - 0 types  → undefined
+    // - 1 type   → that type
+    // - 2+ types → "omni"
+    const roastType: "espresso" | "filter" | "omni" | undefined =
+      coffee.roastType ??
+      (roastTypes.length === 1
+        ? roastTypes[0]
+        : roastTypes.length > 1
+        ? "omni"
+        : undefined);
 
     return {
       id: coffee._id || coffee.slug,
@@ -310,7 +406,8 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       prices,
       img: imgUrl,
       roastLevel: coffee.roastLevel ?? "medium",
-      roastType: coffee.roastType ?? undefined, // <-- pass roastType through
+      roastType,
+      roastTypes,
       grinds: coffee.availableGrinds ?? [],
       availableSizes: coffee.availableSizes ?? [],
       minPrice: coffee.minPrice ?? 0,
