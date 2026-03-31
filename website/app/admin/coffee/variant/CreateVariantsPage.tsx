@@ -70,8 +70,6 @@ const GRINDS: { value: GrindOption; label: string }[] = [
   { value: "aeropress", label: "AeroPress" },
 ];
 
-// CreateVariantsPage (admin UI)
-
 const ROAST_TYPES: { value: RoastTypeOption; label: string }[] = [
   { value: "espresso", label: "Espresso ☕" },
   { value: "filter",   label: "Filter 🫖" },
@@ -935,54 +933,57 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                             </div>
                           </div>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                            <div>
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Amount & Unit</label>
-                              <div className="flex items-center gap-3">
-                                <input
-                                  type="number"
-                                  step={variant.unit === "g" ? "1" : "0.01"}
-                                  min={variant.unit === "g" ? 1 : 0.01}
-                                  value={variant.amount}
-                                  onChange={(e) => {
-                                    const parsed =
-                                      variant.unit === "g"
-                                        ? parseInt(e.target.value || "0", 10)
-                                        : parseFloat(e.target.value || "0");
-                                    handleVariantChange(i, "amount", Number.isNaN(parsed) ? 0 : parsed);
-                                  }}
-                                  className="w-[120px] px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
-                                  aria-label={`Amount for variant ${i + 1}`}
-                                />
-                                <div className="inline-flex items-center rounded-xl bg-gray-100 p-1 border border-gray-200">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleVariantChange(i, "unit", "g")}
-                                    aria-pressed={variant.unit === "g"}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
-                                      variant.unit === "g" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
-                                    }`}
-                                  >
-                                    g
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleVariantChange(i, "unit", "kg")}
-                                    aria-pressed={variant.unit === "kg"}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition ${
-                                      variant.unit === "kg" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
-                                    }`}
-                                  >
-                                    kg
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="mt-2 text-xs text-gray-500">
-                                Use g for single-serve / small bags. Switch to kg for larger bags.
-                              </p>
+                          {/* ====== FIXED GRID LAYOUT ====== */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+                            {/* Amount — takes 1 column */}
+                            <div className="lg:col-span-1">
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Amount</label>
+                              <input
+                                type="number"
+                                step={variant.unit === "g" ? "1" : "0.01"}
+                                min={variant.unit === "g" ? 1 : 0.01}
+                                value={variant.amount}
+                                onChange={(e) => {
+                                  const parsed =
+                                    variant.unit === "g"
+                                      ? parseInt(e.target.value || "0", 10)
+                                      : parseFloat(e.target.value || "0");
+                                  handleVariantChange(i, "amount", Number.isNaN(parsed) ? 0 : parsed);
+                                }}
+                                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
+                                aria-label={`Amount for variant ${i + 1}`}
+                              />
                             </div>
 
-                            <div>
+                            {/* Unit — takes 1 column */}
+                            <div className="lg:col-span-1">
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Unit</label>
+                              <div className="inline-flex items-center rounded-xl bg-gray-100 p-1 border border-gray-200 h-[50px]">
+                                <button
+                                  type="button"
+                                  onClick={() => handleVariantChange(i, "unit", "g")}
+                                  aria-pressed={variant.unit === "g"}
+                                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                    variant.unit === "g" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
+                                  }`}
+                                >
+                                  g
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleVariantChange(i, "unit", "kg")}
+                                  aria-pressed={variant.unit === "kg"}
+                                  className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+                                    variant.unit === "kg" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
+                                  }`}
+                                >
+                                  kg
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Grind Type — takes 1 column */}
+                            <div className="lg:col-span-1">
                               <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Grind Type</label>
                               <div className="relative">
                                 <select
@@ -998,7 +999,8 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                               </div>
                             </div>
 
-                            <div>
+                            {/* Roast Type — takes 1 column */}
+                            <div className="lg:col-span-1">
                               <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Roast Type</label>
                               <div className="relative">
                                 <select
@@ -1014,7 +1016,8 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                               </div>
                             </div>
 
-                            <div>
+                            {/* Price — takes 1 column */}
+                            <div className="lg:col-span-1">
                               <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Price (£)</label>
                               <input
                                 type="number"
@@ -1026,7 +1029,8 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                               />
                             </div>
 
-                            <div>
+                            {/* Stock — takes 1 column */}
+                            <div className="lg:col-span-1">
                               <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Stock</label>
                               <input
                                 type="number"
@@ -1037,6 +1041,7 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                               />
                             </div>
                           </div>
+                          {/* ====== END FIXED GRID LAYOUT ====== */}
 
                           <div className="mt-4 pt-4 border-t-2 border-gray-200">
                             <div className="flex items-center justify-between">

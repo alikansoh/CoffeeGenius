@@ -8,6 +8,7 @@ interface InvoiceItem {
   qty: number;
   unitPrice: number;
   totalPrice: number;
+  roastType?: string;
 }
 
 interface InvoiceAddress {
@@ -475,6 +476,8 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       drawText(line, colDescX, itemY, 10, darkText);
       itemY -= 14;
     }
+if (item.roastType) {   drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8, lightText);
+   itemY -= 12; }
 
     // Draw quantity, price, and total (aligned to first line)
     const firstLineY = cursorY - 18;
@@ -612,8 +615,7 @@ export async function sendInvoiceEmail(invoice: InvoiceData, pdfBuffer: Buffer):
         
         <h3>Items Ordered:</h3>
         <ul>
-          ${invoice.items.map(item => `<li>${escapeHtml(item.name)} - Qty: ${item.qty} - £${item.totalPrice.toFixed(2)}</li>`).join('')}
-        </ul>
+${invoice.items.map(item => `<li>${escapeHtml(item.name)}${item.roastType ? ` (${item.roastType} roast)` : ''} - Qty: ${item.qty} - £${item.totalPrice.toFixed(2)}</li>`).join('')}        </ul>
         
         ${invoice.shippingAddress ? `
         <div style="margin-top: 20px;">

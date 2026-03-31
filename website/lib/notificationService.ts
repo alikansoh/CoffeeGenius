@@ -5,6 +5,8 @@ interface OrderSummaryItem {
   qty: number;
   unitPrice: number;
   totalPrice: number;
+  roastType?: string;
+
 }
 
 interface AdminNotificationInput {
@@ -73,7 +75,7 @@ export async function sendAdminNotification(payload: AdminNotificationInput): Pr
       <p><strong>Order:</strong> ${payload.orderNumber} (${payload.orderId})</p>
       <p><strong>Total:</strong> ${payload.currency ? payload.currency.toUpperCase() + ' ' : '£'}${payload.total.toFixed(2)}</p>
       <p><strong>Customer:</strong> ${payload.clientName || '—'} ${payload.clientEmail ? `(&lt;${payload.clientEmail}&gt;)` : ''}</p>
-      ${payload.items && payload.items.length ? `<h4>Items</h4><ul>${payload.items.map(i => `<li>${i.name} — Qty: ${i.qty} — £${i.totalPrice.toFixed(2)}</li>`).join('')}</ul>` : ''}
+      ${payload.items && payload.items.length ? `<h4>Items</h4><ul>${payload.items.map(i => `<li>${i.name}${i.roastType ? ` (${i.roastType} roast)` : ''} — Qty: ${i.qty} — £${i.totalPrice.toFixed(2)}</li>`).join('')}</ul>` : ''}
       ${dashboardLink}
       <p style="color: #666; font-size: 12px;">This is an automated notification.</p>
     </div>

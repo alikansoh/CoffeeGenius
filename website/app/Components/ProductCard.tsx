@@ -45,7 +45,16 @@ export type Product = {
   bestSeller?: boolean;
 };
 
-// ── Roast Type Badge (same as FeautredCoffee) ─────────────────────────────────
+// ── Helper: expand "omni" into ["espresso", "filter"] ─────────────────────────
+function expandRoastType(
+  rt: string
+): ("espresso" | "filter")[] {
+  if (rt === "omni") return ["espresso", "filter"];
+  if (rt === "espresso" || rt === "filter") return [rt];
+  return [];
+}
+
+// ── Roast Type Badge ──────────────────────────────────────────────────────────
 const ROAST_TYPE_BADGE_META: Record<
   "espresso" | "filter" | "omni",
   { label: string }
@@ -207,26 +216,51 @@ export default function ProductCard({
       : ["whole-bean"];
   }, [size, product.availableSizes, product.availableGrinds, product.grinds]);
 
-  // ── Roast type detection from variants ──────────────────────────────────────
+  // ── Roast type detection from variants (expand "omni" → espresso + filter) ──
   const availableRoastTypesForSize = useMemo(() => {
     if (!size || !product.variants) return [];
-    const roastTypes = new Set<string>();
+    const roastTypes = new Set<"espresso" | "filter">();
     product.variants
       .filter((v) => v.size === size && v.roastType)
-      .forEach((v) => roastTypes.add(v.roastType!));
-    return Array.from(roastTypes) as ("espresso" | "filter")[];
+      .forEach((v) => {
+        for (const rt of expandRoastType(v.roastType!)) {
+          roastTypes.add(rt);
+        }
+      });
+    return Array.from(roastTypes);
   }, [size, product.variants]);
 
   const allProductRoastTypes = useMemo(() => {
     if (!product.variants) return [];
-    const roastTypes = new Set<string>();
+    const roastTypes = new Set<"espresso" | "filter">();
     product.variants
       .filter((v) => v.roastType)
-      .forEach((v) => roastTypes.add(v.roastType!));
-    return Array.from(roastTypes) as ("espresso" | "filter")[];
+      .forEach((v) => {
+        for (const rt of expandRoastType(v.roastType!)) {
+          roastTypes.add(rt);
+        }
+      });
+    return Array.from(roastTypes);
   }, [product.variants]);
 
-  const showRoastPicker = allProductRoastTypes.length > 1;
+  // ── Derived roast type: falls back to variants when product.roastType is missing ──
+  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | null => {
+    if (product.roastType) return product.roastType;
+    if (allProductRoastTypes.length === 1) return allProductRoastTypes[0];
+    if (allProductRoastTypes.length > 1) return "omni";
+    return null;
+  }, [product.roastType, allProductRoastTypes]);
+
+  // ── Show picker when there are multiple roast choices ───────────────────────
+  const showRoastPicker =
+    allProductRoastTypes.length > 1 || derivedRoastType === "omni";
+
+  // ── The list of roast options to render in the picker ───────────────────────
+  // Always ["espresso", "filter"] since omni has been expanded
+  const pickerRoastTypes = useMemo((): ("espresso" | "filter")[] => {
+    if (allProductRoastTypes.length > 0) return allProductRoastTypes;
+    return ["espresso", "filter"];
+  }, [allProductRoastTypes]);
 
   const effectiveRoastStyle = useMemo(() => {
     if (showRoastPicker) return roastStyle;
@@ -238,12 +272,39 @@ export default function ProductCard({
   const roastNotAvailable =
     showRoastPicker &&
     roastStyle !== "" &&
+    availableRoastTypesForSize.length > 0 &&
     !availableRoastTypesForSize.includes(roastStyle as "espresso" | "filter");
 
+  // ── Variant matching: an "omni" variant matches both "espresso" and "filter" ─
   const selectedVariant = useMemo(() => {
     if (!product?.variants || !size || !grind) return null;
-    return product.variants.find((v) => v.size === size && v.grind === grind) || null;
-  }, [product?.variants, size, grind]);
+
+    // If a roast style is selected (or effective), try to find an exact or omni match
+    if (effectiveRoastStyle) {
+      // First try exact roastType match
+      const exactMatch = product.variants.find(
+        (v) =>
+          v.size === size &&
+          v.grind === grind &&
+          v.roastType === effectiveRoastStyle
+      );
+      if (exactMatch) return exactMatch;
+
+      // Then try omni variant (omni matches both espresso and filter)
+      const omniMatch = product.variants.find(
+        (v) =>
+          v.size === size &&
+          v.grind === grind &&
+          v.roastType === "omni"
+      );
+      if (omniMatch) return omniMatch;
+    }
+
+    // Fallback: match by size and grind only (for products without roast types)
+    return (
+      product.variants.find((v) => v.size === size && v.grind === grind) || null
+    );
+  }, [product?.variants, size, grind, effectiveRoastStyle]);
 
   const formatGrindName = (grindValue: string): string => {
     const grindMap: Record<string, string> = {
@@ -279,10 +340,12 @@ export default function ProductCard({
       if (availableRoastTypesForSize.length === 1) {
         setRoastStyle(availableRoastTypesForSize[0]);
       } else if (
+        availableRoastTypesForSize.length > 0 &&
         !availableRoastTypesForSize.includes(roastStyle as "espresso" | "filter")
       ) {
         setRoastStyle("");
       }
+      // If no variant-level data (pure omni from product field), don't reset the selection
     }
   }, [size, showRoastPicker, availableRoastTypesForSize, roastStyle]);
 
@@ -336,7 +399,7 @@ export default function ProductCard({
         effectiveRoastStyle ||
         selectedVariant.RostType ||
         selectedVariant.roastType ||
-        product.roastType ||
+        derivedRoastType ||
         "";
 
       const cartItem: Omit<CartItem, "quantity"> = {
@@ -460,10 +523,9 @@ export default function ProductCard({
           </div>
 
           <div className="p-5 flex flex-col flex-1">
-            {/* Roast type badge — above the name, same as FeautredCoffee */}
-            {product.roastType && (
+            {derivedRoastType && (
               <div className="mb-2">
-                <RoastTypeBadge type={product.roastType} />
+                <RoastTypeBadge type={derivedRoastType} />
               </div>
             )}
 
@@ -580,7 +642,7 @@ export default function ProductCard({
           style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Header — fixed at top */}
+          {/* Header */}
           <div className="mb-4 flex-shrink-0">
             <p className="text-xs text-gray-500 font-semibold uppercase tracking-wide mb-1">
               Configure
@@ -597,8 +659,8 @@ export default function ProductCard({
               {product.origin && (
                 <p className="text-xs text-gray-500">{product.origin}</p>
               )}
-              {product.roastType && (
-                <RoastTypeBadge type={product.roastType} />
+              {derivedRoastType && (
+                <RoastTypeBadge type={derivedRoastType} />
               )}
             </div>
           </div>
@@ -636,16 +698,20 @@ export default function ProductCard({
               </div>
             </div>
 
-            {/* Roast Style picker — multiple roast types */}
+            {/* ── Roast Style picker ── */}
             {showRoastPicker && (
               <div>
                 <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-2">
                   Roast Style
                 </label>
                 <div className="flex gap-2">
-                  {allProductRoastTypes.map((rs) => {
+                  {pickerRoastTypes.map((rs) => {
+                    // Check availability per size (already expanded, so no "omni" values here)
                     const isAvailableForSize =
-                      availableRoastTypesForSize.includes(rs);
+                      availableRoastTypesForSize.length > 0
+                        ? availableRoastTypesForSize.includes(rs)
+                        : true;
+
                     return (
                       <button
                         key={rs}
@@ -678,7 +744,7 @@ export default function ProductCard({
               </div>
             )}
 
-            {/* Single roast type display */}
+            {/* Single roast type display (non-omni, non-picker) */}
             {!showRoastPicker && availableRoastTypesForSize.length === 1 && (
               <div>
                 <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-2">

@@ -16,7 +16,7 @@ interface SettingsDoc {
 }
 
 type ClientItem = { id: string; name: string; price: number; quantity: number };
-type VerifiedItem = { id: string; name: string; quantity: number; clientPrice: number; storedPrice: number; source: 'variant' | 'coffee' | 'equipment' };
+type VerifiedItem = { id: string; name: string; quantity: number; clientPrice: number; storedPrice: number; source: 'variant' | 'coffee' | 'equipment'; roastType?: string };
 
 interface ProductDoc {
   pricePence?: number;
@@ -27,12 +27,14 @@ interface ProductDoc {
   slug?: string;
   stock?: number;
   totalStock?: number;
+  roastType?: string;
 }
 
 interface StoredLookup {
   price: number;
   source: 'variant' | 'coffee' | 'equipment';
   docName?: string;
+  roastType?: string;
 }
 
 interface Shortage {
@@ -94,7 +96,7 @@ async function findStoredPriceForId(id: string): Promise<StoredLookup | null> {
     try {
       const variant = (await CoffeeVariant.findById(id).lean().exec()) as unknown as ProductDoc | null;
       if (variant) {
-        return { price: normalizeDocPriceToGbp(variant), source: 'variant', docName: variant.name };
+        return { price: normalizeDocPriceToGbp(variant), source: 'variant', docName: variant.name, roastType: variant.roastType };
       }
     } catch {
       // ignore
@@ -146,7 +148,9 @@ async function verifyItems(items: ClientItem[]): Promise<VerifiedItem[]> {
         )} GBP, stored price=${storedPrice.toFixed(2)} GBP.`
       );
     }
-    verified.push({ id: it.id, name: lookup.docName ?? it.name, quantity: it.quantity, clientPrice, storedPrice, source: lookup.source });
+    const item: VerifiedItem = { id: it.id, name: lookup.docName ?? it.name, quantity: it.quantity, clientPrice, storedPrice, source: lookup.source };
+    if (lookup.roastType) item.roastType = lookup.roastType;
+    verified.push(item);
   }
   return verified;
 }
@@ -269,14 +273,18 @@ export async function POST(req: Request) {
     const amount = Math.round(total * 100);
 
     // Build order items for metadata (compact)
-    const orderItems = verifiedItems.map((it) => ({
-      id: it.id,
-      name: it.name,
-      qty: it.quantity,
-      unitPrice: it.storedPrice,
-      totalPrice: Number((it.storedPrice * it.quantity).toFixed(2)),
-      source: it.source,
-    }));
+    const orderItems = verifiedItems.map((it) => {
+      const item: Record<string, unknown> = {
+        id: it.id,
+        name: it.name,
+        qty: it.quantity,
+        unitPrice: it.storedPrice,
+        totalPrice: Number((it.storedPrice * it.quantity).toFixed(2)),
+        source: it.source,
+      };
+      if (it.roastType) item.roastType = it.roastType;
+      return item;
+    });
 
     // Create Stripe PaymentIntent
     const stripeSecret = process.env.STRIPE_SECRET_KEY;
