@@ -16,6 +16,7 @@ interface Variant {
   price: number;
   stock: number;
   img: string;
+  RostType?: string;
 }
 
 export type Product = {
@@ -61,6 +62,11 @@ export default function ProductCard({
   const [quantity, setQuantity] = useState(1);
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
+
+  const isOmni = product.roastType === "omni";
+  const [roastStyle, setRoastStyle] = useState<"espresso" | "filter" | "">(
+    isOmni ? "" : ""
+  );
 
   const allNotes = useMemo(
     () =>
@@ -189,6 +195,11 @@ export default function ProductCard({
       return;
     }
 
+    if (isOmni && !roastStyle) {
+      alert("Please select a roast style (Espresso or Filter)");
+      return;
+    }
+
     if (quantity > (selectedVariant.stock || 0)) {
       alert(`Only ${selectedVariant.stock} items available`);
       return;
@@ -196,6 +207,10 @@ export default function ProductCard({
 
     setProcessing(true);
     try {
+      const roastLabel = isOmni
+        ? roastStyle
+        : selectedVariant.RostType || product.roastType || "";
+
       const cartItem: Omit<CartItem, "quantity"> = {
         id: selectedVariant._id,
         productType: "coffee",
@@ -208,6 +223,7 @@ export default function ProductCard({
         size: selectedVariant.size,
         grind: selectedVariant.grind,
         stock: selectedVariant.stock,
+        roastType: roastLabel,
       };
 
       addItem(cartItem, quantity);
@@ -343,7 +359,6 @@ export default function ProductCard({
             <div className="mb-3">
               <div className="flex items-start justify-between gap-2 mb-1">
                 <h3 className="text-lg font-bold text-gray-900">{product.name}</h3>
-                {/* Roast type badge */}
                 {product.roastType && (
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 ${ROAST_TYPE_META[product.roastType].pill} ${ROAST_TYPE_META[product.roastType].text}`}
@@ -476,7 +491,6 @@ export default function ProductCard({
             {product.origin && (
               <p className="text-xs text-gray-500 mt-1">{product.origin}</p>
             )}
-            {/* Roast type badge on back */}
             {product.roastType && (
               <span
                 className={`inline-flex items-center gap-1 mt-2 px-2.5 py-1 rounded-full text-[11px] font-semibold ${ROAST_TYPE_META[product.roastType].pill} ${ROAST_TYPE_META[product.roastType].text}`}
@@ -488,6 +502,33 @@ export default function ProductCard({
           </div>
 
           <div className="space-y-4 flex-1">
+            {/* Roast Style — only for omni */}
+            {isOmni && (
+              <div>
+                <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
+                  Roast Style
+                </label>
+                <div className="flex gap-2">
+                  {(["espresso", "filter"] as const).map((rs) => (
+                    <button
+                      key={rs}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRoastStyle(rs);
+                      }}
+                      className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all border-2 ${
+                        roastStyle === rs
+                          ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+                          : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
+                      }`}
+                    >
+                      {rs === "espresso" ? "☕ Espresso" : "🫖 Filter"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Size */}
             <div>
               <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
@@ -596,7 +637,8 @@ export default function ProductCard({
                 !grind ||
                 !selectedVariant ||
                 isOutOfStock ||
-                availableGrindsForSize.length === 0
+                availableGrindsForSize.length === 0 ||
+                (isOmni && !roastStyle)
               }
               className="flex-1 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >

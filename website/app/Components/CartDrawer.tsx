@@ -1,8 +1,14 @@
-'use client';
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
-import { X, Trash, Lock, ShoppingBag, Coffee as CoffeeIcon } from "lucide-react";
+import {
+  X,
+  Trash,
+  Lock,
+  ShoppingBag,
+  Coffee as CoffeeIcon,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import useCart from "../store/CartStore";
@@ -111,9 +117,16 @@ export default function CartDrawer() {
   const shipping = penceToPounds(shippingPence);
   const grandTotal = Math.round((totalPrice + shipping) * 100) / 100;
 
-  const getImageSrc = (idOrUrl?: string, preset: "thumbnail" | "medium" = "thumbnail") => {
+  const getImageSrc = (
+    idOrUrl?: string,
+    preset: "thumbnail" | "medium" = "thumbnail"
+  ) => {
     if (!idOrUrl) return "/test.webp";
-    if (idOrUrl.startsWith("http://") || idOrUrl.startsWith("https://") || idOrUrl.startsWith("/")) {
+    if (
+      idOrUrl.startsWith("http://") ||
+      idOrUrl.startsWith("https://") ||
+      idOrUrl.startsWith("/")
+    ) {
       return idOrUrl;
     }
     return getCloudinaryUrl(idOrUrl, preset);
@@ -139,13 +152,18 @@ export default function CartDrawer() {
           role="dialog"
           aria-label="Shopping cart"
           className={`fixed right-0 top-0 h-full z-50 w-full max-w-md md:max-w-lg bg-white shadow-2xl transform transition-transform duration-300 ease-in-out
-              ${isOpen ? "translate-x-0" : "translate-x-full"} rounded-l-2xl overflow-hidden`}
+              ${
+                isOpen ? "translate-x-0" : "translate-x-full"
+              } rounded-l-2xl overflow-hidden`}
         >
           <div className="flex h-full flex-col">
             {/* Header - Loading State */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div className="flex items-center gap-3">
-                <div className="text-lg font-semibold" style={{ color: COLORS.primary }}>
+                <div
+                  className="text-lg font-semibold"
+                  style={{ color: COLORS.primary }}
+                >
                   Your basket
                 </div>
                 <div className="inline-flex items-center justify-center text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-700">
@@ -199,13 +217,18 @@ export default function CartDrawer() {
         role="dialog"
         aria-label="Shopping cart"
         className={`fixed right-0 top-0 h-full z-50 w-full max-w-md md:max-w-lg bg-white shadow-2xl transform transition-transform duration-300 ease-in-out
-            ${isOpen ? "translate-x-0" : "translate-x-full"} rounded-l-2xl overflow-hidden`}
+            ${
+              isOpen ? "translate-x-0" : "translate-x-full"
+            } rounded-l-2xl overflow-hidden`}
       >
         <div className="flex h-full flex-col">
           {/* Header */}
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div className="text-lg font-semibold" style={{ color: COLORS.primary }}>
+              <div
+                className="text-lg font-semibold"
+                style={{ color: COLORS.primary }}
+              >
                 Your basket
               </div>
               <div className="inline-flex items-center justify-center text-xs font-medium px-2 py-1 rounded-full bg-gray-100 text-gray-700">
@@ -231,10 +254,15 @@ export default function CartDrawer() {
                 <div className="mx-auto mb-4 w-28 h-28 rounded-full bg-gradient-to-tr from-amber-50 to-amber-100 flex items-center justify-center">
                   <ShoppingBag size={44} className="text-gray-300" />
                 </div>
-                <div className="text-sm font-medium" style={{ color: COLORS.primary }}>
+                <div
+                  className="text-sm font-medium"
+                  style={{ color: COLORS.primary }}
+                >
                   Your cart is empty
                 </div>
-                <div className="mt-2 text-xs text-gray-500">Add some delicious coffee to get started.</div>
+                <div className="mt-2 text-xs text-gray-500">
+                  Add some delicious coffee to get started.
+                </div>
                 <div className="mt-4">
                   <Link
                     href="/coffee"
@@ -258,7 +286,10 @@ export default function CartDrawer() {
                     </div>
                     <ul className="space-y-3">
                       {coffeeItems.map((item) => (
-                        <li key={item.id} className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg">
+                        <li
+                          key={item.id}
+                          className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg"
+                        >
                           <div className="w-16 h-16 rounded-lg bg-white overflow-hidden flex-shrink-0 border border-gray-200">
                             {item.img ? (
                               <Image
@@ -276,12 +307,18 @@ export default function CartDrawer() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <div className="text-sm font-medium line-clamp-2" style={{ color: COLORS.primary }}>
+                                <div
+                                  className="text-sm font-medium line-clamp-2"
+                                  style={{ color: COLORS.primary }}
+                                >
                                   {item.name}
                                 </div>
                                 <div className="mt-1 flex gap-2 text-xs text-gray-500">
                                   {item.size && <span>{item.size}</span>}
                                   {item.grind && <span>• {item.grind}</span>}
+                                  {item.roastType && (
+                                    <span>• {item.roastType}</span>
+                                  )}
                                 </div>
                               </div>
                               <div className="text-sm font-semibold whitespace-nowrap">
@@ -294,7 +331,12 @@ export default function CartDrawer() {
                                 <button
                                   type="button"
                                   aria-label={`Decrease quantity for ${item.name}`}
-                                  onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                                  onClick={() =>
+                                    updateQuantity(
+                                      item.id,
+                                      Math.max(1, item.quantity - 1)
+                                    )
+                                  }
                                   className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none"
                                 >
                                   −
@@ -305,8 +347,14 @@ export default function CartDrawer() {
                                 <button
                                   type="button"
                                   aria-label={`Increase quantity for ${item.name}`}
-                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                  disabled={item.stock ? item.quantity >= item.stock : false}
+                                  onClick={() =>
+                                    updateQuantity(item.id, item.quantity + 1)
+                                  }
+                                  disabled={
+                                    item.stock
+                                      ? item.quantity >= item.stock
+                                      : false
+                                  }
                                   className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   +
@@ -341,7 +389,10 @@ export default function CartDrawer() {
                     </div>
                     <ul className="space-y-3">
                       {equipmentItems.map((item) => (
-                        <li key={item.id} className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg">
+                        <li
+                          key={item.id}
+                          className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg"
+                        >
                           <div className="w-16 h-16 rounded-lg bg-white overflow-hidden flex-shrink-0 border border-gray-200">
                             {item.img ? (
                               <Image
@@ -359,7 +410,10 @@ export default function CartDrawer() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <div className="text-sm font-medium line-clamp-2" style={{ color: COLORS.primary }}>
+                                <div
+                                  className="text-sm font-medium line-clamp-2"
+                                  style={{ color: COLORS.primary }}
+                                >
                                   {item.name}
                                 </div>
                                 {item.metadata?.brand && (
@@ -378,7 +432,12 @@ export default function CartDrawer() {
                                 <button
                                   type="button"
                                   aria-label={`Decrease quantity for ${item.name}`}
-                                  onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))}
+                                  onClick={() =>
+                                    updateQuantity(
+                                      item.id,
+                                      Math.max(1, item.quantity - 1)
+                                    )
+                                  }
                                   className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none"
                                 >
                                   −
@@ -389,8 +448,14 @@ export default function CartDrawer() {
                                 <button
                                   type="button"
                                   aria-label={`Increase quantity for ${item.name}`}
-                                  onClick={() => updateQuantity(item.id, item.quantity + 1)}
-                                  disabled={typeof item.stock === 'number' && item.stock > 0 && item.quantity >= item.stock}
+                                  onClick={() =>
+                                    updateQuantity(item.id, item.quantity + 1)
+                                  }
+                                  disabled={
+                                    typeof item.stock === "number" &&
+                                    item.stock > 0 &&
+                                    item.quantity >= item.stock
+                                  }
                                   className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                   +
@@ -437,14 +502,21 @@ export default function CartDrawer() {
                 </div>
                 {freeEnabled && subtotalPence < thresholdPence && (
                   <div className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                    Add {formatPenceToGBP(thresholdPence - subtotalPence)} more for free shipping
+                    Add {formatPenceToGBP(thresholdPence - subtotalPence)} more
+                    for free shipping
                   </div>
                 )}
                 <div className="flex items-center justify-between pt-2 border-t border-gray-200">
-                  <span className="text-base font-semibold" style={{ color: COLORS.primary }}>
+                  <span
+                    className="text-base font-semibold"
+                    style={{ color: COLORS.primary }}
+                  >
                     Total
                   </span>
-                  <span className="text-lg font-bold" style={{ color: COLORS.primary }}>
+                  <span
+                    className="text-lg font-bold"
+                    style={{ color: COLORS.primary }}
+                  >
                     {formatPrice(grandTotal)}
                   </span>
                 </div>
@@ -460,8 +532,6 @@ export default function CartDrawer() {
                   <Lock size={16} />
                   <span>Secure checkout</span>
                 </button>
-
-               
               </div>
             </div>
           )}

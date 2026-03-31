@@ -16,6 +16,7 @@ export interface IOrderItem {
   unitPrice: number; // GBP
   totalPrice: number; // GBP
   source?: string;
+  roastType?: string;
 }
 
 export type ShipmentProvider =
@@ -85,6 +86,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
     unitPrice: { type: Number, required: true },
     totalPrice: { type: Number, required: true },
     source: { type: String },
+    roastType: { type: String },
   },
   { _id: false }
 );

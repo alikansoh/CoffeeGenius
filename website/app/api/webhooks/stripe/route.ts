@@ -91,6 +91,7 @@ interface Item {
   unitPrice: number;
   totalPrice: number;
   source?: ProductSource;
+  roastType?: string;
   [k: string]: unknown;
 }
 
@@ -110,6 +111,7 @@ interface InvoiceData {
     qty: number;
     unitPrice: number;
     totalPrice: number;
+    roastType?: string;
   }>;
   subtotal: number;
   shipping: number;
@@ -299,6 +301,11 @@ function validateItems(parsed: unknown): Item[] {
     };
     
     if (sourceCandidate) item.source = sourceCandidate;
+
+    const roastTypeCandidate = typeof obj.roastType === 'string' && obj.roastType.trim() !== ''
+      ? obj.roastType.trim()
+      : undefined;
+    if (roastTypeCandidate) item.roastType = roastTypeCandidate;
     
     return item;
   });
@@ -1671,6 +1678,7 @@ const companyInfo: CompanyInfo = {
       qty: it.qty,
       unitPrice: it.unitPrice,
       totalPrice: it.totalPrice,
+      roastType: it.roastType,
     })),
     subtotal: Number(subtotal.toFixed(2)),
     shipping: Number(shipping.toFixed(2)),

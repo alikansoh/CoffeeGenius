@@ -58,6 +58,7 @@ type OrderItem = {
   unitPrice: number;
   totalPrice: number;
   source?: string;
+  roastType?: string;
 };
 
 type ShipmentProvider =
@@ -1289,29 +1290,34 @@ export default function OrdersPage() {
                       Order Items ({selected.items?.length ?? 0})
                     </h3>
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                      {selected.items?.map((it, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-gray-900 mb-1.5">{it.name}</div>
-                              <div className="text-xs text-gray-600 space-y-0.5">
-                                <div>Qty: <span className="font-semibold text-gray-900">{it.qty}</span></div>
-                                <div>
-                                  Unit Price: <span className="font-semibold text-gray-900">
-                                    {formatCurrency(it.unitPrice, (selected.currency || "GBP").toUpperCase())}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="font-bold text-gray-900 flex-shrink-0">
-                              {formatCurrency(it.totalPrice, (selected.currency || "GBP").toUpperCase())}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                    {selected.items?.map((it, idx) => (
+  <div
+    key={idx}
+    className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition"
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="font-medium text-gray-900 mb-1.5">{it.name}</div>
+        <div className="text-xs text-gray-600 space-y-0.5">
+          <div>Qty: <span className="font-semibold text-gray-900">{it.qty}</span></div>
+          <div>
+            Unit Price: <span className="font-semibold text-gray-900">
+              {formatCurrency(it.unitPrice, (selected.currency || "GBP").toUpperCase())}
+            </span>
+          </div>
+          {it.roastType && (
+            <div>
+              Roast: <span className="font-semibold text-gray-900">{it.roastType}</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="font-bold text-gray-900 flex-shrink-0">
+        {formatCurrency(it.totalPrice, (selected.currency || "GBP").toUpperCase())}
+      </div>
+    </div>
+  </div>
+))}
                     </div>
                   </div>
 

@@ -816,19 +816,25 @@ export default function ProductDetailPage() {
       return;
     }
 
-    const cartItem: Omit<CartItem, "quantity"> = {
-      id: selectedVariant._id,
-      productType: "coffee",
-      productId: product.id,
-      variantId: selectedVariant._id,
-      name: `${product.name} — ${selectedSize} — ${selectedGrind}`,
-      price: selectedVariant.price,
-      img: selectedVariant.img || product.img || "/test.webp",
-      size: selectedVariant.size,
-      grind: selectedVariant.grind,
-      sku: selectedVariant.sku,
-      stock: selectedVariant.stock,
-    };
+    const roastLabel =
+    isOmni && selectedRoastStyle
+      ? selectedRoastStyle              // "espresso" or "filter" — customer's choice
+      : selectedVariant.RostType || product.roastType || "";
+  
+  const cartItem: Omit<CartItem, "quantity"> = {
+    id: selectedVariant._id,
+    productType: "coffee",
+    productId: product.id,
+    variantId: selectedVariant._id,
+    name: `${product.name} — ${selectedSize} — ${selectedGrind}`,
+    price: selectedVariant.price,
+    img: selectedVariant.img || product.img || "/test.webp",
+    size: selectedVariant.size,
+    grind: selectedVariant.grind,
+    sku: selectedVariant.sku,
+    stock: selectedVariant.stock,
+    roastType: roastLabel,
+  };
 
     addItem(cartItem, quantity);
     setIsAdded(true);

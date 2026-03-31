@@ -17,6 +17,7 @@ export interface CartItem {
   size?: string;
   grind?: string;
   sku?: string;
+  roastType?: string;
   
   // Equipment/general fields (optional)
   color?: string;
