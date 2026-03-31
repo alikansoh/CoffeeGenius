@@ -22,6 +22,7 @@ interface Variant {
   sku: string;
   size: string;
   grind: string;
+  roastType?: "espresso" | "filter" | "omni";
   price: number;
   stock: number;
   img: string;
@@ -42,7 +43,8 @@ interface ApiCoffee {
   notes?: string;
   img: string;
   images?: string[];
-  roastType?: "espresso" | "filter";
+  roastType?: "espresso" | "filter" | "omni";
+  roastTypes?: ("espresso" | "filter" | "omni")[];
   minPrice: number;
   availableGrinds: string[];
   availableSizes: SizePrice[];
@@ -60,7 +62,7 @@ export type Product = {
   prices?: Record<string, number>;
   img?: string;
   images?: string[];
-  roastType?: "espresso" | "filter" | null;
+  roastType?: "espresso" | "filter" | "omni" | null;
   availableSizes?: SizePrice[];
   availableGrinds?: string[];
   variants?: Variant[];
@@ -71,6 +73,7 @@ type QuickAddOptions = {
   size: string;
   grind: string;
   quantity: number;
+  roastStyle?: string;
 };
 
 const COLORS = {
@@ -78,32 +81,79 @@ const COLORS = {
 };
 
 // ── Roast Type Badge ──────────────────────────────────────────────────────────
-const ROAST_TYPE_META: Record<
-  "espresso" | "filter",
-  { label: string; icon: string; bg: string; text: string }
-> = {
-  espresso: {
-    label: "Espresso",
-    icon: "☕",
-    bg: "bg-amber-100",
-    text: "text-amber-900",
-  },
-  filter: {
-    label: "Filter",
-    icon: "🫖",
-    bg: "bg-sky-100",
-    text: "text-sky-900",
-  },
+const ROAST_TYPE_META: Record<"espresso" | "filter" | "omni", { label: string }> = {
+  espresso: { label: "Espresso roast" },
+  filter:   { label: "Filter roast" },
+  omni:     { label: "Espresso & filter" },
 };
 
-function RoastTypeBadge({ type }: { type: "espresso" | "filter" }) {
-  const meta = ROAST_TYPE_META[type];
+function RoastDot({ type }: { type: "espresso" | "filter" | "omni" }) {
+  if (type === "omni") {
+    return (
+      <span
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 2,
+          width: 10,
+          height: 10,
+          flexShrink: 0,
+        }}
+      >
+        <span style={{ background: "currentColor", borderRadius: 1 }} />
+        <span style={{ background: "currentColor", borderRadius: 1, opacity: 0.4 }} />
+        <span style={{ background: "currentColor", borderRadius: 1, opacity: 0.4 }} />
+        <span style={{ background: "currentColor", borderRadius: 1 }} />
+      </span>
+    );
+  }
+  if (type === "espresso") {
+    return (
+      <span
+        style={{
+          display: "inline-block",
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "currentColor",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ${meta.bg} ${meta.text} text-[11px] font-semibold`}
+      style={{
+        display: "inline-block",
+        width: 6,
+        height: 6,
+        borderRadius: "50%",
+        border: "1.5px solid currentColor",
+        flexShrink: 0,
+      }}
+    />
+  );
+}
+
+function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" }) {
+  const { label } = ROAST_TYPE_META[type];
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "3px 8px",
+        border: "1px solid #d1d5db",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        letterSpacing: "0.07em",
+        textTransform: "uppercase",
+        color: "#6b7280",
+        backgroundColor: "#f9fafb",
+      }}
     >
-      <span className="text-xs">{meta.icon}</span>
-      {meta.label}
+      {label}
     </span>
   );
 }
@@ -128,6 +178,11 @@ function ProductCard({
   const [quantity, setQuantity] = useState(1);
   const [processing, setProcessing] = useState(false);
   const [localAdded, setLocalAdded] = useState(false);
+
+  const isOmni = product.roastType === "omni";
+  const [roastStyle, setRoastStyle] = useState<"espresso" | "filter" | "">(
+    isOmni ? "" : ""
+  );
 
   const isAdded = isAddedProp || localAdded;
 
@@ -176,6 +231,33 @@ function ProductCard({
       : ["whole-bean"];
   }, [product.availableSizes, product.availableGrinds, size]);
 
+  const availableRoastTypesForSize = useMemo(() => {
+    if (!size || !product.variants) return [];
+    const roastTypes = new Set<string>();
+    product.variants
+      .filter((v) => v.size === size && v.roastType)
+      .forEach((v) => roastTypes.add(v.roastType!));
+    return Array.from(roastTypes) as ("espresso" | "filter")[];
+  }, [size, product.variants]);
+
+  const allProductRoastTypes = useMemo(() => {
+    if (!product.variants) return [];
+    const roastTypes = new Set<string>();
+    product.variants
+      .filter((v) => v.roastType)
+      .forEach((v) => roastTypes.add(v.roastType!));
+    return Array.from(roastTypes) as ("espresso" | "filter")[];
+  }, [product.variants]);
+
+  const showRoastPicker = allProductRoastTypes.length > 1;
+
+  const effectiveRoastStyle = useMemo(() => {
+    if (showRoastPicker) return roastStyle;
+    if (availableRoastTypesForSize.length === 1)
+      return availableRoastTypesForSize[0];
+    return "";
+  }, [showRoastPicker, roastStyle, availableRoastTypesForSize]);
+
   const selectedVariant = product.variants?.find(
     (v) => v.size === size && v.grind === grind
   );
@@ -190,6 +272,16 @@ function ProductCard({
         setGrind(availableGrindsForSize[0]);
     }
   }, [size, availableGrindsForSize, grind]);
+
+  useEffect(() => {
+    if (showRoastPicker) {
+      if (availableRoastTypesForSize.length === 1) {
+        setRoastStyle(availableRoastTypesForSize[0]);
+      } else if (!availableRoastTypesForSize.includes(roastStyle as "espresso" | "filter")) {
+        setRoastStyle("");
+      }
+    }
+  }, [size, showRoastPicker, availableRoastTypesForSize, roastStyle]);
 
   useEffect(() => {
     const checkScreenSize = () => setIsLargeScreen(window.innerWidth >= 1024);
@@ -217,9 +309,17 @@ function ProductCard({
     e?.stopPropagation();
     if (!onAddToCart || !selectedVariant) return;
     if (selectedVariant.stock <= 0) return;
+    if (showRoastPicker && !roastStyle) return;
     setProcessing(true);
     try {
-      await Promise.resolve(onAddToCart(product, { size, grind, quantity }));
+      await Promise.resolve(
+        onAddToCart(product, {
+          size,
+          grind,
+          quantity,
+          roastStyle: effectiveRoastStyle || undefined,
+        })
+      );
       setLocalAdded(true);
       setTimeout(() => {
         setLocalAdded(false);
@@ -273,6 +373,11 @@ function ProductCard({
 
   const availableStock = selectedVariant?.stock ?? 0;
   const isOutOfStock = selectedVariant ? availableStock === 0 : false;
+
+  const roastNotAvailable =
+    showRoastPicker &&
+    roastStyle !== "" &&
+    !availableRoastTypesForSize.includes(roastStyle as "espresso" | "filter");
 
   if (!product || !product.id) return null;
 
@@ -331,7 +436,6 @@ function ProductCard({
           </div>
 
           <div className="p-5 flex flex-col flex-1">
-            {/* Roast type badge */}
             {product.roastType && (
               <div className="mb-2">
                 <RoastTypeBadge type={product.roastType} />
@@ -505,6 +609,65 @@ function ProductCard({
               </div>
             </div>
 
+            {/* Roast Style picker — multiple roast types */}
+            {showRoastPicker && (
+              <div>
+                <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
+                  Roast Style
+                </label>
+                <div className="flex gap-2">
+                  {allProductRoastTypes.map((rs) => {
+                    const isAvailableForSize =
+                      availableRoastTypesForSize.includes(rs);
+                    return (
+                      <button
+                        key={rs}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isAvailableForSize) setRoastStyle(rs);
+                        }}
+                        disabled={!isAvailableForSize}
+                        className={`flex-1 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all border-2 ${
+                          !isAvailableForSize
+                            ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed opacity-50"
+                            : roastStyle === rs
+                            ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-gray-900"
+                        }`}
+                      >
+                        <span className="inline-flex items-center justify-center gap-2">
+                          <RoastDot type={rs} />
+                          {rs === "espresso" ? "Espresso" : "Filter"}
+                        </span>
+                        {!isAvailableForSize && (
+                          <div className="text-[10px] mt-0.5 font-normal">
+                            Unavailable
+                          </div>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Single roast type display */}
+            {!showRoastPicker && availableRoastTypesForSize.length === 1 && (
+              <div>
+                <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
+                  Roast Style
+                </label>
+                <div className="w-full rounded-lg border-2 border-gray-200 px-4 py-2.5 text-sm font-medium bg-gray-50 text-gray-700">
+                  <span className="inline-flex items-center gap-2">
+                    <RoastDot type={availableRoastTypesForSize[0]} />
+                    {availableRoastTypesForSize[0] === "espresso"
+                      ? "Espresso"
+                      : "Filter"}
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Grind */}
             <div>
               <label className="block text-xs font-bold text-gray-900 uppercase tracking-wide mb-3">
@@ -587,7 +750,9 @@ function ProductCard({
                 !grind ||
                 !selectedVariant ||
                 isOutOfStock ||
-                availableGrindsForSize.length === 0
+                availableGrindsForSize.length === 0 ||
+                (showRoastPicker && !roastStyle) ||
+                roastNotAvailable
               }
               className="flex-1 px-4 py-2.5 rounded-lg bg-gray-900 text-white text-sm font-semibold hover:bg-gray-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
@@ -595,6 +760,8 @@ function ProductCard({
                 ? "Adding..."
                 : isOutOfStock
                 ? "Out of Stock"
+                : roastNotAvailable
+                ? "Roast Unavailable"
                 : "Add to cart"}
             </button>
           </div>
@@ -633,6 +800,18 @@ export default function BestSellerSlider() {
               prices["250g"] = coffee.minPrice;
             }
 
+            const roastTypes = coffee.roastTypes ?? [];
+            let roastType: "espresso" | "filter" | "omni" | null;
+            if (coffee.roastType) {
+              roastType = coffee.roastType;
+            } else if (roastTypes.length === 1) {
+              roastType = roastTypes[0];
+            } else if (roastTypes.length > 1) {
+              roastType = "omni";
+            } else {
+              roastType = null;
+            }
+
             return {
               id: coffee._id || coffee.slug,
               slug: coffee.slug,
@@ -646,7 +825,7 @@ export default function BestSellerSlider() {
                 coffee.images && coffee.images.length > 0
                   ? coffee.images
                   : [coffee.img],
-              roastType: coffee.roastType ?? null,
+              roastType,
               availableSizes: coffee.availableSizes,
               availableGrinds: coffee.availableGrinds,
               variants: coffee.variants,
@@ -711,6 +890,12 @@ export default function BestSellerSlider() {
     );
     if (!selectedVariant || selectedVariant.stock <= 0) return;
 
+    const roastLabel =
+      options.roastStyle ||
+      selectedVariant.roastType ||
+      p.roastType ||
+      "";
+
     const cartItem: Omit<CartItem, "quantity"> = {
       id: selectedVariant._id,
       productType: "coffee",
@@ -723,6 +908,7 @@ export default function BestSellerSlider() {
       size: selectedVariant.size,
       grind: selectedVariant.grind,
       stock: selectedVariant.stock,
+      roastType: roastLabel,
     };
 
     addItem(cartItem, options.quantity);
@@ -872,26 +1058,12 @@ export default function BestSellerSlider() {
           display: none;
         }
         @keyframes arrow-left {
-          0%,
-          100% {
-            transform: translateX(0);
-            opacity: 0.4;
-          }
-          50% {
-            transform: translateX(-4px);
-            opacity: 1;
-          }
+          0%, 100% { transform: translateX(0); opacity: 0.4; }
+          50% { transform: translateX(-4px); opacity: 1; }
         }
         @keyframes arrow-right {
-          0%,
-          100% {
-            transform: translateX(0);
-            opacity: 0.4;
-          }
-          50% {
-            transform: translateX(4px);
-            opacity: 1;
-          }
+          0%, 100% { transform: translateX(0); opacity: 0.4; }
+          50% { transform: translateX(4px); opacity: 1; }
         }
         .animate-arrow-left {
           display: inline-block;
