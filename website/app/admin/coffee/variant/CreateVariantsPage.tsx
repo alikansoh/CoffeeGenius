@@ -22,7 +22,7 @@ import { getCloudinaryUrl } from "@/app/utils/cloudinary";
 
 type SizeOption = string;
 type GrindOption = "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
-type RoastTypeOption = "espresso" | "filter" | "omni";
+type RoastTypeOption = "espresso" | "filter" | "omni" | "decaf";
 interface CoffeeItem {
   _id: string;
   slug: string;
@@ -74,6 +74,7 @@ const ROAST_TYPES: { value: RoastTypeOption; label: string }[] = [
   { value: "espresso", label: "Espresso ☕" },
   { value: "filter",   label: "Filter 🫖" },
   { value: "omni",     label: "Omni Roast ✺" },
+  { value: "decaf",    label: "Decaf 🌿" },
 ];
 
 const DEFAULT_PRICES: Record<string, number> = {
@@ -470,7 +471,7 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
               grind: (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(sv.grind || "")
                 ? (sv.grind as GrindOption)
                 : "whole-bean"),
-              roastType: (["espresso", "filter","omni"].includes(sv.roastType || "")
+              roastType: (["espresso", "filter", "omni", "decaf"].includes(sv.roastType || "")
                 ? (sv.roastType as RoastTypeOption)
                 : "espresso"),
               price: sv.price ?? (DEFAULT_PRICES[unit] ?? 14.99),

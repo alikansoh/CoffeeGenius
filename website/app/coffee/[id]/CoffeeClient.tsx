@@ -39,8 +39,8 @@ interface Variant {
   createdAt: string;
   updatedAt: string;
   inStock?: boolean;
-  roastType?: "espresso" | "filter" | "omni";
-  RostType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+  RostType?: "espresso" | "filter" | "omni" | "decaf";
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
 }
 
@@ -62,7 +62,7 @@ interface ApiCoffee {
   images?: string[];
   notes?: string;
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -91,7 +91,7 @@ export interface ExtendedProduct {
   price: number;
   prices?: Record<string, number>;
   img: string;
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -145,7 +145,7 @@ const GRIND_OPTIONS: {
 ];
 
 const ROAST_TYPE_META: Record<
-  "espresso" | "filter" | "omni",
+  "espresso" | "filter" | "omni" | "decaf",
   {
     label: string;
     desc: string;
@@ -179,19 +179,30 @@ const ROAST_TYPE_META: Record<
     icon: "✦",
     badge: "bg-zinc-100 text-zinc-700 border border-zinc-200",
   },
+  decaf: {
+    label: "Decaf",
+    desc: "All the flavour, without the caffeine.",
+    pill: "bg-emerald-700",
+    text: "text-white",
+    icon: "🌿",
+    badge: "bg-emerald-100 text-emerald-800 border border-emerald-200",
+  },
 };
 
 // ── Helper: get the effective roast type from a variant ────────────────────────
 // Checks both RostType (legacy typo field) and roastType
-function getVariantRoast(v: Variant): "espresso" | "filter" | "omni" | undefined {
+function getVariantRoast(v: Variant): "espresso" | "filter" | "omni" | "decaf" | undefined {
   return v.RostType || v.roastType;
 }
 
 // ── Helper: expand "omni" into ["espresso", "filter"] ─────────────────────────
-function expandRoastType(rt: string): ("espresso" | "filter")[] {
+// "omni" expands to both espresso and filter; "decaf" does NOT expand — it is a
+// standalone roast type that only matches itself.
+function expandRoastType(rt: string): ("espresso" | "filter" | "decaf")[] {
   if (rt === "omni") return ["espresso", "filter"];
   if (rt === "espresso") return ["espresso"];
   if (rt === "filter") return ["filter"];
+  if (rt === "decaf") return ["decaf"];
   return [];
 }
 
@@ -199,16 +210,18 @@ function expandRoastType(rt: string): ("espresso" | "filter")[] {
 // "omni" variants satisfy both "espresso" and "filter" selections.
 function variantMatchesRoast(
   variant: Variant,
-  chosenRoast: "espresso" | "filter" | null
+  chosenRoast: "espresso" | "filter" | "decaf" | null
 ): boolean {
   if (!chosenRoast) return true;
   const vRoast = getVariantRoast(variant);
   if (!vRoast) return true; // variant has no roast info, matches anything
+  if (chosenRoast === "decaf") return vRoast === "decaf";
+  if (vRoast === "decaf") return false; // decaf only matches decaf
   if (vRoast === "omni") return true; // omni matches both espresso and filter
   return vRoast === chosenRoast;
 }
 
-function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" }) {
+function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   const meta = ROAST_TYPE_META[type];
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -225,7 +238,7 @@ function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" }) {
   );
 }
 
-function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" }) {
+function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   const meta = ROAST_TYPE_META[type];
   return (
     <span
@@ -337,7 +350,7 @@ export default function ProductDetailPage() {
   const [userSelectedGrind, setUserSelectedGrind] =
     useState<GrindOption | null>(null);
   const [selectedRoastStyle, setSelectedRoastStyle] = useState<
-    "espresso" | "filter" | null
+    "espresso" | "filter" | "decaf" | null
   >(null);
   const [userSelectedImageIndex, setUserSelectedImageIndex] = useState<
     number | null
@@ -352,7 +365,7 @@ export default function ProductDetailPage() {
   const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
 
   const [selectedRoastFilter, setSelectedRoastFilter] = useState<
-    "all" | "espresso" | "filter" | "omni"
+    "all" | "espresso" | "filter" | "omni" | "decaf"
   >("all");
 
   const productId = params?.id as string;
@@ -422,13 +435,13 @@ export default function ProductDetailPage() {
   }, [product]);
 
   // ── Derive the display roast type ──
-  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | null => {
+  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | "decaf" | null => {
     if (!product) return null;
     if (derivedIsOmni) return "omni";
     if (product.roastType) return product.roastType;
     // Check variants
     if (product.variants) {
-      const expandedTypes = new Set<"espresso" | "filter">();
+      const expandedTypes = new Set<"espresso" | "filter" | "decaf">();
       product.variants.forEach((v) => {
         const vRoast = getVariantRoast(v);
         if (vRoast) {
@@ -501,7 +514,7 @@ export default function ProductDetailPage() {
         // Derive roastType: expand from variants if product-level is missing
         let derivedProductRoastType = apiCoffee.roastType || undefined;
         if (!derivedProductRoastType && apiCoffee.variants) {
-          const expandedTypes = new Set<"espresso" | "filter">();
+          const expandedTypes = new Set<"espresso" | "filter" | "decaf">();
           apiCoffee.variants.forEach((v) => {
             const vRoast = v.RostType || v.roastType;
             if (vRoast) {
@@ -831,7 +844,7 @@ export default function ProductDetailPage() {
     const types = new Set(
       relatedProducts.map((p) => p.roastType).filter(Boolean)
     );
-    return Array.from(types) as ("espresso" | "filter" | "omni")[];
+    return Array.from(types) as ("espresso" | "filter" | "omni" | "decaf")[];
   }, [relatedProducts]);
 
   useEffect(() => {
