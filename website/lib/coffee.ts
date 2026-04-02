@@ -14,7 +14,7 @@ export interface ApiVariant {
   sku: string;
   size: string;
   grind: string;
-  roastType: "espresso" | "filter" | "omni";
+  roastType: "espresso" | "filter" | "omni" | "decaf";
   price: number;
   stock: number;
   img: string;
@@ -32,9 +32,9 @@ export interface ApiCoffee {
   img: string | string[];
   images?: string[];
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   /** Derived from variants — all unique roast types across this coffee's variants */
-  roastTypes?: ("espresso" | "filter" | "omni")[];
+  roastTypes?: ("espresso" | "filter" | "omni" | "decaf")[];
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -69,9 +69,8 @@ export interface Product {
   prices: Record<string, number>;
   img: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter" | "omni";
-  /** All unique roast types across this coffee's variants */
-  roastTypes: ("espresso" | "filter" | "omni")[];
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+  roastTypes: ("espresso" | "filter" | "omni" | "decaf")[];
   grinds: string[];
   availableSizes: ApiSizePrice[];
   minPrice: number;
@@ -91,7 +90,7 @@ const CoffeeSchema = new mongoose.Schema(
     roastLevel: { type: String, enum: ["light", "medium", "dark"] },
     roastType: {
       type: String,
-      enum: ["espresso", "filter", "omni"],
+      enum: ["espresso", "filter", "omni", "decaf"],
     },
     process: String,
     altitude: String,
@@ -372,14 +371,14 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
       : coffee.img || "";
 
     // Derive roastTypes from variants if not already aggregated
-    const roastTypes: ("espresso" | "filter" | "omni")[] =
+    const roastTypes: ("espresso" | "filter" | "omni" | "decaf")[] =
       coffee.roastTypes ??
       [
         ...new Set(
           (coffee.variants ?? [])
             .map((v) => v.roastType)
             .filter(
-              (rt): rt is "espresso" | "filter" | "omni" => !!rt
+              (rt): rt is "espresso" | "filter" | "omni" | "decaf" => !!rt
             )
         ),
       ];
@@ -388,7 +387,7 @@ export function mapApiCoffeesToProducts(apiCoffees: ApiCoffee[]): Product[] {
     // - 0 types  → undefined
     // - 1 type   → that type
     // - 2+ types → "omni"
-    const roastType: "espresso" | "filter" | "omni" | undefined =
+    const roastType: "espresso" | "filter" | "omni" | "decaf" | undefined =
       coffee.roastType ??
       (roastTypes.length === 1
         ? roastTypes[0]

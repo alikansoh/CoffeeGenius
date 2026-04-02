@@ -68,6 +68,8 @@ export async function generateMetadata({
       ? "Filter Roast"
       : product.roastType === "omni"
       ? "Omni Roast"
+      : product.roastType === "decaf"
+      ? "Decaf"
       : "Specialty Coffee";
 
   const originLabel = product.origin ? ` from ${product.origin}` : "";
@@ -102,6 +104,7 @@ export async function generateMetadata({
     product.roastType === "espresso" ? "espresso beans" : null,
     product.roastType === "filter" ? "filter coffee beans" : null,
     product.roastType === "omni" ? "omni roast coffee beans" : null,
+    product.roastType === "decaf" ? "decaf coffee beans" : null,
     product.notes ?? null,
     "specialty coffee beans UK",
     "buy coffee beans online",

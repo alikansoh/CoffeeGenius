@@ -22,7 +22,7 @@ interface Variant {
   sku: string;
   size: string;
   grind: string;
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   price: number;
   stock: number;
   img: string;
@@ -43,8 +43,8 @@ interface ApiCoffee {
   notes?: string;
   img: string;
   images?: string[];
-  roastType?: "espresso" | "filter" | "omni";
-  roastTypes?: ("espresso" | "filter" | "omni")[];
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+  roastTypes?: ("espresso" | "filter" | "omni" | "decaf")[];
   minPrice: number;
   availableGrinds: string[];
   availableSizes: SizePrice[];
@@ -62,7 +62,7 @@ export type Product = {
   prices?: Record<string, number>;
   img?: string;
   images?: string[];
-  roastType?: "espresso" | "filter" | "omni" | null;
+  roastType?: "espresso" | "filter" | "omni" | "decaf" | null;
   availableSizes?: SizePrice[];
   availableGrinds?: string[];
   variants?: Variant[];
@@ -83,10 +83,11 @@ const COLORS = {
 // ── Helper: expand "omni" into ["espresso", "filter"] ─────────────────────────
 // An "omni" roast means the coffee works for BOTH espresso and filter.
 // We always present "espresso" and "filter" as selectable choices, never "omni".
-function expandRoastType(rt: string): ("espresso" | "filter")[] {
+function expandRoastType(rt: string): ("espresso" | "filter" | "decaf")[] {
   if (rt === "omni") return ["espresso", "filter"];
   if (rt === "espresso") return ["espresso"];
   if (rt === "filter") return ["filter"];
+  if (rt === "decaf") return ["decaf"];
   return [];
 }
 
@@ -94,22 +95,25 @@ function expandRoastType(rt: string): ("espresso" | "filter")[] {
 // "omni" variants satisfy both "espresso" and "filter" selections.
 function variantMatchesRoast(
   variant: Variant,
-  chosenRoast: "espresso" | "filter" | ""
+  chosenRoast: "espresso" | "filter" | "decaf" | ""
 ): boolean {
   if (!chosenRoast) return true;
   if (!variant.roastType) return true;
+  if (chosenRoast === "decaf") return variant.roastType === "decaf";
+  if (variant.roastType === "decaf") return false;
   if (variant.roastType === "omni") return true;
   return variant.roastType === chosenRoast;
 }
 
 // ── Roast Type Badge ──────────────────────────────────────────────────────────
-const ROAST_TYPE_META: Record<"espresso" | "filter" | "omni", { label: string }> = {
+const ROAST_TYPE_META: Record<"espresso" | "filter" | "omni" | "decaf", { label: string }> = {
   espresso: { label: "Espresso roast" },
   filter:   { label: "Filter roast" },
   omni:     { label: "Espresso & filter" },
+  decaf:    { label: "Decaf" },
 };
 
-function RoastDot({ type }: { type: "espresso" | "filter" | "omni" }) {
+function RoastDot({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   if (type === "omni") {
     return (
       <span
@@ -143,6 +147,20 @@ function RoastDot({ type }: { type: "espresso" | "filter" | "omni" }) {
       />
     );
   }
+  if (type === "decaf") {
+    return (
+      <span
+        style={{
+          display: "inline-block",
+          width: 6,
+          height: 6,
+          borderRadius: "50%",
+          background: "#059669",
+          flexShrink: 0,
+        }}
+      />
+    );
+  }
   return (
     <span
       style={{
@@ -157,7 +175,7 @@ function RoastDot({ type }: { type: "espresso" | "filter" | "omni" }) {
   );
 }
 
-function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" }) {
+function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   const { label } = ROAST_TYPE_META[type];
   return (
     <span
@@ -251,8 +269,8 @@ function ProductCard({
   }, [product.availableSizes, product.availableGrinds, size]);
 
   // ── Collect all expanded roast types across ALL variants + product-level ─────
-  const allProductRoastTypes = useMemo((): ("espresso" | "filter")[] => {
-    const roastTypes = new Set<"espresso" | "filter">();
+  const allProductRoastTypes = useMemo((): ("espresso" | "filter" | "decaf")[] => {
+    const roastTypes = new Set<"espresso" | "filter" | "decaf">();
 
     // Expand from variant-level roastType values
     if (product.variants) {
@@ -273,9 +291,9 @@ function ProductCard({
   }, [product.variants, product.roastType]);
 
   // ── Collect expanded roast types for the currently selected size ─────────────
-  const availableRoastTypesForSize = useMemo((): ("espresso" | "filter")[] => {
+  const availableRoastTypesForSize = useMemo((): ("espresso" | "filter" | "decaf")[] => {
     if (!size) return [];
-    const roastTypes = new Set<"espresso" | "filter">();
+    const roastTypes = new Set<"espresso" | "filter" | "decaf">();
 
     if (product.variants) {
       product.variants
@@ -294,7 +312,7 @@ function ProductCard({
   }, [size, product.variants, product.roastType]);
 
   // ── Derived roast type for display badge ────────────────────────────────────
-  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | null => {
+  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | "decaf" | null => {
     if (allProductRoastTypes.length === 2) return "omni";
     if (allProductRoastTypes.length === 1) return allProductRoastTypes[0];
     if (product.roastType) return product.roastType;
@@ -888,7 +906,7 @@ export default function BestSellerSlider() {
             }
 
             const roastTypes = coffee.roastTypes ?? [];
-            let roastType: "espresso" | "filter" | "omni" | null;
+            let roastType: "espresso" | "filter" | "omni" | "decaf" | null;
             if (coffee.roastType) {
               roastType = coffee.roastType;
             } else if (roastTypes.length === 1) {
