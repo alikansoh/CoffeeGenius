@@ -39,8 +39,8 @@ interface Variant {
   createdAt: string;
   updatedAt: string;
   inStock?: boolean;
-  roastType?: "espresso" | "filter" | "omni";
-  RostType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+  RostType?: "espresso" | "filter" | "omni" | "decaf";
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
 }
 
@@ -62,7 +62,7 @@ interface ApiCoffee {
   images?: string[];
   notes?: string;
   roastLevel?: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -91,7 +91,7 @@ export interface ExtendedProduct {
   price: number;
   prices?: Record<string, number>;
   img: string;
-  roastType?: "espresso" | "filter" | "omni";
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
   process?: string;
   altitude?: string;
   harvest?: string;
@@ -145,7 +145,7 @@ const GRIND_OPTIONS: {
 ];
 
 const ROAST_TYPE_META: Record<
-  "espresso" | "filter" | "omni",
+  "espresso" | "filter" | "omni" | "decaf",
   {
     label: string;
     desc: string;
@@ -179,11 +179,18 @@ const ROAST_TYPE_META: Record<
     icon: "✦",
     badge: "bg-zinc-100 text-zinc-700 border border-zinc-200",
   },
+  decaf: {
+    label: "Decaf",
+    desc: "All the flavour, none of the caffeine.",
+    pill: "bg-emerald-800",
+    text: "text-white",
+    icon: "🌿",
+    badge: "bg-emerald-50 text-emerald-800 border border-emerald-200",
+  },
 };
 
 // ── Helper: get the effective roast type from a variant ────────────────────────
-// Checks both RostType (legacy typo field) and roastType
-function getVariantRoast(v: Variant): "espresso" | "filter" | "omni" | undefined {
+function getVariantRoast(v: Variant): "espresso" | "filter" | "omni" | "decaf" | undefined {
   return v.RostType || v.roastType;
 }
 
@@ -192,23 +199,24 @@ function expandRoastType(rt: string): ("espresso" | "filter")[] {
   if (rt === "omni") return ["espresso", "filter"];
   if (rt === "espresso") return ["espresso"];
   if (rt === "filter") return ["filter"];
+  if (rt === "decaf") return []; // no style choice for decaf
   return [];
 }
 
 // ── Check if a variant matches a chosen roast style ───────────────────────────
-// "omni" variants satisfy both "espresso" and "filter" selections.
 function variantMatchesRoast(
   variant: Variant,
   chosenRoast: "espresso" | "filter" | null
 ): boolean {
   if (!chosenRoast) return true;
   const vRoast = getVariantRoast(variant);
-  if (!vRoast) return true; // variant has no roast info, matches anything
-  if (vRoast === "omni") return true; // omni matches both espresso and filter
+  if (!vRoast) return true;
+  if (vRoast === "omni") return true;
+  if (vRoast === "decaf") return true; // decaf matches anything (step is hidden)
   return vRoast === chosenRoast;
 }
 
-function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" }) {
+function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   const meta = ROAST_TYPE_META[type];
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -225,7 +233,7 @@ function SimpleRoastType({ type }: { type: "espresso" | "filter" | "omni" }) {
   );
 }
 
-function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" }) {
+function RoastTypeBadge({ type }: { type: "espresso" | "filter" | "omni" | "decaf" }) {
   const meta = ROAST_TYPE_META[type];
   return (
     <span
@@ -279,7 +287,7 @@ function ReadMore({
   );
 }
 
-/* ── Step Label — refined numbered indicator ── */
+/* ── Step Label ── */
 function StepLabel({
   step,
   label,
@@ -352,7 +360,7 @@ export default function ProductDetailPage() {
   const [playingVideoSrc, setPlayingVideoSrc] = useState<string | null>(null);
 
   const [selectedRoastFilter, setSelectedRoastFilter] = useState<
-    "all" | "espresso" | "filter" | "omni"
+    "all" | "espresso" | "filter" | "omni" | "decaf"
   >("all");
 
   const productId = params?.id as string;
@@ -397,23 +405,23 @@ export default function ProductDetailPage() {
     [videoMap]
   );
 
-  // ── Derive whether the product is omni from both product-level and variant-level data ──
+  // ── Derive whether the product is omni (decaf is never omni) ──────────────
   const derivedIsOmni = useMemo(() => {
     if (!product) return false;
-    // Explicit product-level roastType
+    // Decaf is never omni — no style choice needed
+    if (product.roastType === "decaf") return false;
     if (product.roastType === "omni") return true;
     // Check if variants collectively provide both espresso and filter
     if (product.variants) {
       const expandedTypes = new Set<string>();
       product.variants.forEach((v) => {
         const vRoast = getVariantRoast(v);
-        if (vRoast) {
+        if (vRoast && vRoast !== "decaf") {
           expandRoastType(vRoast).forEach((rt) => expandedTypes.add(rt));
         }
       });
       if (expandedTypes.has("espresso") && expandedTypes.has("filter")) return true;
     }
-    // Also expand product.roastType
     if (product.roastType) {
       const expanded = expandRoastType(product.roastType);
       if (expanded.includes("espresso") && expanded.includes("filter")) return true;
@@ -421,17 +429,17 @@ export default function ProductDetailPage() {
     return false;
   }, [product]);
 
-  // ── Derive the display roast type ──
-  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | null => {
+  // ── Derive the display roast type ──────────────────────────────────────────
+  const derivedRoastType = useMemo((): "espresso" | "filter" | "omni" | "decaf" | null => {
     if (!product) return null;
+    if (product.roastType === "decaf") return "decaf";
     if (derivedIsOmni) return "omni";
     if (product.roastType) return product.roastType;
-    // Check variants
     if (product.variants) {
       const expandedTypes = new Set<"espresso" | "filter">();
       product.variants.forEach((v) => {
         const vRoast = getVariantRoast(v);
-        if (vRoast) {
+        if (vRoast && vRoast !== "decaf") {
           expandRoastType(vRoast).forEach((rt) => expandedTypes.add(rt));
         }
       });
@@ -498,17 +506,22 @@ export default function ProductDetailPage() {
             ? [apiCoffee.img]
             : [];
 
-        // Derive roastType: expand from variants if product-level is missing
+        // Derive roastType from variants if product-level is missing
         let derivedProductRoastType = apiCoffee.roastType || undefined;
         if (!derivedProductRoastType && apiCoffee.variants) {
           const expandedTypes = new Set<"espresso" | "filter">();
+          let hasDecaf = false;
           apiCoffee.variants.forEach((v) => {
             const vRoast = v.RostType || v.roastType;
-            if (vRoast) {
+            if (vRoast === "decaf") {
+              hasDecaf = true;
+            } else if (vRoast) {
               expandRoastType(vRoast).forEach((rt) => expandedTypes.add(rt));
             }
           });
-          if (expandedTypes.has("espresso") && expandedTypes.has("filter")) {
+          if (hasDecaf && expandedTypes.size === 0) {
+            derivedProductRoastType = "decaf";
+          } else if (expandedTypes.has("espresso") && expandedTypes.has("filter")) {
             derivedProductRoastType = "omni";
           } else if (expandedTypes.size === 1) {
             derivedProductRoastType = Array.from(expandedTypes)[0];
@@ -545,10 +558,12 @@ export default function ProductDetailPage() {
         setSelectedSize(Object.keys(prices)[0] || "250g");
         setUserSelectedGrind(null);
 
-        // Determine if the product is omni (using expanded logic)
         const isProductOmni = derivedProductRoastType === "omni";
+        const isProductDecaf = derivedProductRoastType === "decaf";
 
-        if (isProductOmni) {
+        if (isProductDecaf) {
+          setSelectedRoastStyle(null); // no roast style choice for decaf
+        } else if (isProductOmni) {
           setSelectedRoastStyle("espresso");
         } else if (
           derivedProductRoastType === "espresso" ||
@@ -659,14 +674,10 @@ export default function ProductDetailPage() {
     return [...imageItems, ...videoItems];
   }, [imageItems, videoItems]);
 
-  // ── Check if a size is available for the selected roast style ───────────────
   const isSizeAvailableForRoastStyle = useCallback(
     (size: string): boolean => {
       if (!product?.variants) return true;
       if (!derivedIsOmni || !selectedRoastStyle) return true;
-
-      // Check if any variant for this size matches the roast style
-      // (variantMatchesRoast handles omni variants matching both)
       return product.variants.some(
         (v) => v.size === size && variantMatchesRoast(v, selectedRoastStyle)
       );
@@ -721,11 +732,9 @@ export default function ProductDetailPage() {
     return (availableGrindsForSize[0] as GrindOption) ?? "whole-bean";
   }, [userSelectedGrind, availableGrindsForSize]);
 
-  // ── Variant matching: uses variantMatchesRoast so "omni" variants match both ─
   const selectedVariant = useMemo(() => {
     if (!product?.variants || !selectedSize || !selectedGrind) return null;
 
-    // Try to find a variant matching size + grind + roast style
     if (derivedIsOmni && selectedRoastStyle) {
       const match = product.variants.find(
         (v) =>
@@ -736,7 +745,6 @@ export default function ProductDetailPage() {
       if (match) return match;
     }
 
-    // Fallback: match by size and grind only
     return (
       product.variants.find(
         (v) => v.size === selectedSize && v.grind === selectedGrind
@@ -831,7 +839,7 @@ export default function ProductDetailPage() {
     const types = new Set(
       relatedProducts.map((p) => p.roastType).filter(Boolean)
     );
-    return Array.from(types) as ("espresso" | "filter" | "omni")[];
+    return Array.from(types) as ("espresso" | "filter" | "omni" | "decaf")[];
   }, [relatedProducts]);
 
   useEffect(() => {
@@ -902,14 +910,14 @@ export default function ProductDetailPage() {
       return;
     }
 
-    // Use the user's chosen roast style, not the raw variant roastType
-    // so "omni" never leaks into the cart label
     const variantRoast = getVariantRoast(selectedVariant);
     const roastLabel =
       derivedIsOmni && selectedRoastStyle
-        ? selectedRoastStyle // "espresso" or "filter" — customer's choice
+        ? selectedRoastStyle
         : variantRoast === "omni"
         ? ""
+        : variantRoast === "decaf"
+        ? "decaf"
         : variantRoast || product.roastType || "";
 
     const cartItem: Omit<CartItem, "quantity"> = {
@@ -936,6 +944,7 @@ export default function ProductDetailPage() {
     allDisplayMedia[selectedImageIndex] || product.img || "/test.webp";
   const isCurrentItemVideo = isVideoId(currentMediaItem);
 
+  // step1Done: omni needs roast style chosen; decaf skips (always true); others always true
   const step1Done = derivedIsOmni ? selectedRoastStyle !== null : true;
   const step2Done = step1Done && !!selectedSize;
   const step3Done = step2Done && !!selectedGrind;
@@ -948,8 +957,6 @@ export default function ProductDetailPage() {
         textarea {
           font-size: 16px !important;
         }
-
-        /* Hide number input spinners */
         input[type="number"]::-webkit-inner-spin-button,
         input[type="number"]::-webkit-outer-spin-button {
           -webkit-appearance: none;
@@ -960,7 +967,7 @@ export default function ProductDetailPage() {
       `}</style>
 
       <main className="mt-16 sm:mt-0 min-h-screen bg-zinc-50">
-        {/* ── Back bar ─�� */}
+        {/* ── Back bar ── */}
         <div className="bg-white border-b border-zinc-100 sticky top-0 z-30">
           <div className="mx-auto max-w-7xl px-4 sm:px-6 md:px-8 py-3.5">
             <button
@@ -1194,7 +1201,7 @@ export default function ProductDetailPage() {
                             <span className="font-semibold text-zinc-900">
                               Cupping Score:
                             </span>{" "}
-                            {product.cupping_score}/100
+                            {product.cupping_score}
                           </p>
                         )}
                         {notesArray.length > 0 && (
@@ -1456,7 +1463,7 @@ export default function ProductDetailPage() {
                             <span className="text-sm font-bold text-zinc-800">
                               {product.cupping_score}
                               <span className="text-xs font-normal text-zinc-400">
-                                /100
+                                
                               </span>
                             </span>
                           </div>
@@ -1477,7 +1484,7 @@ export default function ProductDetailPage() {
                 </div>
 
                 <div className="divide-y divide-zinc-100">
-                  {/* ── STEP: Brewing Style (omni only) ── */}
+                  {/* ── STEP: Brewing Style (omni only — hidden for decaf) ── */}
                   {derivedIsOmni && (
                     <div className="px-5 py-5">
                       <StepLabel
@@ -1509,8 +1516,6 @@ export default function ProductDetailPage() {
                           const meta = ROAST_TYPE_META[style];
                           const isSelected = selectedRoastStyle === style;
 
-                          // Count sizes available for this roast style
-                          // using variantMatchesRoast so omni variants count for both
                           const sizesForStyle = availableSizes.filter(
                             (size) => {
                               if (!product.variants) return true;
@@ -1693,7 +1698,6 @@ export default function ProductDetailPage() {
                             >
                               <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                  {/* Selection indicator dot */}
                                   <div
                                     className={`w-4 h-4 rounded-full flex-shrink-0 border-2 flex items-center justify-center transition-colors ${
                                       isSelected
@@ -1757,15 +1761,10 @@ export default function ProductDetailPage() {
                       <span className="text-sm font-semibold text-zinc-900">
                         Quantity
                       </span>
-                      {selectedVariant && (
-                        <span className="text-xs text-zinc-400">
-                          {availableStock} in stock
-                        </span>
-                      )}
+                      
                     </div>
 
                     <div className="flex items-center gap-4">
-                      {/* Quantity stepper */}
                       <div className="flex items-center border-2 border-zinc-200 rounded-xl overflow-hidden bg-white">
                         <button
                           onClick={() => setQuantity((q) => Math.max(1, q - 1))}
@@ -1809,7 +1808,6 @@ export default function ProductDetailPage() {
                         </button>
                       </div>
 
-                      {/* Total */}
                       <div className="flex-1 text-right">
                         <p className="text-[11px] text-zinc-400 font-medium mb-0.5 uppercase tracking-wide">
                           Total
@@ -1871,7 +1869,6 @@ export default function ProductDetailPage() {
                     )}
                   </button>
 
-                  {/* Trust signals */}
                   <div className="mt-3 flex items-center justify-center gap-4">
                     <span className="text-[11px] text-zinc-400 flex items-center gap-1">
                       <Truck size={11} />

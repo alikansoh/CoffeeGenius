@@ -21,8 +21,13 @@ import {
 import { getCloudinaryUrl } from "@/app/utils/cloudinary";
 
 type SizeOption = string;
-type GrindOption = "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
-type RoastTypeOption = "espresso" | "filter" | "omni";
+type GrindOption =
+  | "whole-bean"
+  | "espresso"
+  | "filter"
+  | "cafetiere"
+  | "aeropress";
+type RoastTypeOption = "espresso" | "filter" | "omni" | "decaf";
 interface CoffeeItem {
   _id: string;
   slug: string;
@@ -53,7 +58,7 @@ interface VariantFormData {
   useAutoSku?: boolean;
   size: string;
   amount: number;
-  unit: 'g' | 'kg';
+  unit: "g" | "kg";
   grind: GrindOption;
   roastType: RoastTypeOption;
   price: number;
@@ -72,16 +77,25 @@ const GRINDS: { value: GrindOption; label: string }[] = [
 
 const ROAST_TYPES: { value: RoastTypeOption; label: string }[] = [
   { value: "espresso", label: "Espresso ☕" },
-  { value: "filter",   label: "Filter 🫖" },
-  { value: "omni",     label: "Omni Roast ✺" },
+  { value: "filter", label: "Filter 🫖" },
+  { value: "omni", label: "Omni Roast ✺" },
+  { value: "decaf", label: "Decaf 🌿" },
 ];
 
 const DEFAULT_PRICES: Record<string, number> = {
-  "g": 14.99,
-  "kg": 48.99,
+  g: 14.99,
+  kg: 48.99,
 };
 
-function Toast({ message, type, onClose }: { message: string; type: "error" | "success"; onClose: () => void }) {
+function Toast({
+  message,
+  type,
+  onClose,
+}: {
+  message: string;
+  type: "error" | "success";
+  onClose: () => void;
+}) {
   useEffect(() => {
     const timer = setTimeout(onClose, 3000);
     return () => clearTimeout(timer);
@@ -108,7 +122,11 @@ function Toast({ message, type, onClose }: { message: string; type: "error" | "s
   );
 }
 
-export default function CreateVariantsPage({ sendCookies = true }: { sendCookies?: boolean }) {
+export default function CreateVariantsPage({
+  sendCookies = true,
+}: {
+  sendCookies?: boolean;
+}) {
   const router = useRouter();
 
   const [isLoading, setIsLoading] = useState(false);
@@ -131,9 +149,16 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
   const variantsEndRef = useRef<HTMLDivElement | null>(null);
 
-  const getDisplayImageSrc = (idOrUrl: string | undefined, preset: "thumbnail" | "medium" = "thumbnail") => {
+  const getDisplayImageSrc = (
+    idOrUrl: string | undefined,
+    preset: "thumbnail" | "medium" = "thumbnail"
+  ) => {
     if (!idOrUrl) return "/test.webp";
-    if (idOrUrl.startsWith("http://") || idOrUrl.startsWith("https://") || idOrUrl.startsWith("/")) {
+    if (
+      idOrUrl.startsWith("http://") ||
+      idOrUrl.startsWith("https://") ||
+      idOrUrl.startsWith("/")
+    ) {
       return idOrUrl;
     }
     return getCloudinaryUrl(idOrUrl, preset);
@@ -142,9 +167,12 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
   const parseSize = useCallback((size: string) => {
     const match = size.match(/^(\d+(?:\.\d+)?)(g|kg)$/i);
     if (match) {
-      return { amount: parseFloat(match[1]), unit: match[2].toLowerCase() as 'g' | 'kg' };
+      return {
+        amount: parseFloat(match[1]),
+        unit: match[2].toLowerCase() as "g" | "kg",
+      };
     }
-    return { amount: 250, unit: 'g' as 'g' | 'kg' };
+    return { amount: 250, unit: "g" as "g" | "kg" };
   }, []);
 
   useEffect(() => {
@@ -154,27 +182,40 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         setIsFetchingCoffees(true);
         const res = await fetch("/api/coffee?limit=100", {
           method: "GET",
-          ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+          ...(sendCookies
+            ? { credentials: "include" as RequestCredentials }
+            : {}),
         });
         if (!res.ok) throw new Error("Failed to fetch coffees");
         const data = await res.json().catch(() => ({}));
 
-        const rawList: CoffeeItem[] = (data?.data || data?.coffees || data || []) as CoffeeItem[];
+        const rawList: CoffeeItem[] = (data?.data ||
+          data?.coffees ||
+          data ||
+          []) as CoffeeItem[];
         const normalized = rawList.map((c) => ({
           ...c,
-          images: Array.isArray(c.images) && c.images.length > 0 ? (c.images as string[]) : [c.img],
+          images:
+            Array.isArray(c.images) && c.images.length > 0
+              ? (c.images as string[])
+              : [c.img],
         }));
 
         if (mounted) setCoffees(normalized);
       } catch (err) {
-        if (mounted) setError(err instanceof Error ? err.message : "Failed to fetch coffees");
+        if (mounted)
+          setError(
+            err instanceof Error ? err.message : "Failed to fetch coffees"
+          );
       } finally {
         if (mounted) setIsFetchingCoffees(false);
       }
     };
 
     fetchCoffees();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [sendCookies]);
 
   const selectedCoffee = useMemo(
@@ -186,7 +227,8 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     const q = searchQuery.trim().toLowerCase();
     if (!q) return coffees;
     return coffees.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.origin.toLowerCase().includes(q)
+      (c) =>
+        c.name.toLowerCase().includes(q) || c.origin.toLowerCase().includes(q)
     );
   }, [coffees, searchQuery]);
 
@@ -201,14 +243,21 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
           ? String(amount)
           : String(amount).replace(/\.?0+$/, "");
       const sizeCode = `${amtStr}${unit}`.toUpperCase();
-      const grindCode = variant.grind.split("-").map((w) => w[0].toUpperCase()).join("");
+      const grindCode = variant.grind
+        .split("-")
+        .map((w) => w[0].toUpperCase())
+        .join("");
       return `${coffeeCode}-${sizeCode}-${grindCode}`;
     },
     [selectedCoffee, parseSize]
   );
 
   const generateUniqueSku = useCallback(
-    (variant: { size: string; grind: GrindOption }, existingSkus: Set<string>, exclude?: string) => {
+    (
+      variant: { size: string; grind: GrindOption },
+      existingSkus: Set<string>,
+      exclude?: string
+    ) => {
       const base = generateBaseSku(variant);
       let idx = 1;
       let sku = "";
@@ -222,14 +271,21 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     [generateBaseSku]
   );
 
-  const computeExistingSkus = useCallback((excludeVariant?: VariantFormData) => {
-    const s = new Set<string>();
-    for (const v of variantsRef.current) {
-      if (excludeVariant && (excludeVariant.id === v.id || excludeVariant.tempId === v.tempId)) continue;
-      if (v.sku) s.add(v.sku);
-    }
-    return s;
-  }, []);
+  const computeExistingSkus = useCallback(
+    (excludeVariant?: VariantFormData) => {
+      const s = new Set<string>();
+      for (const v of variantsRef.current) {
+        if (
+          excludeVariant &&
+          (excludeVariant.id === v.id || excludeVariant.tempId === v.tempId)
+        )
+          continue;
+        if (v.sku) s.add(v.sku);
+      }
+      return s;
+    },
+    []
+  );
 
   const handleVariantChange = useCallback(
     (index: number, field: keyof VariantFormData, value: string | number) => {
@@ -238,30 +294,51 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         const variant = { ...copy[index] };
 
         if (field === "amount") {
-          const newAmount = typeof value === "number" ? value : parseFloat(String(value || "0"));
+          const newAmount =
+            typeof value === "number"
+              ? value
+              : parseFloat(String(value || "0"));
           variant.amount = newAmount;
           variant.size = `${newAmount}${variant.unit}`;
           if (variant.useAutoSku ?? true) {
             const existingSkus = computeExistingSkus(variant);
-            variant.sku = generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus, variant.id ?? variant.tempId);
+            variant.sku = generateUniqueSku(
+              { size: variant.size, grind: variant.grind },
+              existingSkus,
+              variant.id ?? variant.tempId
+            );
           }
         } else if (field === "unit") {
-          const newUnit = value as 'g' | 'kg';
+          const newUnit = value as "g" | "kg";
           variant.unit = newUnit;
           variant.size = `${variant.amount}${newUnit}`;
           if (variant.useAutoSku ?? true) {
             const existingSkus = computeExistingSkus(variant);
-            variant.sku = generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus, variant.id ?? variant.tempId);
+            variant.sku = generateUniqueSku(
+              { size: variant.size, grind: variant.grind },
+              existingSkus,
+              variant.id ?? variant.tempId
+            );
           }
         } else if (field === "price") {
-          variant.price = typeof value === "number" ? value : parseFloat(String(value || "0"));
+          variant.price =
+            typeof value === "number"
+              ? value
+              : parseFloat(String(value || "0"));
         } else if (field === "stock") {
-          variant.stock = typeof value === "number" ? value : parseInt(String(value || "0"), 10);
+          variant.stock =
+            typeof value === "number"
+              ? value
+              : parseInt(String(value || "0"), 10);
         } else if (field === "grind") {
           variant.grind = value as GrindOption;
           if (variant.useAutoSku ?? true) {
             const existingSkus = computeExistingSkus(variant);
-            variant.sku = generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus, variant.id ?? variant.tempId);
+            variant.sku = generateUniqueSku(
+              { size: variant.size, grind: variant.grind },
+              existingSkus,
+              variant.id ?? variant.tempId
+            );
           }
         } else if (field === "roastType") {
           variant.roastType = value as RoastTypeOption;
@@ -275,21 +352,28 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     [computeExistingSkus, generateUniqueSku]
   );
 
-  const toggleUseAutoSku = useCallback((index: number, useAuto?: boolean) => {
-    setVariants((prev) => {
-      const copy = [...prev];
-      const variant = { ...copy[index] };
-      const newUseAuto = useAuto ?? !(variant.useAutoSku ?? true);
-      variant.useAutoSku = newUseAuto;
-      if (newUseAuto) {
-        const existingSkus = computeExistingSkus(variant);
-        variant.sku = generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus, variant.id ?? variant.tempId);
-        variant.isDirty = true;
-      }
-      copy[index] = variant;
-      return copy;
-    });
-  }, [computeExistingSkus, generateUniqueSku]);
+  const toggleUseAutoSku = useCallback(
+    (index: number, useAuto?: boolean) => {
+      setVariants((prev) => {
+        const copy = [...prev];
+        const variant = { ...copy[index] };
+        const newUseAuto = useAuto ?? !(variant.useAutoSku ?? true);
+        variant.useAutoSku = newUseAuto;
+        if (newUseAuto) {
+          const existingSkus = computeExistingSkus(variant);
+          variant.sku = generateUniqueSku(
+            { size: variant.size, grind: variant.grind },
+            existingSkus,
+            variant.id ?? variant.tempId
+          );
+          variant.isDirty = true;
+        }
+        copy[index] = variant;
+        return copy;
+      });
+    },
+    [computeExistingSkus, generateUniqueSku]
+  );
 
   const handleSkuEdit = useCallback((index: number, newSku: string) => {
     setVariants((prev) => {
@@ -306,10 +390,12 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
   const addVariant = useCallback(() => {
     setVariants((prev) => {
       const newVariant: VariantFormData = {
-        tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+        tempId: `${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 9)}`,
         size: "250g",
         amount: 250,
-        unit: 'g',
+        unit: "g",
         grind: "whole-bean",
         roastType: "espresso",
         price: DEFAULT_PRICES["g"] ?? 14.99,
@@ -319,14 +405,22 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         useAutoSku: true,
       };
 
-      const existingSkus = new Set(prev.map((v) => v.sku).filter(Boolean) as string[]);
-      newVariant.sku = generateUniqueSku({ size: newVariant.size, grind: newVariant.grind }, existingSkus);
+      const existingSkus = new Set(
+        prev.map((v) => v.sku).filter(Boolean) as string[]
+      );
+      newVariant.sku = generateUniqueSku(
+        { size: newVariant.size, grind: newVariant.grind },
+        existingSkus
+      );
 
       return [...prev, newVariant];
     });
 
     setTimeout(() => {
-      variantsEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      variantsEndRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
     }, 100);
   }, [generateUniqueSku]);
 
@@ -337,7 +431,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
       const idx =
         typeof indexOrId === "number"
           ? indexOrId
-          : current.findIndex((v) => v.id === indexOrId || v.tempId === indexOrId);
+          : current.findIndex(
+              (v) => v.id === indexOrId || v.tempId === indexOrId
+            );
       if (idx < 0 || idx >= current.length) return;
       const variant = current[idx];
 
@@ -363,7 +459,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
       const variantIndex = latest.findIndex((v) => v.id === variant.id);
       if (variantIndex === -1) return;
 
-      const remainingCountAfterDeletion = latest.filter((v) => v.id && v.id !== variant.id).length;
+      const remainingCountAfterDeletion = latest.filter(
+        (v) => v.id && v.id !== variant.id
+      ).length;
       if (remainingCountAfterDeletion === 0) {
         const ok = confirm(
           "Deleting this variant will remove the last variant for this coffee. If you proceed the coffee will have no variants. Do you want to continue?"
@@ -380,7 +478,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         setIsLoading(true);
         const res = await fetch(`/api/variants/${variant.id}`, {
           method: "DELETE",
-          ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+          ...(sendCookies
+            ? { credentials: "include" as RequestCredentials }
+            : {}),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
@@ -388,7 +488,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         }
         setSuccess("Variant deleted");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to delete variant");
+        setError(
+          err instanceof Error ? err.message : "Failed to delete variant"
+        );
         setVariants((prev) => {
           if (prev.some((p) => p.id === variant.id)) return prev;
           const copy = prev.slice();
@@ -410,26 +512,39 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     [sendCookies, deletingIds]
   );
 
-  const validateVariant = useCallback((variant: VariantFormData, idx: number): string | null => {
-    if (!Number.isFinite(variant.price) || variant.price < 0) return `Variant ${idx + 1}: Invalid price`;
-    if (!Number.isFinite(variant.stock) || variant.stock < 0) return `Variant ${idx + 1}: Invalid stock`;
-    if (!Number.isFinite(variant.amount) || variant.amount <= 0) return `Variant ${idx + 1}: Invalid amount`;
-    if (!variant.roastType) return `Variant ${idx + 1}: Roast type is required`;
-    return null;
-  }, []);
+  const validateVariant = useCallback(
+    (variant: VariantFormData, idx: number): string | null => {
+      if (!Number.isFinite(variant.price) || variant.price < 0)
+        return `Variant ${idx + 1}: Invalid price`;
+      if (!Number.isFinite(variant.stock) || variant.stock < 0)
+        return `Variant ${idx + 1}: Invalid stock`;
+      if (!Number.isFinite(variant.amount) || variant.amount <= 0)
+        return `Variant ${idx + 1}: Invalid amount`;
+      if (!variant.roastType)
+        return `Variant ${idx + 1}: Roast type is required`;
+      return null;
+    },
+    []
+  );
 
   const fetchVariantsForCoffee = useCallback(
     async (coffeeId: string) => {
       setIsFetchingVariants(true);
       setError(null);
       try {
-        const res = await fetch(`/api/variants?coffeeId=${encodeURIComponent(coffeeId)}`, {
-          method: "GET",
-          ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
-        });
+        const res = await fetch(
+          `/api/variants?coffeeId=${encodeURIComponent(coffeeId)}`,
+          {
+            method: "GET",
+            ...(sendCookies
+              ? { credentials: "include" as RequestCredentials }
+              : {}),
+          }
+        );
         if (!res.ok) throw new Error("Failed to fetch variants");
         const data = await res.json().catch(() => ({}));
-        const serverVariants: ServerVariant[] = data?.data || data?.variants || [];
+        const serverVariants: ServerVariant[] =
+          data?.data || data?.variants || [];
 
         const coffeeVariants = serverVariants.filter((sv) => {
           const variantCoffeeId =
@@ -443,7 +558,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
           const { amount, unit } = parseSize("250g");
           setVariants([
             {
-              tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+              tempId: `${Date.now().toString(36)}-${Math.random()
+                .toString(36)
+                .slice(2, 9)}`,
               size: "250g",
               amount,
               unit,
@@ -454,7 +571,10 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
               error: null,
               isDirty: false,
               useAutoSku: true,
-              sku: generateUniqueSku({ size: "250g", grind: "whole-bean" }, new Set()),
+              sku: generateUniqueSku(
+                { size: "250g", grind: "whole-bean" },
+                new Set()
+              ),
             },
           ]);
         } else {
@@ -467,13 +587,21 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
               size: sv.size || "250g",
               amount,
               unit,
-              grind: (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(sv.grind || "")
+              grind: [
+                "espresso",
+                "filter",
+                "cafetiere",
+                "aeropress",
+                "whole-bean",
+              ].includes(sv.grind || "")
                 ? (sv.grind as GrindOption)
-                : "whole-bean"),
-              roastType: (["espresso", "filter","omni"].includes(sv.roastType || "")
+                : "whole-bean",
+              roastType: ["espresso", "filter", "omni", "decaf"].includes(
+                sv.roastType || ""
+              )
                 ? (sv.roastType as RoastTypeOption)
-                : "espresso"),
-              price: sv.price ?? (DEFAULT_PRICES[unit] ?? 14.99),
+                : "espresso",
+              price: sv.price ?? DEFAULT_PRICES[unit] ?? 14.99,
               stock: sv.stock ?? 0,
               error: null,
               isDirty: false,
@@ -483,11 +611,15 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         }
         setShowCoffeeSelector(false);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch variants");
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch variants"
+        );
         const { amount, unit } = parseSize("250g");
         setVariants([
           {
-            tempId: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+            tempId: `${Date.now().toString(36)}-${Math.random()
+              .toString(36)
+              .slice(2, 9)}`,
             size: "250g",
             amount,
             unit,
@@ -498,7 +630,10 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
             error: null,
             isDirty: false,
             useAutoSku: true,
-            sku: generateUniqueSku({ size: "250g", grind: "whole-bean" }, new Set()),
+            sku: generateUniqueSku(
+              { size: "250g", grind: "whole-bean" },
+              new Set()
+            ),
           },
         ]);
       } finally {
@@ -518,7 +653,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
       if (!mounted) return;
       await fetchVariantsForCoffee(selectedCoffeeId);
     })();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, [selectedCoffeeId, fetchVariantsForCoffee]);
 
   const handleSaveAll = useCallback(async (): Promise<boolean> => {
@@ -537,13 +674,17 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         const v = variantsRef.current[i];
         const combo = `${v.size}:${v.grind}:${v.roastType}`;
         if (seenCombos.has(combo)) {
-          setError(`Duplicate variant for ${v.size} / ${v.grind}. Remove duplicates before saving.`);
+          setError(
+            `Duplicate variant for ${v.size} / ${v.grind}. Remove duplicates before saving.`
+          );
           return false;
         }
         seenCombos.add(combo);
         if (v.sku) {
           if (seenSkus.has(v.sku)) {
-            setError(`Duplicate SKU ${v.sku} in the batch. Make SKUs unique before saving.`);
+            setError(
+              `Duplicate SKU ${v.sku} in the batch. Make SKUs unique before saving.`
+            );
             return false;
           }
           seenSkus.add(v.sku);
@@ -561,12 +702,17 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
     setIsLoading(true);
     try {
-      const existingSkus = new Set(variantsRef.current.map((v) => v.sku).filter(Boolean) as string[]);
+      const existingSkus = new Set(
+        variantsRef.current.map((v) => v.sku).filter(Boolean) as string[]
+      );
       const requests = variantsRef.current.map((variant) => {
         const sku =
           variant.sku && !variant.useAutoSku
             ? variant.sku
-            : generateUniqueSku({ size: variant.size, grind: variant.grind }, existingSkus);
+            : generateUniqueSku(
+                { size: variant.size, grind: variant.grind },
+                existingSkus
+              );
         existingSkus.add(sku);
 
         const payload = {
@@ -584,14 +730,18 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
-            ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+            ...(sendCookies
+              ? { credentials: "include" as RequestCredentials }
+              : {}),
           });
         } else {
           return fetch("/api/variants", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload),
-            ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+            ...(sendCookies
+              ? { credentials: "include" as RequestCredentials }
+              : {}),
           });
         }
       });
@@ -606,31 +756,59 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
       for (let i = 0; i < parsed.length; i++) {
         if (!parsed[i].ok) {
-          const serverMsg = parsed[i].json?.message || parsed[i].json?.error || null;
+          const serverMsg =
+            parsed[i].json?.message || parsed[i].json?.error || null;
           throw new Error(serverMsg || `Failed to save variant ${i + 1}`);
         }
       }
 
       setVariants(() =>
         parsed.map((p, i) => {
-          const serverVariant = p.json?.data || p.json?.variant || p.json || null;
+          const serverVariant =
+            p.json?.data || p.json?.variant || p.json || null;
           const previous = variantsRef.current[i];
           if (!serverVariant) {
-            return { ...previous, isDirty: false, useAutoSku: previous.useAutoSku ?? true };
+            return {
+              ...previous,
+              isDirty: false,
+              useAutoSku: previous.useAutoSku ?? true,
+            };
           }
           const id = serverVariant._id || serverVariant.id || previous.id;
           const sku = serverVariant.sku || previous.sku;
           const size = serverVariant.size || previous.size;
           const { amount, unit } = parseSize(size);
-          const grind = (["espresso", "filter", "cafetiere", "aeropress", "whole-bean"].includes(serverVariant.grind || "")
+          const grind = [
+            "espresso",
+            "filter",
+            "cafetiere",
+            "aeropress",
+            "whole-bean",
+          ].includes(serverVariant.grind || "")
             ? (serverVariant.grind as GrindOption)
-            : previous.grind);
-          const roastType = (["espresso", "filter"].includes(serverVariant.roastType || "")
+            : previous.grind;
+            const roastType = ["espresso", "filter", "omni", "decaf"].includes(
+              serverVariant.roastType || ""
+            
+          )
             ? (serverVariant.roastType as RoastTypeOption)
-            : previous.roastType);
+            : previous.roastType;
           const price = serverVariant.price ?? previous.price;
           const stock = serverVariant.stock ?? previous.stock;
-          return { id, sku, size, amount, unit, grind, roastType, price, stock, isDirty: false, error: null, useAutoSku: true };
+          return {
+            id,
+            sku,
+            size,
+            amount,
+            unit,
+            grind,
+            roastType,
+            price,
+            stock,
+            isDirty: false,
+            error: null,
+            useAutoSku: true,
+          };
         })
       );
 
@@ -642,14 +820,30 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
     } finally {
       setIsLoading(false);
     }
-  }, [generateUniqueSku, selectedCoffeeId, sendCookies, validateVariant, parseSize]);
+  }, [
+    generateUniqueSku,
+    selectedCoffeeId,
+    sendCookies,
+    validateVariant,
+    parseSize,
+  ]);
 
   const formatPrice = useCallback((p: number) => {
     return Number.isFinite(p) ? `£${p.toFixed(2)}` : "-";
   }, []);
 
-  const totalStock = useMemo(() => variants.reduce((acc, v) => acc + (v.stock || 0), 0), [variants]);
-  const totalValue = useMemo(() => variants.reduce((acc, v) => acc + (Number.isFinite(v.price) ? v.price * v.stock : 0), 0), [variants]);
+  const totalStock = useMemo(
+    () => variants.reduce((acc, v) => acc + (v.stock || 0), 0),
+    [variants]
+  );
+  const totalValue = useMemo(
+    () =>
+      variants.reduce(
+        (acc, v) => acc + (Number.isFinite(v.price) ? v.price * v.stock : 0),
+        0
+      ),
+    [variants]
+  );
   const hasUnsavedChanges = variants.some((v) => v.isDirty);
 
   const handleBackClick = () => {
@@ -684,9 +878,13 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                   <ArrowLeft size={20} />
                 </button>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Variants</h1>
+                  <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                    Manage Variants
+                  </h1>
                   <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
-                    {selectedCoffee ? `Editing ${selectedCoffee.name}` : "Select a coffee to manage variants"}
+                    {selectedCoffee
+                      ? `Editing ${selectedCoffee.name}`
+                      : "Select a coffee to manage variants"}
                   </p>
                 </div>
               </div>
@@ -711,15 +909,22 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                       <Coffee size={24} className="text-white" />
                     </div>
                     <div>
-                      <h2 className="text-lg sm:text-xl font-bold text-white">Select Coffee</h2>
-                      <p className="text-gray-300 text-xs sm:text-sm mt-0.5">Choose a coffee to manage its variants</p>
+                      <h2 className="text-lg sm:text-xl font-bold text-white">
+                        Select Coffee
+                      </h2>
+                      <p className="text-gray-300 text-xs sm:text-sm mt-0.5">
+                        Choose a coffee to manage its variants
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="p-4 sm:p-6">
                   <div className="relative mb-6">
-                    <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+                    <Search
+                      size={18}
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
+                    />
                     <input
                       type="text"
                       placeholder="Search by name or origin..."
@@ -741,18 +946,30 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                     {isFetchingCoffees ? (
                       <div className="col-span-full py-12 text-center">
                         <div className="inline-flex items-center justify-center w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-                        <p className="text-sm text-gray-600 mt-3">Loading coffees...</p>
+                        <p className="text-sm text-gray-600 mt-3">
+                          Loading coffees...
+                        </p>
                       </div>
                     ) : filteredCoffees.length === 0 ? (
                       <div className="col-span-full py-12 text-center">
-                        <Coffee size={48} className="mx-auto mb-3 text-gray-300" />
-                        <p className="text-gray-900 font-medium">No coffees found</p>
-                        <p className="text-sm text-gray-500 mt-1">Try adjusting your search</p>
+                        <Coffee
+                          size={48}
+                          className="mx-auto mb-3 text-gray-300"
+                        />
+                        <p className="text-gray-900 font-medium">
+                          No coffees found
+                        </p>
+                        <p className="text-sm text-gray-500 mt-1">
+                          Try adjusting your search
+                        </p>
                       </div>
                     ) : (
                       filteredCoffees.map((coffee) => {
                         const thumbSrc = getDisplayImageSrc(
-                          Array.isArray(coffee.images) && coffee.images.length > 0 ? coffee.images[0] : coffee.img,
+                          Array.isArray(coffee.images) &&
+                            coffee.images.length > 0
+                            ? coffee.images[0]
+                            : coffee.img,
                           "thumbnail"
                         );
                         return (
@@ -766,11 +983,21 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                           >
                             <div className="flex flex-col gap-3">
                               <div className="w-full aspect-square rounded-lg overflow-hidden bg-gray-100 ring-2 ring-gray-200 group-hover:ring-gray-900 transition-all">
-                                <Image src={thumbSrc} alt={coffee.name} width={200} height={200} className="object-cover w-full h-full" />
+                                <Image
+                                  src={thumbSrc}
+                                  alt={coffee.name}
+                                  width={200}
+                                  height={200}
+                                  className="object-cover w-full h-full"
+                                />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className="font-bold text-sm text-gray-900 truncate group-hover:text-gray-800">{coffee.name}</div>
-                                <div className="text-xs text-gray-600 truncate mt-1">{coffee.origin}</div>
+                                <div className="font-bold text-sm text-gray-900 truncate group-hover:text-gray-800">
+                                  {coffee.name}
+                                </div>
+                                <div className="text-xs text-gray-600 truncate mt-1">
+                                  {coffee.origin}
+                                </div>
                                 {coffee.roastLevel && (
                                   <div className="inline-block mt-2 px-2 py-0.5 bg-gray-100 text-gray-900 text-xs font-medium rounded-full capitalize">
                                     {coffee.roastLevel}
@@ -796,7 +1023,8 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                   <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden bg-white/10 ring-4 ring-white/20">
                     <Image
                       src={getDisplayImageSrc(
-                        Array.isArray(selectedCoffee.images) && selectedCoffee.images.length > 0
+                        Array.isArray(selectedCoffee.images) &&
+                          selectedCoffee.images.length > 0
                           ? selectedCoffee.images[0]
                           : selectedCoffee.img,
                         "thumbnail"
@@ -808,12 +1036,24 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                     />
                   </div>
                   <div className="flex-1">
-                    <h3 className="text-lg sm:text-xl font-bold text-white">{selectedCoffee.name}</h3>
-                    <p className="text-gray-300 text-sm mt-1">{selectedCoffee.origin}</p>
+                    <h3 className="text-lg sm:text-xl font-bold text-white">
+                      {selectedCoffee.name}
+                    </h3>
+                    <p className="text-gray-300 text-sm mt-1">
+                      {selectedCoffee.origin}
+                    </p>
                     <div className="hidden sm:flex items-center gap-4 mt-2 text-gray-300 text-xs sm:text-sm">
-                      <span className="inline-flex items-center gap-1.5"><Package size={14} />{variants.length} variants</span>
-                      <span className="inline-flex items-center gap-1.5"><Box size={14} />{totalStock} in stock</span>
-                      <span className="inline-flex items-center gap-1.5">{formatPrice(totalValue)}</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Package size={14} />
+                        {variants.length} variants
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Box size={14} />
+                        {totalStock} in stock
+                      </span>
+                      <span className="inline-flex items-center gap-1.5">
+                        {formatPrice(totalValue)}
+                      </span>
                     </div>
                     <div className="flex sm:hidden items-center gap-2 mt-2 text-gray-300 text-xs">
                       <span>{variants.length} variants</span>
@@ -843,9 +1083,12 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
               <div className="bg-gray-50 px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-200">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-lg sm:text-xl font-bold text-gray-900">Variants</h2>
+                    <h2 className="text-lg sm:text-xl font-bold text-gray-900">
+                      Variants
+                    </h2>
                     <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                      Manage sizes, grinds, roast types, pricing, and inventory for {selectedCoffee.name}
+                      Manage sizes, grinds, roast types, pricing, and inventory
+                      for {selectedCoffee.name}
                     </p>
                   </div>
                   <button
@@ -863,15 +1106,21 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                 {isFetchingVariants ? (
                   <div className="py-16 text-center">
                     <div className="inline-flex items-center justify-center w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-                    <p className="text-sm text-gray-600 mt-3">Loading variants for {selectedCoffee.name}...</p>
+                    <p className="text-sm text-gray-600 mt-3">
+                      Loading variants for {selectedCoffee.name}...
+                    </p>
                   </div>
                 ) : variants.length === 0 ? (
                   <div className="py-16 text-center">
                     <div className="inline-flex items-center justify-center w-16 h-16 bg-gray-100 rounded-2xl mb-4">
                       <Package size={32} className="text-gray-600" />
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-2">No variants yet</h3>
-                    <p className="text-gray-600 text-sm mb-6">Create your first variant to get started</p>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                      No variants yet
+                    </h3>
+                    <p className="text-gray-600 text-sm mb-6">
+                      Create your first variant to get started
+                    </p>
                     <button
                       onClick={addVariant}
                       className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all shadow-md hover:shadow-lg font-medium"
@@ -885,8 +1134,10 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                     {variants.map((variant, i) => {
                       const sku =
                         variant.sku ||
-                        generateBaseSku({ size: variant.size, grind: variant.grind }) +
-                          `-${String(i + 1).padStart(3, "0")}`;
+                        generateBaseSku({
+                          size: variant.size,
+                          grind: variant.grind,
+                        }) + `-${String(i + 1).padStart(3, "0")}`;
                       const priceNum = variant.price;
                       const stockNum = variant.stock;
 
@@ -904,15 +1155,23 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                               <div className="font-mono text-sm sm:text-base font-bold text-gray-900 flex items-center gap-2">
                                 <Edit3 size={14} className="text-gray-600" />
                                 <div className="flex items-center gap-2">
-                                  <span className="font-mono text-sm sm:text-base">{sku}</span>
+                                  <span className="font-mono text-sm sm:text-base">
+                                    {sku}
+                                  </span>
                                   <span className="ml-2 px-2 py-1 text-xs rounded-full border-2 border-gray-200 bg-gray-50">
                                     {variant.useAutoSku ? "Auto" : "Manual"}
                                   </span>
                                 </div>
                               </div>
                               <div className="text-xs text-gray-600 mt-1">
-                                {GRINDS.find((g) => g.value === variant.grind)?.label} • {variant.size} •{" "}
-                                <span className="capitalize">{variant.roastType}</span>
+                                {
+                                  GRINDS.find((g) => g.value === variant.grind)
+                                    ?.label
+                                }{" "}
+                                • {variant.size} •{" "}
+                                <span className="capitalize">
+                                  {variant.roastType}
+                                </span>
                               </div>
                             </div>
                             <div className="flex items-center gap-2">
@@ -923,8 +1182,16 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                                 </span>
                               )}
                               <button
-                                onClick={() => removeVariant(variant.id ?? variant.tempId ?? i)}
-                                disabled={variant.id ? deletingIds.has(variant.id) : false}
+                                onClick={() =>
+                                  removeVariant(
+                                    variant.id ?? variant.tempId ?? i
+                                  )
+                                }
+                                disabled={
+                                  variant.id
+                                    ? deletingIds.has(variant.id)
+                                    : false
+                                }
                                 className="inline-flex items-center gap-1.5 px-3 py-2 text-red-600 hover:bg-red-50 rounded-xl transition-all text-sm font-medium"
                               >
                                 <Trash2 size={16} />
@@ -937,7 +1204,9 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
                             {/* Amount — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Amount</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Amount
+                              </label>
                               <input
                                 type="number"
                                 step={variant.unit === "g" ? "1" : "0.01"}
@@ -948,7 +1217,11 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
                                     variant.unit === "g"
                                       ? parseInt(e.target.value || "0", 10)
                                       : parseFloat(e.target.value || "0");
-                                  handleVariantChange(i, "amount", Number.isNaN(parsed) ? 0 : parsed);
+                                  handleVariantChange(
+                                    i,
+                                    "amount",
+                                    Number.isNaN(parsed) ? 0 : parsed
+                                  );
                                 }}
                                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
                                 aria-label={`Amount for variant ${i + 1}`}
@@ -957,24 +1230,34 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
                             {/* Unit — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Unit</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Unit
+                              </label>
                               <div className="inline-flex items-center rounded-xl bg-gray-100 p-1 border border-gray-200 h-[50px]">
                                 <button
                                   type="button"
-                                  onClick={() => handleVariantChange(i, "unit", "g")}
+                                  onClick={() =>
+                                    handleVariantChange(i, "unit", "g")
+                                  }
                                   aria-pressed={variant.unit === "g"}
                                   className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                    variant.unit === "g" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
+                                    variant.unit === "g"
+                                      ? "bg-white shadow-sm text-gray-900"
+                                      : "text-gray-600 hover:bg-transparent"
                                   }`}
                                 >
                                   g
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => handleVariantChange(i, "unit", "kg")}
+                                  onClick={() =>
+                                    handleVariantChange(i, "unit", "kg")
+                                  }
                                   aria-pressed={variant.unit === "kg"}
                                   className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-                                    variant.unit === "kg" ? "bg-white shadow-sm text-gray-900" : "text-gray-600 hover:bg-transparent"
+                                    variant.unit === "kg"
+                                      ? "bg-white shadow-sm text-gray-900"
+                                      : "text-gray-600 hover:bg-transparent"
                                   }`}
                                 >
                                   kg
@@ -984,59 +1267,101 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
                             {/* Grind Type — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Grind Type</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Grind Type
+                              </label>
                               <div className="relative">
                                 <select
                                   value={variant.grind}
-                                  onChange={(e) => handleVariantChange(i, "grind", e.target.value as GrindOption)}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      i,
+                                      "grind",
+                                      e.target.value as GrindOption
+                                    )
+                                  }
                                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent appearance-none cursor-pointer font-medium"
                                 >
                                   {GRINDS.map((g) => (
-                                    <option key={g.value} value={g.value}>{g.label}</option>
+                                    <option key={g.value} value={g.value}>
+                                      {g.label}
+                                    </option>
                                   ))}
                                 </select>
-                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                                <ChevronDown
+                                  size={16}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none"
+                                />
                               </div>
                             </div>
 
                             {/* Roast Type — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Roast Type</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Roast Type
+                              </label>
                               <div className="relative">
                                 <select
                                   value={variant.roastType}
-                                  onChange={(e) => handleVariantChange(i, "roastType", e.target.value as RoastTypeOption)}
+                                  onChange={(e) =>
+                                    handleVariantChange(
+                                      i,
+                                      "roastType",
+                                      e.target.value as RoastTypeOption
+                                    )
+                                  }
                                   className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent appearance-none cursor-pointer font-medium"
                                 >
                                   {ROAST_TYPES.map((r) => (
-                                    <option key={r.value} value={r.value}>{r.label}</option>
+                                    <option key={r.value} value={r.value}>
+                                      {r.label}
+                                    </option>
                                   ))}
                                 </select>
-                                <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none" />
+                                <ChevronDown
+                                  size={16}
+                                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-600 pointer-events-none"
+                                />
                               </div>
                             </div>
 
                             {/* Price — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Price (£)</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Price (£)
+                              </label>
                               <input
                                 type="number"
                                 step="0.01"
                                 min="0"
                                 value={variant.price}
-                                onChange={(e) => handleVariantChange(i, "price", e.target.value)}
+                                onChange={(e) =>
+                                  handleVariantChange(
+                                    i,
+                                    "price",
+                                    e.target.value
+                                  )
+                                }
                                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
                               />
                             </div>
 
                             {/* Stock — takes 1 column */}
                             <div className="lg:col-span-1">
-                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">Stock</label>
+                              <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-2">
+                                Stock
+                              </label>
                               <input
                                 type="number"
                                 min="0"
                                 value={variant.stock}
-                                onChange={(e) => handleVariantChange(i, "stock", e.target.value)}
+                                onChange={(e) =>
+                                  handleVariantChange(
+                                    i,
+                                    "stock",
+                                    e.target.value
+                                  )
+                                }
                                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent font-medium"
                               />
                             </div>
@@ -1045,8 +1370,12 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
 
                           <div className="mt-4 pt-4 border-t-2 border-gray-200">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">Line Total</span>
-                              <div className="text-lg sm:text-xl font-bold text-gray-900">{formatPrice(priceNum * stockNum)}</div>
+                              <span className="text-xs font-bold text-gray-900 uppercase tracking-wide">
+                                Line Total
+                              </span>
+                              <div className="text-lg sm:text-xl font-bold text-gray-900">
+                                {formatPrice(priceNum * stockNum)}
+                              </div>
                             </div>
                           </div>
 
@@ -1071,9 +1400,18 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
             <div className="mt-8 bg-white border-2 border-gray-200 rounded-2xl shadow-lg p-4">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <div className="hidden sm:block text-sm text-gray-600">
-                  <span className="font-semibold text-gray-900">{variants.length}</span> variants •{" "}
-                  <span className="font-semibold text-gray-900">{totalStock}</span> in stock •{" "}
-                  <span className="font-semibold text-gray-900">{formatPrice(totalValue)}</span> total value
+                  <span className="font-semibold text-gray-900">
+                    {variants.length}
+                  </span>{" "}
+                  variants •{" "}
+                  <span className="font-semibold text-gray-900">
+                    {totalStock}
+                  </span>{" "}
+                  in stock •{" "}
+                  <span className="font-semibold text-gray-900">
+                    {formatPrice(totalValue)}
+                  </span>{" "}
+                  total value
                 </div>
                 <div className="flex gap-3">
                   <button
@@ -1113,8 +1451,16 @@ export default function CreateVariantsPage({ sendCookies = true }: { sendCookies
         </div>
       </main>
 
-      {error && <Toast message={error} type="error" onClose={() => setError(null)} />}
-      {success && <Toast message={success} type="success" onClose={() => setSuccess(null)} />}
+      {error && (
+        <Toast message={error} type="error" onClose={() => setError(null)} />
+      )}
+      {success && (
+        <Toast
+          message={success}
+          type="success"
+          onClose={() => setSuccess(null)}
+        />
+      )}
     </>
   );
 }

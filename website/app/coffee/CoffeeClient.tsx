@@ -38,8 +38,8 @@ interface ApiCoffee {
   origin: string;
   notes?: string;
   img: string;
-  roastType?: "espresso" | "filter" | "omni";
-  createdAt: string;
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+    createdAt: string;
   variantCount: number;
   minPrice: number;
   availableGrinds: string[];
@@ -96,6 +96,7 @@ const ROAST_TYPE_LABELS: Record<string, string> = {
   espresso: "Espresso ☕",
   filter: "Filter 🫖",
   omni: "Omni Roast ✺",
+  decaf: "Decaf 🌿",
 };
 
 export default function ShopPage({ params }: { params: { slug?: string } }) {

@@ -21,7 +21,7 @@ interface CoffeeVariantData {
   _id: string;
   size: string;
   grind: string;
-  roastType: "espresso" | "filter" | "omni"; // ← added "omni"
+  roastType: "espresso" | "filter" | "omni" | "decaf"
   price: number;
   stock: number;
   coffeeId: string;
@@ -33,9 +33,9 @@ interface CoffeeDetail {
   name: string;
   origin: string;
   roastLevel: "light" | "medium" | "dark";
-  roastType?: "espresso" | "filter" | "omni"; // ← added single roastType
-  roastTypes: ("espresso" | "filter" | "omni")[]; // ← added "omni"
-  img: string;
+  roastType?: "espresso" | "filter" | "omni" | "decaf";
+  roastTypes: ("espresso" | "filter" | "omni" | "decaf")[];
+    img: string;
   images?: string[];
   notes?: string;
   story?: string;

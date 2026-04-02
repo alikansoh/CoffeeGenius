@@ -5,7 +5,7 @@ export interface ICoffeeVariant extends Document {
   sku: string;
   size: string;
   grind: "whole-bean" | "espresso" | "filter" | "cafetiere" | "aeropress";
-  roastType: "espresso" | "filter" | "omni";  // ← add "omni"
+  roastType: "espresso" | "filter" | "omni" | "decaf";
   price: number;
   stock: number;
   img?: string;
@@ -39,7 +39,7 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
     },
     roastType: {
       type: String,
-      enum: ["espresso", "filter", "omni"],  // ← add "omni"
+      enum: ["espresso", "filter", "omni", "decaf"],
       required: true,
     },
     price: {
@@ -64,6 +64,9 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
 
 // Compound index: one variant per size+grind per coffee
 // Updated — unique per size+grind+roastType per coffee
-CoffeeVariantSchema.index({ coffeeId: 1, size: 1, grind: 1, roastType: 1 }, { unique: true });
+CoffeeVariantSchema.index(
+  { coffeeId: 1, size: 1, grind: 1, roastType: 1 },
+  { unique: true }
+);
 export default mongoose.models.CoffeeVariant ||
   mongoose.model<ICoffeeVariant>("CoffeeVariant", CoffeeVariantSchema);

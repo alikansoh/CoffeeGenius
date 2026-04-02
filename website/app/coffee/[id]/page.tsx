@@ -43,9 +43,9 @@ export async function generateMetadata({
 
   if (!id) {
     return {
-      title: "Coffee Beans — Coffee Genius",
+      title: "Coffee Beans — Freshly Roasted Specialty Coffee | Coffee Genius",
       description:
-        "Browse freshly roasted specialty coffee beans at Coffee Genius, Staines.",
+        "Browse freshly roasted specialty coffee beans at Coffee Genius, Staines. Single origin, blends, espresso, filter, decaf — roasted to order and delivered across the UK.",
       metadataBase: new URL(SITE_URL),
     };
   }
@@ -68,6 +68,8 @@ export async function generateMetadata({
       ? "Filter Roast"
       : product.roastType === "omni"
       ? "Omni Roast"
+      : product.roastType === "decaf"
+      ? "Decaf"
       : "Specialty Coffee";
 
   const originLabel = product.origin ? ` from ${product.origin}` : "";
@@ -82,13 +84,26 @@ export async function generateMetadata({
   const processSnippet = product.process
     ? ` Process: ${product.process}.`
     : "";
+  const altitudeSnippet = product.altitude
+    ? ` Altitude: ${product.altitude}.`
+    : "";
+  const varietySnippet = product.variety
+    ? ` Variety: ${product.variety}.`
+    : "";
+  const cuppingSnippet = product.cupping_score
+    ? ` Cupping score: ${product.cupping_score}.`
+    : "";
+  const decafSnippet =
+    product.roastType === "decaf"
+      ? " Naturally decaffeinated — all the flavour, without the caffeine."
+      : "";
 
   const baseDesc =
     product.description ||
     `Buy ${product.name} — freshly roasted ${roastLabel.toLowerCase()} beans${originLabel}.`;
 
   const description =
-    `${baseDesc}${notesSnippet}${originSnippet}${processSnippet} Roasted to order in Staines, Surrey. UK delivery.`.slice(
+    `${baseDesc}${decafSnippet}${notesSnippet}${originSnippet}${processSnippet}${altitudeSnippet}${varietySnippet}${cuppingSnippet} Roasted to order in Staines, Surrey. Free UK delivery on orders over £30.`.slice(
       0,
       160
     );
@@ -100,8 +115,21 @@ export async function generateMetadata({
     product.origin ? `${product.origin} coffee beans` : null,
     product.process ? `${product.process} process coffee` : null,
     product.roastType === "espresso" ? "espresso beans" : null,
+    product.roastType === "espresso" ? "espresso roast coffee" : null,
     product.roastType === "filter" ? "filter coffee beans" : null,
+    product.roastType === "filter" ? "pour over coffee beans" : null,
+    product.roastType === "filter" ? "V60 coffee" : null,
     product.roastType === "omni" ? "omni roast coffee beans" : null,
+    product.roastType === "omni" ? "versatile coffee beans" : null,
+    product.roastType === "decaf" ? "decaf coffee beans" : null,
+    product.roastType === "decaf" ? "decaffeinated coffee" : null,
+    product.roastType === "decaf" ? "decaf specialty coffee" : null,
+    product.roastType === "decaf" ? "caffeine free coffee beans" : null,
+    product.roastType === "decaf" ? "swiss water decaf" : null,
+    product.roastType === "decaf" ? "decaf beans UK" : null,
+    product.variety ? `${product.variety} coffee` : null,
+    product.altitude ? `high altitude coffee ${product.altitude}` : null,
+    product.cupping_score ? `${product.cupping_score} cupping score coffee` : null,
     product.notes ?? null,
     "specialty coffee beans UK",
     "buy coffee beans online",
@@ -115,7 +143,9 @@ export async function generateMetadata({
     "roasted to order coffee",
     "best coffee beans UK",
     "artisan coffee UK",
+    "third wave coffee UK",
     "Coffee Genius",
+    "Coffee Genius Staines",
   ]
     .filter(Boolean)
     .join(", ");
@@ -145,7 +175,7 @@ export async function generateMetadata({
         url,
         width: 1200,
         height: 1200,
-        alt: `${product.name} — Coffee Genius`,
+        alt: `${product.name}${originLabel} — ${roastLabel} — Coffee Genius`,
       })),
       locale: "en_GB",
     },
@@ -155,6 +185,8 @@ export async function generateMetadata({
       title,
       description,
       images: ogImages.length ? [ogImages[0]] : [],
+      creator: "@CoffeeGenius",
+      site: "@CoffeeGenius",
     },
 
     robots: {
@@ -294,6 +326,82 @@ export default async function Page({
     };
   }
 
+  // ── Additional properties for rich snippets ─────────────────────────────
+  const additionalProperties: Record<string, unknown>[] = [];
+
+  if (product.roastType) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Roast Type",
+      value:
+        product.roastType === "espresso"
+          ? "Espresso"
+          : product.roastType === "filter"
+          ? "Filter"
+          : product.roastType === "omni"
+          ? "Omni"
+          : product.roastType === "decaf"
+          ? "Decaf"
+          : product.roastType,
+    });
+  }
+
+  if (product.origin) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Origin",
+      value: product.origin,
+    });
+  }
+
+  if (product.process) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Process",
+      value: product.process,
+    });
+  }
+
+  if (product.altitude) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Altitude",
+      value: product.altitude,
+    });
+  }
+
+  if (product.variety) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Variety",
+      value: product.variety,
+    });
+  }
+
+  if (product.cupping_score) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Cupping Score",
+      value: String(product.cupping_score),
+    });
+  }
+
+  if (product.notes) {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Tasting Notes",
+      value: product.notes,
+    });
+  }
+
+  if (product.roastType === "decaf") {
+    additionalProperties.push({
+      "@type": "PropertyValue",
+      name: "Caffeine Content",
+      value: "Decaffeinated",
+    });
+  }
+
   // ── Product JSON-LD ───────────────────────────────────────────────────────
   const hasOffers = Boolean(offers);
   const hasRating = Boolean(product.aggregateRating);
@@ -304,16 +412,23 @@ export default async function Page({
     "@type": "Product",
     name: product.name,
     image: normalizedImages,
-    description: product.description ?? product.notes ?? "",
+    description:
+      product.description ??
+      product.notes ??
+      `${product.name} — freshly roasted specialty coffee beans from Coffee Genius.`,
     sku: product.sku ?? product.variants?.[0]?.sku,
-    category: "Coffee Beans",
+    category: product.roastType === "decaf" ? "Decaf Coffee Beans" : "Coffee Beans",
     ...(product.brand && {
       brand: { "@type": "Brand", name: product.brand },
+    }),
+    ...(!product.brand && {
+      brand: { "@type": "Brand", name: "Coffee Genius" },
     }),
     ...(product.origin && {
       countryOfOrigin: { "@type": "Country", name: product.origin },
     }),
     mainEntityOfPage: { "@type": "WebPage", "@id": productUrl },
+    url: productUrl,
     ...(offers && { offers }),
     ...(product.aggregateRating && {
       aggregateRating: {
@@ -321,6 +436,9 @@ export default async function Page({
         ratingValue: Number(product.aggregateRating.ratingValue),
         reviewCount: Number(product.aggregateRating.reviewCount),
       },
+    }),
+    ...(additionalProperties.length > 0 && {
+      additionalProperty: additionalProperties,
     }),
   };
 
@@ -345,18 +463,69 @@ export default async function Page({
           name: "Coffee Beans",
         },
       },
+      ...(product.roastType === "decaf"
+        ? [
+            {
+              "@type": "ListItem",
+              position: 3,
+              name: "Decaf Coffee",
+              item: {
+                "@type": "WebPage",
+                "@id": `${SITE_URL}/coffee?type=decaf`,
+                name: "Decaf Coffee",
+              },
+            },
+            {
+              "@type": "ListItem",
+              position: 4,
+              name: product.name,
+              item: {
+                "@type": "WebPage",
+                "@id": productUrl,
+                name: product.name,
+              },
+            },
+          ]
+        : [
+            {
+              "@type": "ListItem",
+              position: 3,
+              name: product.name,
+              item: {
+                "@type": "WebPage",
+                "@id": productUrl,
+                name: product.name,
+              },
+            },
+          ]),
+    ],
+  };
+
+  // ── FAQ JSON-LD for decaf products (rich snippet boost) ──────────────────
+  const faqJsonLd = product.roastType === "decaf" ? {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: [
       {
-        "@type": "ListItem",
-        position: 3,
-        name: product.name,
-        item: {
-          "@type": "WebPage",
-          "@id": productUrl,
-          name: product.name,
+        "@type": "Question",
+        name: `Is ${product.name} naturally decaffeinated?`,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: `Yes, ${product.name} is carefully decaffeinated to preserve the full flavour profile while removing the caffeine. Enjoy all the taste without the buzz.`,
+        },
+      },
+      {
+        "@type": "Question",
+        name: `What does ${product.name} taste like?`,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: product.notes
+            ? `${product.name} features tasting notes of ${product.notes}. ${product.origin ? `Sourced from ${product.origin}.` : ""}`
+            : `${product.name} is a carefully selected decaf coffee with a rich, smooth flavour profile. ${product.origin ? `Sourced from ${product.origin}.` : ""}`,
         },
       },
     ],
-  };
+  } : null;
 
   return (
     <>
@@ -371,6 +540,13 @@ export default async function Page({
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumb) }}
       />
+
+      {faqJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
+        />
+      )}
 
       <script
         id="initial-product"

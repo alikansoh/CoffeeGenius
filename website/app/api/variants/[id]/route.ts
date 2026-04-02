@@ -103,8 +103,7 @@ export async function PUT(request: NextRequest, { params }: Props) {
     if (body.roastType !== undefined) {
    // app/api/variants/[id]/route.ts
 
-const validRoastTypes = ["espresso", "filter", "omni"];  // ← add "omni"
-      if (!validRoastTypes.includes(body.roastType)) {
+   const validRoastTypes = ["espresso", "filter", "omni", "decaf"];      if (!validRoastTypes.includes(body.roastType)) {
         return NextResponse.json(
           {
             success: false,

@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validRoastTypes = ["espresso", "filter", "omni"];  // ← add "omni"
-    if (!validRoastTypes.includes(roastType)) {
+    const validRoastTypes = ["espresso", "filter", "omni", "decaf"];
+        if (!validRoastTypes.includes(roastType)) {
       return NextResponse.json(
         {
           success: false,
