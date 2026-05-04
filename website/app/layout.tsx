@@ -4,12 +4,12 @@ import Navbar from "./Components/Navbar";
 import Footer from "./Components/Footer";
 import LayoutWrapper from "./Components/LayoutWrapper";
 import "./globals.css";
+import ClarityProvider from "./clarity-provider";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"] });
 
-// REQUIRED: set this to your production domain (include protocol)
-const SITE_URL = "https://coffeegenius.co.uk"; // <- change to your domain
+const SITE_URL = "https://coffeegenius.co.uk";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -37,14 +37,12 @@ export const metadata: Metadata = {
     locale: "en_GB",
     type: "website",
   },
- 
   icons: {
     icon: "/favicon.ico",
     other: [{ rel: "apple-touch-icon", url: "/apple-touch-icon.png" }],
   },
   alternates: {
     canonical: SITE_URL,
-    // Add hreflang entries if you publish other language versions
     languages: {
       "en-GB": SITE_URL,
     },
@@ -53,7 +51,6 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
-  // set content-language header via server or next.config headers (example below)
 };
 
 const siteJsonLd = {
@@ -67,7 +64,7 @@ const siteJsonLd = {
       logo: `${SITE_URL}/logo-512.png`,
       sameAs: [
         "https://www.instagram.com/coffeegeniuscg",
-        "https://maps.app.goo.gl/wSeAHytz5b4nP2S69" // <- replace with real
+        "https://maps.app.goo.gl/wSeAHytz5b4nP2S69"
       ],
     },
     {
@@ -99,20 +96,13 @@ const siteJsonLd = {
         latitude: "51.4350875",
         longitude: "-0.5061624",
       },
-      
-      telephone: "+44-7444724389", // <- replace with real phone
+      telephone: "+44-7444724389",
       url: SITE_URL,
       priceRange: "££",
       openingHoursSpecification: [
         {
           "@type": "OpeningHoursSpecification",
-          dayOfWeek: [
-            "Monday",
-            "Tuesday",
-            "Wednesday",
-            "Thursday",
-            "Friday",
-          ],
+          dayOfWeek: ["Monday","Tuesday","Wednesday","Thursday","Friday"],
           opens: "07:00",
           closes: "16:00",
         },
@@ -122,9 +112,7 @@ const siteJsonLd = {
           opens: "08:30",
           closes: "16:00",
         },
-        // Sunday closed -> يمكن حذفها تمامًا، Google سيفترض أنها مغلقة
       ],
-      
       makesOffer: {
         "@type": "OfferCatalog",
         name: "Shop & Services",
@@ -143,10 +131,20 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-GB">
       <body className={`${inter.variable} ${playfair.variable} antialiased`}>
-        {/* Site-wide structured data (Organization, Website, LocalBusiness) */}
-        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(siteJsonLd) }} />
+        
+        {/* ✅ Clarity */}
+        <ClarityProvider />
+
+        {/* Structured Data */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(siteJsonLd) }}
+        />
+
         <LayoutWrapper>
+          <Navbar />
           <main>{children}</main>
+          <Footer />
         </LayoutWrapper>
       </body>
     </html>
