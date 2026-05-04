@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Inter, Playfair_Display } from "next/font/google";
 import Navbar from "./Components/Navbar";
 import Footer from "./Components/Footer";
 import LayoutWrapper from "./Components/LayoutWrapper";
 import "./globals.css";
-import ClarityProvider from "./clarity-provider";
 
 const inter = Inter({ variable: "--font-inter", subsets: ["latin"] });
 const playfair = Playfair_Display({ variable: "--font-playfair", subsets: ["latin"] });
@@ -131,9 +131,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en-GB">
       <body className={`${inter.variable} ${playfair.variable} antialiased`}>
-        
-        {/* ✅ Clarity */}
-        <ClarityProvider />
+        {/* Microsoft Clarity */}
+        <Script id="microsoft-clarity" strategy="afterInteractive">
+          {`(function(c,l,a,r,i,t,y){
+            c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+            t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+            y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+          })(window, document, "clarity", "script", "wm27py8gyb");`}
+        </Script>
 
         {/* Structured Data */}
         <script
