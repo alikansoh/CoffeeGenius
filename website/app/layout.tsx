@@ -147,9 +147,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
 
         <LayoutWrapper>
-          <Navbar />
           <main>{children}</main>
-          <Footer />
         </LayoutWrapper>
       </body>
     </html>
