@@ -1634,7 +1634,7 @@ function normalizeEnvString(v?: string | undefined) {
 // Replace your previous block with this — environment variable names match the .env.example
 const companyInfo: CompanyInfo = {
   name: normalizeEnvString(process.env.COMPANY_NAME) ?? "Coffee Genius",
-  address: normalizeEnvString(process.env.COMPANY_ADDRESS) ?? "73 High Street",
+  address: normalizeEnvString(process.env.COMPANY_ADDRESS) ?? "173 High Street",
   city: normalizeEnvString(process.env.COMPANY_CITY) ?? "Staines",
   postcode: normalizeEnvString(process.env.COMPANY_POSTCODE) ?? "TW18 4PA",
   country: normalizeEnvString(process.env.COMPANY_COUNTRY) ?? "United Kingdom",
