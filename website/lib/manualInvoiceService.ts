@@ -328,24 +328,17 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   // Set cursor to the lower of the two columns plus section gap
   cursorY = Math.min(companyY, rightY) - sectionGap;
 
-  // ============= ADDRESSES SECTION =============
-  const addressStartY = cursorY;
-
-  // Bill To (left side, constrained width)
-  drawText('BILL TO', margin, cursorY, 10, lightText, boldFont);
-  cursorY -= 18;
-
+  // ============= ADDRESS SECTION (billing only, no label) =============
   const maxAddressWidth = 220;
   const billLines = formatAddress(invoice.billingAddress ?? invoice.shippingAddress, invoice.client.name);
 
   if (billLines.length > 0) {
-    // First line (name) in bold, wrapped if needed
+    // First line (name) in bold
     const nameLines = wrapText(billLines[0], boldFont, 11, maxAddressWidth);
     for (const line of nameLines) {
       drawText(line, margin, cursorY, 11, darkText, boldFont);
       cursorY -= 14;
     }
-
     // Rest of address lines
     for (let i = 1; i < billLines.length; i++) {
       const wrappedLines = wrapText(billLines[i], font, 9, maxAddressWidth);
@@ -379,37 +372,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     }
   }
 
-  // Ship To (right side, constrained width)
-  const shipX = pageWidth / 2 + 30;
-  let shipY = addressStartY;
-
-  drawText('SHIP TO', shipX, shipY, 10, lightText, boldFont);
-  shipY -= 18;
-
-  const shipLines = formatAddress(invoice.shippingAddress, invoice.client.name);
-  if (shipLines.length > 0) {
-    // First line (name) in bold, wrapped
-    const shipNameLines = wrapText(shipLines[0], boldFont, 11, maxAddressWidth);
-    for (const line of shipNameLines) {
-      drawText(line, shipX, shipY, 11, darkText, boldFont);
-      shipY -= 14;
-    }
-
-    // Rest of shipping address
-    for (let i = 1; i < shipLines.length; i++) {
-      const wrappedLines = wrapText(shipLines[i], font, 9, maxAddressWidth);
-      for (const line of wrappedLines) {
-        drawText(line, shipX, shipY, 9, lightText);
-        shipY -= 12;
-      }
-    }
-  } else {
-    drawText('Same as billing', shipX, shipY, 9, lightText);
-    shipY -= 12;
-  }
-
-  // Move cursor below both address blocks
-  cursorY = Math.min(cursorY, shipY) - sectionGap;
+  cursorY -= sectionGap;
 
   // ============= ITEMS TABLE =============
   const tableStartY = cursorY;
@@ -519,6 +482,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     { label: 'Sort Code',      value: '23-05-80' },
     { label: 'SWIFT/BIC',      value: 'MYMBGB2L' },
     { label: 'IBAN',           value: 'GB55MYMB 230580 55689458' },
+    { label: 'VAT Number',     value: '517 9333 75' },
   ];
 
   drawText('PAYMENT DETAILS', margin, summaryTopY, 8, darkText, boldFont);

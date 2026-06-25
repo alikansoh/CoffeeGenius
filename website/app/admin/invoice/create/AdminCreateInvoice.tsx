@@ -38,7 +38,6 @@ interface ClientInfo {
   name: string;
   email?: string;
   phone?: string;
-  address?: Address | null;
 }
 
 interface FormData {
@@ -48,7 +47,7 @@ interface FormData {
   shipping: number;
   notes: string;
   dueDate: string;
-  invoiceDate: string; // optional createdAt fallback
+  invoiceDate: string;
   currency: string;
 }
 
@@ -84,20 +83,12 @@ export default function CreateInvoiceForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showMissingEmailModal, setShowMissingEmailModal] = useState(false);
-  const [billingSameAsShipping, setBillingSameAsShipping] = useState(true);
 
   const [formData, setFormData] = useState<FormData>({
     client: {
       name: "",
       email: "",
       phone: "",
-      address: {
-        line1: "",
-        unit: "",
-        city: "",
-        postcode: "",
-        country: "United Kingdom",
-      },
     },
     billingAddress: {
       line1: "",
@@ -114,13 +105,12 @@ export default function CreateInvoiceForm() {
     currency: "gbp",
   });
 
-  // keep totals in sync (initialize totals once)
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
       items: prev.items.map((it) => ({ ...it, totalPrice: Number((it.qty * it.unitPrice).toFixed(2)) })),
     }));
-  }, []); // only init; individual item changes handled in handler
+  }, []);
 
   const subtotal = formData.items.reduce((sum, item) => sum + item.totalPrice, 0);
   const total = subtotal + formData.shipping;
@@ -138,23 +128,7 @@ export default function CreateInvoiceForm() {
     setErrors((prev) => ({ ...prev, [`client.${field}`]: "" }));
   };
 
-  const handleAddressChange = (field: keyof Address, value: string) => {
-    // Update client.address and, if billingSameAsShipping, update billingAddress with same values in a single state update
-    setFormData((prev) => {
-      const newClientAddress = { ...(prev.client.address || {}), [field]: value };
-      return {
-        ...prev,
-        client: {
-          ...prev.client,
-          address: newClientAddress,
-        },
-        billingAddress: billingSameAsShipping ? newClientAddress : prev.billingAddress,
-      };
-    });
-  };
-
   const handleBillingAddressChange = (field: keyof Address, value: string) => {
-    setBillingSameAsShipping(false);
     setFormData((prev) => ({
       ...prev,
       billingAddress: { ...(prev.billingAddress || {}), [field]: value },
@@ -195,7 +169,6 @@ export default function CreateInvoiceForm() {
     }));
   };
 
-  // validateForm: pass requireEmail=true when you require it (e.g., before sending)
   const validateForm = (requireEmail = false) => {
     const newErrors: Record<string, string> = {};
 
@@ -204,7 +177,6 @@ export default function CreateInvoiceForm() {
       if (!formData.client.email?.trim()) newErrors["client.email"] = "Email is required to send invoice";
       else if (!isValidEmail(formData.client.email)) newErrors["client.email"] = "Invalid email address";
     } else {
-      // if not required, but provided and invalid, still report error
       if (formData.client.email && !isValidEmail(formData.client.email)) {
         newErrors["client.email"] = "Invalid email address";
       }
@@ -220,22 +192,17 @@ export default function CreateInvoiceForm() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // When user clicks Save & Send, check email first and show modal if missing/invalid
   const attemptSend = () => {
-    // run quick validation requiring name and valid email
     if (!validateForm(true)) {
       setToast({ type: "error", message: "Please fix form errors (email is required to send)" });
       return;
     }
-    // email exists and is valid -> proceed
     handleSubmit(true);
   };
 
-  // UPDATED handleSubmit -> Save & Send vs Save-only with PDF download
   const handleSubmit = async (shouldSendEmail: boolean) => {
     setToast(null);
 
-    // Only require email validation if sending; otherwise do not require email
     if (!validateForm(shouldSendEmail)) {
       setToast({ type: "error", message: "Please fix the errors in the form" });
       return;
@@ -260,7 +227,6 @@ export default function CreateInvoiceForm() {
       };
 
       if (!shouldSendEmail) {
-        // Request PDF and save record on server in one call
         const res = await fetch('/api/invoices?pdf=true', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -283,7 +249,6 @@ export default function CreateInvoiceForm() {
           throw new Error(errText);
         }
 
-        // detect PDF by content-type or content-disposition header
         const ct = res.headers.get('content-type') || '';
         const cd = res.headers.get('content-disposition') || '';
 
@@ -308,15 +273,13 @@ export default function CreateInvoiceForm() {
           setTimeout(() => (window.location.href = '/admin/invoice'), 1200);
           return;
         } else {
-          // fallback: server returned JSON (saved but didn't return pdf)
-          const json = await res.json();
+          await res.json();
           setToast({ type: 'success', message: 'Invoice created' });
           setTimeout(() => (window.location.href = '/admin/invoice'), 1200);
           return;
         }
       }
 
-      // sendEmail === true: create and send (existing flow)
       const res = await fetch('/api/invoices', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -360,14 +323,6 @@ export default function CreateInvoiceForm() {
     window.location.href = "/admin/invoice";
   };
 
-  const copyShippingToBilling = () => {
-    setBillingSameAsShipping(true);
-    setFormData((prev) => ({
-      ...prev,
-      billingAddress: { ...(prev.client.address || {}) },
-    }));
-  };
-
   return (
     <>
       <style jsx global>{`
@@ -399,6 +354,7 @@ export default function CreateInvoiceForm() {
 
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 sm:py-8 grid grid-cols-1 lg:grid-cols-3 gap-6 sm:gap-8">
           <div className="lg:col-span-2 space-y-6">
+            {/* Client Information */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <div className="flex items-center gap-2 mb-4">
                 <User size={20} className="text-gray-900" />
@@ -424,7 +380,7 @@ export default function CreateInvoiceForm() {
                   <div>
                     <label className="block text-sm font-bold text-gray-900 mb-2">
                       <Mail size={16} className="inline mr-1" />
-                      Email { /* not mandatory unless sending */ }
+                      Email
                     </label>
                     <input
                       type="email"
@@ -453,70 +409,12 @@ export default function CreateInvoiceForm() {
                   </div>
                 </div>
 
+                {/* Billing Address */}
                 <div className="pt-2">
                   <label className="block text-sm font-bold text-gray-900 mb-3">
                     <MapPin size={16} className="inline mr-1" />
-                    Shipping address (optional)
+                    Billing address 
                   </label>
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                      <input
-                        value={formData.client.address?.unit || ""}
-                        onChange={(e) => handleAddressChange("unit", e.target.value)}
-                        placeholder="Apt / Unit"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                      />
-                      <input
-                        value={formData.client.address?.line1 || ""}
-                        onChange={(e) => handleAddressChange("line1", e.target.value)}
-                        placeholder="Street"
-                        className="sm:col-span-3 w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                      />
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <input
-                        value={formData.client.address?.city || ""}
-                        onChange={(e) => handleAddressChange("city", e.target.value)}
-                        placeholder="City"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                      />
-                      <input
-                        value={formData.client.address?.postcode || ""}
-                        onChange={(e) => handleAddressChange("postcode", e.target.value)}
-                        placeholder="Postal code"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                      />
-                      <input
-                        value={formData.client.address?.country || ""}
-                        onChange={(e) => handleAddressChange("country", e.target.value)}
-                        placeholder="Country"
-                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-sm font-bold text-gray-900 mb-3">Billing address</label>
-                    <div className="flex items-center gap-2">
-                      <input
-                        id="billingSame"
-                        type="checkbox"
-                        checked={billingSameAsShipping}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            copyShippingToBilling();
-                          } else {
-                            setBillingSameAsShipping(false);
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
-                      <label htmlFor="billingSame" className="text-sm text-gray-700">Same as shipping</label>
-                    </div>
-                  </div>
-
                   <div className="space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                       <input
@@ -557,7 +455,7 @@ export default function CreateInvoiceForm() {
               </div>
             </section>
 
-            {/* Items and additional sections (unchanged) */}
+            {/* Items */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -602,7 +500,9 @@ export default function CreateInvoiceForm() {
                           errors[`item.${index}.name`] ? "border-red-400" : "border-gray-300"
                         }`}
                       />
-                      {errors[`item.${index}.name`] && <p className="text-xs text-red-600 mt-1">{errors[`item.${index}.name`]}</p>}
+                      {errors[`item.${index}.name`] && (
+                        <p className="text-xs text-red-600 mt-1">{errors[`item.${index}.name`]}</p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-3 gap-3">
@@ -652,6 +552,7 @@ export default function CreateInvoiceForm() {
               </div>
             </section>
 
+            {/* Additional Details */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 mb-4">Additional details</h2>
               <div className="space-y-4">
@@ -695,7 +596,9 @@ export default function CreateInvoiceForm() {
                       onChange={(e) => setFormData((prev) => ({ ...prev, invoiceDate: e.target.value }))}
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
                     />
-                    <p className="text-xs text-gray-500 mt-1">If provided, this will be used as the invoice date in the PDF/email. Otherwise the PDF will show date of today.</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      If provided, this will be used as the invoice date in the PDF/email. Otherwise the PDF will show today&apos;s date.
+                    </p>
                   </div>
 
                   <div>
@@ -726,6 +629,7 @@ export default function CreateInvoiceForm() {
             </section>
           </div>
 
+          {/* Sidebar */}
           <aside className="space-y-6">
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm sticky top-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">Invoice summary</h3>
@@ -750,7 +654,6 @@ export default function CreateInvoiceForm() {
                 <button
                   type="button"
                   onClick={() => {
-                    // check email; if missing/invalid show modal; otherwise proceed
                     if (!isValidEmail(formData.client.email)) {
                       setShowMissingEmailModal(true);
                       return;
@@ -811,6 +714,7 @@ export default function CreateInvoiceForm() {
           </aside>
         </div>
 
+        {/* Cancel confirmation modal */}
         {showCancelConfirm && (
           <div className="fixed inset-0 flex items-center justify-center bg-black/50 z-50 p-4">
             <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border-2 border-gray-200">
@@ -826,9 +730,7 @@ export default function CreateInvoiceForm() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    window.location.href = "/admin/invoice";
-                  }}
+                  onClick={() => { window.location.href = "/admin/invoice"; }}
                   className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
                 >
                   Discard
@@ -852,10 +754,7 @@ export default function CreateInvoiceForm() {
               <div className="mt-6 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowMissingEmailModal(false);
-                    // focus the email input by ID if you add one (optional)
-                  }}
+                  onClick={() => setShowMissingEmailModal(false)}
                   className="flex-1 px-4 py-3 border-2 border-gray-300 rounded-xl text-gray-900 font-bold hover:bg-gray-50 transition-all"
                 >
                   Add email
@@ -864,7 +763,6 @@ export default function CreateInvoiceForm() {
                   type="button"
                   onClick={() => {
                     setShowMissingEmailModal(false);
-                    // Save only (no send)
                     handleSubmit(false);
                   }}
                   className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
