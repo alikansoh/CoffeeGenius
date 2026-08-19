@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/dbConnect';
 import Invoice from '@/models/Invoice';
+import Client from '@/models/Client';
+import { getNextInvoiceNumber } from '@/lib/getNextInvoiceNumber';
 import { processInvoice } from '@/lib/manualInvoiceService';
 import { generateInvoicePDF, sendInvoiceEmail, InvoiceData, CompanyInfo } from '@/lib/manualInvoiceService';
 
-// 🔐 تأكد من إضافة authentication middleware هنا
+// 🔐 Add authentication middleware here if needed
 // import { verifyAdminAuth } from '@/lib/auth';
 
 interface InvoiceItem {
@@ -25,6 +27,8 @@ interface ClientInput {
   email?: string;
   phone?: string;
   address?: {
+    firstName?: string;
+    lastName?: string;
     line1?: string;
     unit?: string;
     city?: string;
@@ -43,6 +47,8 @@ interface RequestBody {
   createdAt?: string;
   currency?: string;
   billingAddress?: {
+    firstName?: string;
+    lastName?: string;
     line1?: string;
     unit?: string;
     city?: string;
@@ -51,12 +57,12 @@ interface RequestBody {
   };
 }
 
-function generateInvoiceNumber(): string {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const yyyymmdd = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const suffix = String(Math.floor(Math.random() * 9000) + 1000); // 4-digit random suffix
-  return `INV-${yyyy}-${yyyymmdd}-${suffix}`;
+function splitName(fullName: string) {
+  const parts = (fullName || '').trim().split(/\s+/);
+  return {
+    firstName: parts[0] || '',
+    lastName: parts.length > 1 ? parts.slice(1).join(' ') : '',
+  };
 }
 
 export async function POST(req: Request) {
@@ -72,7 +78,6 @@ export async function POST(req: Request) {
     const body: RequestBody = await req.json();
     const { client, items, shipping = 0, notes, dueDate, sendEmail = false } = body;
 
-    // ✅ التحقق من البيانات
     if (!client?.name) {
       return NextResponse.json(
         { error: 'Client name is required' },
@@ -87,7 +92,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // If caller requested sending email, email must be present and valid
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (sendEmail && (!client?.email || !emailRegex.test(client.email))) {
       return NextResponse.json(
@@ -96,20 +100,16 @@ export async function POST(req: Request) {
       );
     }
 
-    // ✅ حساب المبالغ
     const subtotal = items.reduce((sum: number, item: InvoiceItemInput) => {
       return sum + (item.qty * item.unitPrice);
     }, 0);
 
     const total = subtotal + shipping;
-
-    // ✅ توليد رقم فاتورة (improved format)
-    const invoiceNumber = generateInvoiceNumber();
-
-    // use provided createdAt if present, otherwise set to now so PDF shows today's date by default
     const createdAt = body.createdAt ? new Date(body.createdAt) : new Date();
 
-    // ✅ إنشاء الفاتورة
+    // ✅ Short sequential invoice number: INV-0001, INV-0002, ...
+    const invoiceNumber = await getNextInvoiceNumber();
+
     const invoice = await Invoice.create({
       source: 'manual',
       orderId: undefined,
@@ -148,9 +148,93 @@ export async function POST(req: Request) {
       },
     });
 
-    console.log(`✅ Manual invoice created: ${invoice._id.toString()}`);
+    console.log(`✅ Manual invoice created: ${invoice._id.toString()} (${invoiceNumber})`);
 
-    // Build invoice data object for PDF/email
+    // ✅ Upsert client in MongoDB
+    try {
+      const normalizedEmail = client.email ? client.email.toLowerCase().trim() : '';
+      const normalizedPhone = client.phone ? client.phone.replace(/[^\d+]/g, '') : '';
+
+      const nameParts = splitName(client.name);
+      const billing = body.billingAddress || {};
+
+      const address = {
+        firstName: billing.firstName || nameParts.firstName,
+        lastName: billing.lastName || nameParts.lastName,
+        line1: billing.line1 || client.address?.line1 || undefined,
+        unit: billing.unit || client.address?.unit || undefined,
+        city: billing.city || client.address?.city || undefined,
+        postcode: billing.postcode || client.address?.postcode || undefined,
+        country: billing.country || client.address?.country || undefined,
+        email: normalizedEmail || undefined,
+        phone: normalizedPhone || undefined,
+      };
+
+      if (normalizedEmail) {
+        const existingClient = await Client.findOne({ email: normalizedEmail }).lean();
+
+        if (!existingClient) {
+          await Client.create({
+            name: client.name.trim(),
+            email: normalizedEmail,
+            phone: normalizedPhone || undefined,
+            address,
+            isSubscribed: false,
+            metadata: {
+              source: 'invoice-creation',
+              createdAt: new Date().toISOString(),
+            },
+          });
+          console.log(`✅ New client saved from invoice: ${normalizedEmail}`);
+        } else {
+          await Client.findByIdAndUpdate(existingClient._id, {
+            $set: {
+              name: client.name.trim(),
+              phone: normalizedPhone || existingClient.phone,
+              address: {
+                ...(existingClient.address || {}),
+                ...address,
+              },
+              'metadata.updatedFromInvoice': new Date().toISOString(),
+            },
+          });
+          console.log(`✅ Existing client updated from invoice: ${normalizedEmail}`);
+        }
+      } else if (normalizedPhone) {
+        // If no email but phone exists, upsert by phone
+        const existingClient = await Client.findOne({ phone: normalizedPhone }).lean();
+
+        if (!existingClient) {
+          await Client.create({
+            name: client.name.trim(),
+            phone: normalizedPhone,
+            address,
+            isSubscribed: false,
+            metadata: {
+              source: 'invoice-creation',
+              createdAt: new Date().toISOString(),
+            },
+          });
+          console.log(`✅ New client saved from invoice (by phone): ${normalizedPhone}`);
+        } else {
+          await Client.findByIdAndUpdate(existingClient._id, {
+            $set: {
+              name: client.name.trim(),
+              address: {
+                ...(existingClient.address || {}),
+                ...address,
+              },
+              'metadata.updatedFromInvoice': new Date().toISOString(),
+            },
+          });
+          console.log(`✅ Existing client updated from invoice (by phone): ${normalizedPhone}`);
+        }
+      }
+    } catch (clientErr) {
+      // Don't fail invoice creation if client upsert fails — just log it
+      console.error('⚠️ Failed to upsert client from invoice:', clientErr);
+    }
+
     const invoiceData: InvoiceData = {
       orderId: invoice._id.toString(),
       orderNumber: invoiceNumber,
@@ -191,12 +275,10 @@ export async function POST(req: Request) {
       logoPath: process.env.COMPANY_LOGO_PATH,
     };
 
-    // If client asked for the PDF download, generate PDF now and return binary response.
     if (wantPdf) {
       try {
         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
 
-        // If sendEmail also requested, send using the already-generated PDF (background)
         if (sendEmail) {
           sendInvoiceEmail(invoiceData, Buffer.from(pdfBuffer))
             .then(async () => {
@@ -233,7 +315,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // If not requesting PDF, keep existing behavior:
     if (sendEmail) {
       processInvoice(invoiceData, companyInfo)
         .then(async () => {
@@ -272,14 +353,13 @@ export async function POST(req: Request) {
   }
 }
 
-// GET endpoint لجلب الفواتير
 export async function GET(req: Request) {
   try {
     await dbConnect();
 
     const { searchParams } = new URL(req.url);
-    const source = searchParams.get('source'); // 'manual' أو 'stripe'
-    const status = searchParams.get('status'); // 'paid' أو 'unpaid'
+    const source = searchParams.get('source');
+    const status = searchParams.get('status');
 
     const query: Record<string, string> = {};
     if (source) query.source = source;

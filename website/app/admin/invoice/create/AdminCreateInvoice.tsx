@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   ArrowLeft,
   Plus,
@@ -17,9 +17,13 @@ import {
   Phone,
   MapPin,
   FileText,
+  Search,
+  ChevronDown,
 } from "lucide-react";
 
 interface Address {
+  firstName?: string;
+  lastName?: string;
   line1?: string;
   unit?: string;
   city?: string;
@@ -29,8 +33,8 @@ interface Address {
 
 interface InvoiceItem {
   name: string;
-  qty: number;
-  unitPrice: number;
+  qty: number | "";
+  unitPrice: number | "";
   totalPrice: number;
 }
 
@@ -44,11 +48,51 @@ interface FormData {
   client: ClientInfo;
   billingAddress?: Address | null;
   items: InvoiceItem[];
-  shipping: number;
+  shipping: number | "";
   notes: string;
   dueDate: string;
   invoiceDate: string;
   currency: string;
+}
+
+interface ApiInvoiceItem {
+  name: string;
+  qty: number;
+  unitPrice: number;
+  totalPrice: number;
+}
+
+interface ApiClient {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: Address;
+}
+
+interface ApiInvoice {
+  _id: string;
+  orderNumber: string;
+  client?: ApiClient;
+  billingAddress?: Address | null;
+  items?: ApiInvoiceItem[];
+  shipping?: number;
+  notes?: string;
+  dueDate?: string;
+  createdAt?: string;
+  currency?: string;
+}
+
+interface ClientSearchResult {
+  _id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: Address;
+}
+
+interface CreateInvoiceFormProps {
+  invoice?: ApiInvoice;
+  isEditing?: boolean;
 }
 
 function Toast({ message, type, onClose }: { message: string; type: "error" | "success"; onClose: () => void }) {
@@ -76,7 +120,24 @@ function Toast({ message, type, onClose }: { message: string; type: "error" | "s
   );
 }
 
-export default function CreateInvoiceForm() {
+function emptyItem(): InvoiceItem {
+  return { name: "", qty: "", unitPrice: "", totalPrice: 0 };
+}
+
+function getNumberValue(value: number | ""): number {
+  return value === "" ? 0 : value;
+}
+
+function formatDateInput(dateValue?: string): string {
+  if (!dateValue) return "";
+  try {
+    return new Date(dateValue).toISOString().split("T")[0];
+  } catch {
+    return "";
+  }
+}
+
+export default function CreateInvoiceForm({ invoice, isEditing = false }: CreateInvoiceFormProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [sendEmail, setSendEmail] = useState(false);
   const [toast, setToast] = useState<{ type: "error" | "success"; message: string } | null>(null);
@@ -84,36 +145,165 @@ export default function CreateInvoiceForm() {
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showMissingEmailModal, setShowMissingEmailModal] = useState(false);
 
-  const [formData, setFormData] = useState<FormData>({
-    client: {
-      name: "",
-      email: "",
-      phone: "",
-    },
-    billingAddress: {
-      line1: "",
-      unit: "",
-      city: "",
-      postcode: "",
-      country: "United Kingdom",
-    },
-    items: [{ name: "", qty: 1, unitPrice: 0, totalPrice: 0 }],
-    shipping: 0,
-    notes: "",
-    dueDate: "",
-    invoiceDate: "",
-    currency: "gbp",
+  const [clients, setClients] = useState<ClientSearchResult[]>([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [showClientDropdown, setShowClientDropdown] = useState(false);
+  const [loadingClients, setLoadingClients] = useState(false);
+
+  const [formData, setFormData] = useState<FormData>(() => {
+    if (invoice) {
+      const billing = invoice.billingAddress || {};
+      const clientAddress = invoice.client?.address || {};
+      return {
+        client: {
+          name: invoice.client?.name || "",
+          email: invoice.client?.email || "",
+          phone: invoice.client?.phone || "",
+        },
+        billingAddress: {
+          firstName: billing.firstName || clientAddress.firstName || "",
+          lastName: billing.lastName || clientAddress.lastName || "",
+          line1: billing.line1 || clientAddress.line1 || "",
+          unit: billing.unit || clientAddress.unit || "",
+          city: billing.city || clientAddress.city || "",
+          postcode: billing.postcode || clientAddress.postcode || "",
+          country: billing.country || clientAddress.country || "United Kingdom",
+        },
+        items: invoice.items?.map((it) => ({
+          name: it.name,
+          qty: it.qty,
+          unitPrice: it.unitPrice,
+          totalPrice: it.totalPrice,
+        })) || [emptyItem()],
+        shipping: invoice.shipping ?? "",
+        notes: invoice.notes || "",
+        dueDate: formatDateInput(invoice.dueDate),
+        invoiceDate: formatDateInput(invoice.createdAt),
+        currency: invoice.currency || "gbp",
+      };
+    }
+
+    return {
+      client: {
+        name: "",
+        email: "",
+        phone: "",
+      },
+      billingAddress: {
+        firstName: "",
+        lastName: "",
+        line1: "",
+        unit: "",
+        city: "",
+        postcode: "",
+        country: "United Kingdom",
+      },
+      items: [emptyItem()],
+      shipping: "",
+      notes: "",
+      dueDate: "",
+      invoiceDate: "",
+      currency: "gbp",
+    };
   });
 
   useEffect(() => {
     setFormData((prev) => ({
       ...prev,
-      items: prev.items.map((it) => ({ ...it, totalPrice: Number((it.qty * it.unitPrice).toFixed(2)) })),
+      items: prev.items.map((it) => {
+        const qty = getNumberValue(it.qty);
+        const unitPrice = getNumberValue(it.unitPrice);
+        return { ...it, totalPrice: Number((qty * unitPrice).toFixed(2)) };
+      }),
     }));
   }, []);
 
-  const subtotal = formData.items.reduce((sum, item) => sum + item.totalPrice, 0);
-  const total = subtotal + formData.shipping;
+  useEffect(() => {
+    async function fetchClients() {
+      setLoadingClients(true);
+      try {
+        const res = await fetch("/api/clients?limit=200");
+        if (!res.ok) throw new Error("Failed to fetch clients");
+        const json = await res.json();
+        const data: ClientSearchResult[] = json.data || [];
+        setClients(data);
+      } catch (err) {
+        console.error("Failed to load clients:", err);
+      } finally {
+        setLoadingClients(false);
+      }
+    }
+    fetchClients();
+  }, []);
+
+  useEffect(() => {
+    if (invoice && invoice.client?.name) {
+      setClientSearch(invoice.client.name);
+    }
+  }, [invoice]);
+
+  const subtotal = useMemo(() => {
+    return formData.items.reduce((sum, item) => sum + item.totalPrice, 0);
+  }, [formData.items]);
+
+  const total = useMemo(() => {
+    return subtotal + getNumberValue(formData.shipping);
+  }, [subtotal, formData.shipping]);
+
+  const filteredClients = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase();
+    if (!q) return clients;
+    return clients.filter(
+      (c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.email || "").toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q)
+    );
+  }, [clients, clientSearch]);
+
+  const handleSelectClient = (client: ClientSearchResult) => {
+    const nameParts = (client.name || "").trim().split(/\s+/);
+
+    setFormData((prev) => ({
+      ...prev,
+      client: {
+        name: client.name || "",
+        email: client.email || "",
+        phone: client.phone || "",
+      },
+      billingAddress: {
+        firstName: client.address?.firstName || nameParts[0] || "",
+        lastName:
+          client.address?.lastName ||
+          (nameParts.length > 1 ? nameParts.slice(1).join(" ") : ""),
+        line1: client.address?.line1 || "",
+        unit: client.address?.unit || "",
+        city: client.address?.city || "",
+        postcode: client.address?.postcode || "",
+        country: client.address?.country || "United Kingdom",
+      },
+    }));
+    setClientSearch(client.name || "");
+    setShowClientDropdown(false);
+    setErrors((prev) => ({ ...prev, "client.name": "", "client.email": "" }));
+  };
+
+  const handleClearClient = () => {
+    setClientSearch("");
+    setFormData((prev) => ({
+      ...prev,
+      client: { name: "", email: "", phone: "" },
+      billingAddress: {
+        firstName: "",
+        lastName: "",
+        line1: "",
+        unit: "",
+        city: "",
+        postcode: "",
+        country: "United Kingdom",
+      },
+    }));
+  };
 
   const isValidEmail = (email?: string) => {
     if (!email) return false;
@@ -135,15 +325,23 @@ export default function CreateInvoiceForm() {
     }));
   };
 
-  const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const handleItemChange = (
+    index: number,
+    field: keyof InvoiceItem,
+    value: string | number
+  ) => {
     setFormData((prev) => {
       const newItems = [...prev.items];
-      newItems[index] = { ...newItems[index], [field]: value } as InvoiceItem;
 
       if (field === "qty" || field === "unitPrice") {
-        const qty = Number(newItems[index].qty || 0);
-        const unitPrice = Number(newItems[index].unitPrice || 0);
+        const parsed = value === "" ? "" : Number(value);
+        newItems[index] = { ...newItems[index], [field]: parsed };
+
+        const qty = getNumberValue(newItems[index].qty);
+        const unitPrice = getNumberValue(newItems[index].unitPrice);
         newItems[index].totalPrice = Number((qty * unitPrice).toFixed(2));
+      } else {
+        newItems[index] = { ...newItems[index], [field]: value } as InvoiceItem;
       }
 
       return { ...prev, items: newItems };
@@ -154,7 +352,7 @@ export default function CreateInvoiceForm() {
   const addItem = () => {
     setFormData((prev) => ({
       ...prev,
-      items: [...prev.items, { name: "", qty: 1, unitPrice: 0, totalPrice: 0 }],
+      items: [...prev.items, emptyItem()],
     }));
   };
 
@@ -184,8 +382,9 @@ export default function CreateInvoiceForm() {
 
     formData.items.forEach((item, i) => {
       if (!item.name.trim()) newErrors[`item.${i}.name`] = "Item name is required";
-      if (item.qty <= 0) newErrors[`item.${i}.qty`] = "Quantity must be greater than 0";
-      if (item.unitPrice <= 0) newErrors[`item.${i}.unitPrice`] = "Unit price must be greater than 0";
+      if (item.qty === "" || item.qty <= 0) newErrors[`item.${i}.qty`] = "Quantity must be greater than 0";
+      if (item.unitPrice === "" || item.unitPrice <= 0)
+        newErrors[`item.${i}.unitPrice`] = "Unit price must be greater than 0";
     });
 
     setErrors(newErrors);
@@ -200,6 +399,27 @@ export default function CreateInvoiceForm() {
     handleSubmit(true);
   };
 
+  const buildPayload = () => {
+    return {
+      client: formData.client,
+      items: formData.items.map((it) => ({
+        name: it.name,
+        qty: getNumberValue(it.qty),
+        unitPrice: getNumberValue(it.unitPrice),
+        totalPrice: it.totalPrice,
+      })),
+      shipping: getNumberValue(formData.shipping),
+      notes: formData.notes || undefined,
+      dueDate: formData.dueDate || undefined,
+      currency: formData.currency,
+      billingAddress: formData.billingAddress || null,
+      createdAt: formData.invoiceDate || undefined,
+      sendEmail: false,
+      subtotal,
+      total,
+    };
+  };
+
   const handleSubmit = async (shouldSendEmail: boolean) => {
     setToast(null);
 
@@ -212,32 +432,25 @@ export default function CreateInvoiceForm() {
     setSendEmail(shouldSendEmail);
 
     try {
-      const payload = {
-        client: formData.client,
-        items: formData.items,
-        shipping: formData.shipping,
-        notes: formData.notes || undefined,
-        dueDate: formData.dueDate || undefined,
-        currency: formData.currency,
-        billingAddress: formData.billingAddress || null,
-        createdAt: formData.invoiceDate || undefined,
-        sendEmail: shouldSendEmail,
-        subtotal,
-        total,
-      };
+      const payload = buildPayload();
+      payload.sendEmail = shouldSendEmail;
+
+      const url = isEditing ? `/api/invoices/${invoice?._id}` : "/api/invoices";
+      const method = isEditing ? "PUT" : "POST";
+      const query = !shouldSendEmail ? "?pdf=true" : "";
 
       if (!shouldSendEmail) {
-        const res = await fetch('/api/invoices?pdf=true', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const res = await fetch(`${url}${query}`, {
+          method,
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
 
         if (!res.ok) {
-          let errText = `Failed to create invoice (${res.status})`;
+          let errText = `Failed to ${isEditing ? "update" : "create"} invoice (${res.status})`;
           try {
-            const ct = res.headers.get('content-type') || '';
-            if (ct.includes('application/json')) {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
               const json = await res.json();
               errText = json?.error || JSON.stringify(json);
             } else {
@@ -249,61 +462,73 @@ export default function CreateInvoiceForm() {
           throw new Error(errText);
         }
 
-        const ct = res.headers.get('content-type') || '';
-        const cd = res.headers.get('content-disposition') || '';
+        const ct = res.headers.get("content-type") || "";
+        const cd = res.headers.get("content-disposition") || "";
 
-        if (ct.includes('application/pdf') || /filename=.*\.pdf/i.test(cd)) {
+        if (ct.includes("application/pdf") || /filename=.*\.pdf/i.test(cd)) {
           const arrayBuffer = await res.arrayBuffer();
-          const blob = new Blob([arrayBuffer], { type: 'application/pdf' });
+          const blob = new Blob([arrayBuffer], { type: "application/pdf" });
 
           let filename = `invoice-${Date.now()}.pdf`;
           const m = cd.match(/filename="?([^"]+)"?/);
           if (m && m[1]) filename = m[1];
 
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
+          const urlBlob = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = urlBlob;
           a.download = filename;
           document.body.appendChild(a);
           a.click();
           a.remove();
-          URL.revokeObjectURL(url);
+          URL.revokeObjectURL(urlBlob);
 
-          setToast({ type: 'success', message: 'Invoice saved and PDF downloaded' });
-          setTimeout(() => (window.location.href = '/admin/invoice'), 1200);
+          setToast({
+            type: "success",
+            message: isEditing ? "Invoice updated and PDF downloaded" : "Invoice saved and PDF downloaded",
+          });
+          setTimeout(() => (window.location.href = "/admin/invoice"), 1200);
           return;
         } else {
           await res.json();
-          setToast({ type: 'success', message: 'Invoice created' });
-          setTimeout(() => (window.location.href = '/admin/invoice'), 1200);
+          setToast({
+            type: "success",
+            message: isEditing ? "Invoice updated" : "Invoice created",
+          });
+          setTimeout(() => (window.location.href = "/admin/invoice"), 1200);
           return;
         }
       }
 
-      const res = await fetch('/api/invoices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch(`${url}${query}`, {
+        method,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || `Failed to create invoice (${res.status})`);
+        throw new Error(data.error || `Failed to ${isEditing ? "update" : "create"} invoice (${res.status})`);
       }
 
       setToast({
-        type: 'success',
-        message: shouldSendEmail ? 'Invoice created and sent successfully!' : 'Invoice created successfully!',
+        type: "success",
+        message: isEditing
+          ? shouldSendEmail
+            ? "Invoice updated and sent successfully!"
+            : "Invoice updated successfully!"
+          : shouldSendEmail
+            ? "Invoice created and sent successfully!"
+            : "Invoice created successfully!",
       });
 
       setTimeout(() => {
-        window.location.href = '/admin/invoice';
+        window.location.href = "/admin/invoice";
       }, 1500);
     } catch (err) {
       setToast({
-        type: 'error',
-        message: err instanceof Error ? err.message : 'Failed to create invoice',
+        type: "error",
+        message: err instanceof Error ? err.message : `Failed to ${isEditing ? "update" : "create"} invoice`,
       });
     } finally {
       setIsSaving(false);
@@ -315,12 +540,17 @@ export default function CreateInvoiceForm() {
     if (
       formData.client.name ||
       formData.client.email ||
-      formData.items.some((item) => item.name || item.qty > 1 || item.unitPrice > 0)
+      formData.items.some((item) => item.name || item.qty !== "" || item.unitPrice !== "")
     ) {
       setShowCancelConfirm(true);
       return;
     }
     window.location.href = "/admin/invoice";
+  };
+
+  const formatCurrencyDisplay = (value: number | "") => {
+    const num = getNumberValue(value);
+    return `£${num.toFixed(2)}`;
   };
 
   return (
@@ -345,8 +575,12 @@ export default function CreateInvoiceForm() {
                 <ArrowLeft size={20} />
               </button>
               <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Create New Invoice</h1>
-                <p className="text-xs sm:text-sm text-gray-600 mt-0.5">Create a manual invoice for a client</p>
+                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
+                  {isEditing ? `Edit Invoice ${invoice?.orderNumber || ""}` : "Create New Invoice"}
+                </h1>
+                <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
+                  {isEditing ? "Update the invoice details below" : "Create a manual invoice for a client"}
+                </p>
               </div>
             </div>
           </div>
@@ -356,10 +590,83 @@ export default function CreateInvoiceForm() {
           <div className="lg:col-span-2 space-y-6">
             {/* Client Information */}
             <section className="bg-white rounded-2xl border-2 border-gray-200 p-4 sm:p-6 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <User size={20} className="text-gray-900" />
-                <h2 className="text-lg font-bold text-gray-900">Client information</h2>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <User size={20} className="text-gray-900" />
+                  <h2 className="text-lg font-bold text-gray-900">Client information</h2>
+                </div>
+                {formData.client.name && (
+                  <button
+                    type="button"
+                    onClick={handleClearClient}
+                    className="text-xs font-semibold text-red-600 hover:text-red-700"
+                  >
+                    Clear client
+                  </button>
+                )}
               </div>
+
+              {/* Client search dropdown */}
+              <div className="relative mb-4">
+                <label className="block text-sm font-bold text-gray-900 mb-2">
+                  <Search size={14} className="inline mr-1" />
+                  Search existing client
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={clientSearch}
+                    onChange={(e) => {
+                      setClientSearch(e.target.value);
+                      setShowClientDropdown(true);
+                    }}
+                    onFocus={() => setShowClientDropdown(true)}
+                    placeholder="Type name, email or phone..."
+                    className="w-full px-4 py-3 pr-10 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                  />
+                  <ChevronDown
+                    size={18}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"
+                  />
+                </div>
+
+                {showClientDropdown && (
+                  <div className="absolute z-20 mt-1 w-full bg-white border-2 border-gray-200 rounded-xl shadow-lg max-h-64 overflow-auto">
+                    {loadingClients ? (
+                      <div className="px-4 py-3 text-sm text-gray-500">Loading clients...</div>
+                    ) : filteredClients.length === 0 ? (
+                      <div className="px-4 py-3 text-sm text-gray-500">
+                        {clientSearch ? "No clients found" : "Start typing to search"}
+                      </div>
+                    ) : (
+                      filteredClients.map((client) => (
+                        <button
+                          key={client._id}
+                          type="button"
+                          onClick={() => handleSelectClient(client)}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors"
+                        >
+                          <div className="font-semibold text-gray-900">{client.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {client.email && <span className="mr-3">{client.email}</span>}
+                            {client.phone && <span>{client.phone}</span>}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {showClientDropdown && (
+                  <button
+                    type="button"
+                    className="fixed inset-0 z-10 bg-transparent"
+                    onClick={() => setShowClientDropdown(false)}
+                    aria-label="Close dropdown"
+                  />
+                )}
+              </div>
+
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-bold text-gray-900 mb-2">
@@ -413,9 +720,23 @@ export default function CreateInvoiceForm() {
                 <div className="pt-2">
                   <label className="block text-sm font-bold text-gray-900 mb-3">
                     <MapPin size={16} className="inline mr-1" />
-                    Billing address 
+                    Billing address
                   </label>
                   <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <input
+                        value={formData.billingAddress?.firstName || ""}
+                        onChange={(e) => handleBillingAddressChange("firstName", e.target.value)}
+                        placeholder="First name"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                      />
+                      <input
+                        value={formData.billingAddress?.lastName || ""}
+                        onChange={(e) => handleBillingAddressChange("lastName", e.target.value)}
+                        placeholder="Last name"
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
+                      />
+                    </div>
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                       <input
                         value={formData.billingAddress?.unit || ""}
@@ -514,11 +835,14 @@ export default function CreateInvoiceForm() {
                           type="number"
                           min="1"
                           value={item.qty}
-                          onChange={(e) => handleItemChange(index, "qty", parseFloat(e.target.value) || 1)}
+                          onChange={(e) => handleItemChange(index, "qty", e.target.value)}
                           className={`w-full px-3 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all text-sm ${
                             errors[`item.${index}.qty`] ? "border-red-400" : "border-gray-300"
                           }`}
                         />
+                        {errors[`item.${index}.qty`] && (
+                          <p className="text-xs text-red-600 mt-1">{errors[`item.${index}.qty`]}</p>
+                        )}
                       </div>
 
                       <div>
@@ -530,18 +854,21 @@ export default function CreateInvoiceForm() {
                           min="0"
                           step="0.01"
                           value={item.unitPrice}
-                          onChange={(e) => handleItemChange(index, "unitPrice", parseFloat(e.target.value) || 0)}
+                          onChange={(e) => handleItemChange(index, "unitPrice", e.target.value)}
                           className={`w-full px-3 py-2.5 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all text-sm ${
                             errors[`item.${index}.unitPrice`] ? "border-red-400" : "border-gray-300"
                           }`}
                         />
+                        {errors[`item.${index}.unitPrice`] && (
+                          <p className="text-xs text-red-600 mt-1">{errors[`item.${index}.unitPrice`]}</p>
+                        )}
                       </div>
 
                       <div>
                         <label className="block text-xs font-bold text-gray-700 mb-1.5">Total (£)</label>
                         <input
                           type="text"
-                          value={`£${item.totalPrice.toFixed(2)}`}
+                          value={formatCurrencyDisplay(item.totalPrice)}
                           readOnly
                           className="w-full px-3 py-2.5 border-2 border-gray-200 rounded-lg bg-gray-50 text-gray-700 font-bold text-sm"
                         />
@@ -567,7 +894,12 @@ export default function CreateInvoiceForm() {
                       min="0"
                       step="0.01"
                       value={formData.shipping}
-                      onChange={(e) => setFormData((prev) => ({ ...prev, shipping: parseFloat(e.target.value) || 0 }))}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          shipping: e.target.value === "" ? "" : Number(e.target.value),
+                        }))
+                      }
                       placeholder="5.00"
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
                     />
@@ -641,7 +973,7 @@ export default function CreateInvoiceForm() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Shipping:</span>
-                  <span className="font-bold text-gray-900">£{formData.shipping.toFixed(2)}</span>
+                  <span className="font-bold text-gray-900">{formatCurrencyDisplay(formData.shipping)}</span>
                 </div>
                 <div className="h-px bg-gray-200"></div>
                 <div className="flex justify-between text-lg">
@@ -673,7 +1005,7 @@ export default function CreateInvoiceForm() {
                   ) : (
                     <>
                       <Send size={18} />
-                      Save and Send via Email
+                      {isEditing ? "Update and Send" : "Save and Send via Email"}
                     </>
                   )}
                 </button>
@@ -696,7 +1028,7 @@ export default function CreateInvoiceForm() {
                   ) : (
                     <>
                       <Save size={18} />
-                      Save only
+                      {isEditing ? "Update & Download PDF" : "Save only"}
                     </>
                   )}
                 </button>
@@ -730,7 +1062,9 @@ export default function CreateInvoiceForm() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => { window.location.href = "/admin/invoice"; }}
+                  onClick={() => {
+                    window.location.href = "/admin/invoice";
+                  }}
                   className="flex-1 px-4 py-3 bg-gray-900 text-white rounded-xl font-bold hover:bg-gray-800 transition-all"
                 >
                   Discard
@@ -748,9 +1082,7 @@ export default function CreateInvoiceForm() {
               <p className="text-sm text-gray-600 mt-2">
                 The client does not have an email address. To send the invoice by email you must enter a valid email.
               </p>
-              <p className="text-sm text-gray-600 mt-2">
-                You can either add an email now, or save the invoice without sending.
-              </p>
+              <p className="text-sm text-gray-600 mt-2">You can either add an email now, or save the invoice without sending.</p>
               <div className="mt-6 flex gap-3">
                 <button
                   type="button"

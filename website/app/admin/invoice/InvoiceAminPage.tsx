@@ -12,6 +12,7 @@ import {
   MoreHorizontal,
   Trash2,
   AlertCircle,
+  Edit,
   X,
   Calendar,
   Package,
@@ -433,6 +434,16 @@ export default function InvoicesPage() {
                         <Eye size={14} /> View
                       </button>
 
+                      {inv.source === "manual" && (
+                        <a
+                          href={`/admin/invoice/edit/${inv._id}`}
+                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 transition"
+                          title="Edit invoice"
+                        >
+                          <Edit size={14} /> Edit
+                        </a>
+                      )}
+
                       <button
                         onClick={() => downloadInvoice(inv._id, inv.orderNumber)}
                         disabled={!!actionLoading[inv._id]}
@@ -512,14 +523,21 @@ export default function InvoicesPage() {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    downloadInvoice(selected._id, selected.orderNumber);
-                  }}
+                  onClick={() => downloadInvoice(selected._id, selected.orderNumber)}
                   disabled={!!actionLoading[selected._id]}
                   className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
                 >
                   <Download size={16} /> Download
                 </button>
+
+                {selected.source === "manual" && (
+                  <a
+                    href={`/admin/invoice/edit/${selected._id}`}
+                    className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50"
+                  >
+                    <Edit size={16} /> Edit
+                  </a>
+                )}
 
                 {selected.paymentStatus !== "paid" && (
                   <button
