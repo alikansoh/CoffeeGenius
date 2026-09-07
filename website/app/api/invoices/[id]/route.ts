@@ -32,6 +32,8 @@ interface UpdateRequestBody {
   shipping?: number;
   notes?: string;
   dueDate?: string;
+  remindersEnabled?: boolean;
+  recurring?: { enabled: boolean; dayOfMonth?: number };
   sendEmail?: boolean;
   createdAt?: string;
   currency?: string;
@@ -156,7 +158,14 @@ export async function PUT(
     }
 
     const body: UpdateRequestBody = await req.json();
-    const { client, items, shipping = 0, notes, dueDate, sendEmail = false } = body;
+    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false } = body;
+
+    if (recurring?.enabled && (!recurring.dayOfMonth || recurring.dayOfMonth < 1 || recurring.dayOfMonth > 28)) {
+      return NextResponse.json(
+        { error: "Recurring day of month must be between 1 and 28" },
+        { status: 400 }
+      );
+    }
 
     if (!client?.name) {
       return NextResponse.json(
@@ -206,6 +215,16 @@ export async function PUT(
           shippingAddress: client.address || null,
           billingAddress: body.billingAddress ?? null,
           dueDate: dueDate ? new Date(dueDate) : null,
+          remindersEnabled,
+          // Preserve lastGeneratedAt — only the recurring cron itself should ever touch that,
+          // so re-saving the form (even toggling enabled on/off) can't cause a double-send.
+          recurring: recurring?.enabled
+            ? {
+                enabled: true,
+                dayOfMonth: recurring.dayOfMonth,
+                lastGeneratedAt: existing.recurring?.lastGeneratedAt,
+              }
+            : { enabled: false, lastGeneratedAt: existing.recurring?.lastGeneratedAt },
           createdAt,
           notes: notes || undefined,
           recipientEmail: client.email || "",

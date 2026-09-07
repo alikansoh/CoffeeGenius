@@ -17,6 +17,7 @@ export interface IOrderItem {
   totalPrice: number; // GBP
   source?: string;
   roastType?: string;
+  discountPerUnit?: number; // GBP, if you want per-line discount breakdown later
 }
 
 export type ShipmentProvider =
@@ -39,6 +40,7 @@ export interface IShipment {
 export interface IOrder extends Document {
   items: IOrderItem[];
   subtotal: number;
+  discount: number;
   shipping: number;
   total: number;
   currency: string;
@@ -61,10 +63,6 @@ export interface IOrder extends Document {
     postcode?: string;
     country?: string;
   } | null;
-  metadata?: Record<string, unknown>;
-  paidAt?: Date | null;
-  createdAt: Date;
-  updatedAt: Date;
   billingAddress?: {
     firstName?: string;
     lastName?: string;
@@ -75,7 +73,14 @@ export interface IOrder extends Document {
     country?: string;
     sameAsShipping?: boolean;
   } | null;
+  metadata?: Record<string, unknown>;
+  paidAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
   shipment?: IShipment | null;
+  couponCode?: string | null;
+  couponName?: string | null;
+  couponId?: string | null;
 }
 
 const OrderItemSchema = new Schema<IOrderItem>(
@@ -87,6 +92,7 @@ const OrderItemSchema = new Schema<IOrderItem>(
     totalPrice: { type: Number, required: true },
     source: { type: String },
     roastType: { type: String },
+    discountPerUnit: { type: Number, default: 0 },
   },
   { _id: false }
 );
@@ -107,17 +113,15 @@ const ShipmentSchema = new Schema<IShipment>(
 
 const OrderSchema = new Schema<IOrder>(
   {
-    // items: required but default to empty array so upserts/inserts don't fail
     items: { type: [OrderItemSchema], required: true, default: [] },
 
-    // required numeric fields with safe defaults
     subtotal: { type: Number, required: true, default: 0 },
+    discount: { type: Number, required: true, default: 0 },
     shipping: { type: Number, required: true, default: 0 },
     total: { type: Number, required: true, default: 0 },
 
     currency: { type: String, default: 'gbp' },
 
-    // include 'processing' in enum
     status: {
       type: String,
       enum: ['pending', 'processing', 'paid', 'shipped', 'failed', 'cancelled', 'refunded'],
@@ -162,17 +166,20 @@ const OrderSchema = new Schema<IOrder>(
     paidAt: { type: Date, default: null },
 
     shipment: { type: ShipmentSchema, default: null },
+
+    couponCode: { type: String, default: null },
+    couponName: { type: String, default: null },
+    couponId: { type: String, default: null },
   },
   { timestamps: true }
 );
 
-// DB-level uniqueness to prevent duplicate orders for the same Stripe PaymentIntent.
-// sparse allows documents without paymentIntentId to exist.
 OrderSchema.index({ paymentIntentId: 1 }, { unique: true, sparse: true });
 
-// Optional: prevent the same webhook event being inserted more than once.
-// Sparse so it only applies when metadata.webhookEventId is present.
 OrderSchema.index({ 'metadata.webhookEventId': 1 }, { unique: true, sparse: true });
 
-const Order: Model<IOrder> = (mongoose.models.Order as Model<IOrder>) || mongoose.model<IOrder>('Order', OrderSchema);
+const Order: Model<IOrder> =
+  (mongoose.models.Order as Model<IOrder>) ||
+  mongoose.model<IOrder>('Order', OrderSchema);
+
 export default Order;

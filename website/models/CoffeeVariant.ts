@@ -9,6 +9,14 @@ export interface ICoffeeVariant extends Document {
   price: number;
   stock: number;
   img?: string;
+  /** Subscribe & save settings */
+  subscriptionEnabled?: boolean;
+  /** Percent off the normal price for subscribers, e.g. 15 = 15% off */
+  subscriptionDiscountPercent?: number;
+  /** One Stripe recurring Price per delivery frequency (e.g. every 2/4/6 weeks), created lazily on enable */
+  subscriptionFrequencyPrices?: { frequencyWeeks: number; stripePriceId: string }[];
+  /** Stripe Product id all of this variant's subscription prices belong to */
+  stripeProductId?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -54,6 +62,29 @@ const CoffeeVariantSchema = new Schema<ICoffeeVariant>(
       default: 0,
     },
     img: {
+      type: String,
+    },
+    subscriptionEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    subscriptionDiscountPercent: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    subscriptionFrequencyPrices: {
+      type: [
+        {
+          frequencyWeeks: { type: Number, required: true },
+          stripePriceId: { type: String, required: true },
+        },
+      ],
+      default: undefined,
+      _id: false,
+    },
+    stripeProductId: {
       type: String,
     },
   },

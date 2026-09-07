@@ -128,8 +128,27 @@ export async function PUT(request: NextRequest, { params }: Props) {
     }
 
     const coffeeId = variant.coffeeId;
-    const updatableFields = ["size", "grind", "roastType", "price", "stock"];
-    const updateData: Partial<Pick<ICoffeeVariant, "size" | "grind" | "roastType" | "price" | "stock">> = {};
+    const updatableFields = [
+      "size",
+      "grind",
+      "roastType",
+      "price",
+      "stock",
+      "subscriptionEnabled",
+      "subscriptionDiscountPercent",
+    ];
+    const updateData: Partial<
+      Pick<
+        ICoffeeVariant,
+        | "size"
+        | "grind"
+        | "roastType"
+        | "price"
+        | "stock"
+        | "subscriptionEnabled"
+        | "subscriptionDiscountPercent"
+      >
+    > = {};
 
     for (const field of updatableFields) {
       if (field in body) {
@@ -141,6 +160,17 @@ export async function PUT(request: NextRequest, { params }: Props) {
       new: true,
       runValidators: true,
     });
+
+    // Keep the Stripe recurring price in sync with subscription settings.
+    // Best-effort — a Stripe hiccup here shouldn't fail saving the variant itself.
+    if (updatedVariant?.subscriptionEnabled) {
+      try {
+        const { syncVariantSubscriptionPrices } = await import("@/lib/subscriptionPricing");
+        await syncVariantSubscriptionPrices(updatedVariant._id.toString());
+      } catch (err) {
+        console.error("⚠️ Failed to sync Stripe subscription price for variant:", err);
+      }
+    }
 
     const allVariants = await CoffeeVariant.find({ coffeeId });
     const prices = allVariants.map((v) => v.price);

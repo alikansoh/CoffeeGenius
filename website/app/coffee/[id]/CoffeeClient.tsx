@@ -42,6 +42,8 @@ interface Variant {
   roastType?: "espresso" | "filter" | "omni" | "decaf";
   RostType?: "espresso" | "filter" | "omni" | "decaf";
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
+  subscriptionEnabled?: boolean;
+  subscriptionDiscountPercent?: number;
 }
 
 interface SizePrice {
@@ -102,6 +104,7 @@ export interface ExtendedProduct {
   availableSizes?: SizePrice[];
   variants?: Variant[];
   brewing?: string;
+  totalStock?: number;
   inStock?: boolean;
   stockStatus?: "in_stock" | "low_stock" | "out_of_stock";
   bestSeller?: boolean;
@@ -352,6 +355,14 @@ export default function ProductDetailPage() {
   >(null);
   const [quantity, setQuantity] = useState(1);
   const [isAdded, setIsAdded] = useState(false);
+  const [subscribing, setSubscribing] = useState(false);
+  const [subscribeFrequencyWeeks, setSubscribeFrequencyWeeks] = useState(2);
+  const SUBSCRIBE_FREQUENCY_OPTIONS = [1, 2, 3, 4];
+  // "One-time purchase" vs "Subscribe & Save" — chosen above the customise card, drives the
+  // single call-to-action button at the bottom of the card.
+  const [purchaseType, setPurchaseType] = useState<"onetime" | "subscribe">(
+    "onetime"
+  );
   const [activeAccordion, setActiveAccordion] = useState<string | null>(
     "details"
   );
@@ -548,6 +559,7 @@ export default function ProductDetailPage() {
           availableGrinds: apiCoffee.availableGrinds,
           availableSizes: availableSizesWithGrinds,
           variants: apiCoffee.variants,
+          totalStock: apiCoffee.totalStock,
           inStock: apiCoffee.inStock,
           stockStatus: apiCoffee.stockStatus,
           bestSeller: apiCoffee.bestSeller,
@@ -896,6 +908,49 @@ export default function ProductDetailPage() {
     setActiveAccordion((prev) => (prev === section ? null : section));
   };
 
+  const handleSubscribe = () => {
+    if (!selectedVariant) return;
+    setSubscribing(true);
+
+    const variantRoast = getVariantRoast(selectedVariant);
+    const roastLabel =
+      derivedIsOmni && selectedRoastStyle
+        ? selectedRoastStyle
+        : variantRoast === "omni"
+        ? ""
+        : variantRoast === "decaf"
+        ? "decaf"
+        : variantRoast || product?.roastType || "";
+
+    addItem(
+      {
+        // A distinct cart key per variant+frequency — otherwise subscribing to the same
+        // variant that's already in the cart as a one-off item (or a different frequency)
+        // would merge into a single line instead of staying as separate basket entries.
+        id: `${selectedVariant._id}::subscription::${subscribeFrequencyWeeks}`,
+        productType: "coffee",
+        productId: product?.id,
+        variantId: selectedVariant._id,
+        name: `${product?.name} — ${selectedSize} — ${selectedGrind}`,
+        price:
+          selectedVariant.price *
+          (1 - (selectedVariant.subscriptionDiscountPercent || 0) / 100),
+        img: selectedVariant.img || product?.img || "/test.webp",
+        size: selectedVariant.size,
+        grind: selectedVariant.grind,
+        sku: selectedVariant.sku,
+        stock: selectedVariant.stock,
+        roastType: roastLabel,
+        isSubscription: true,
+        frequencyWeeks: subscribeFrequencyWeeks,
+        subscriptionDiscountPercent: selectedVariant.subscriptionDiscountPercent || 0,
+      },
+      1
+    );
+
+    setSubscribing(false);
+  };
+
   const handleAddToCart = () => {
     if (!selectedVariant) {
       alert("Please select a valid size and brew method");
@@ -998,6 +1053,11 @@ export default function ProductDetailPage() {
                   Best Seller
                 </span>
               )}
+              {(product.totalStock ?? 1) <= 0 && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-bold uppercase tracking-wide">
+                  Out of Stock
+                </span>
+              )}
             </div>
 
             <h1 className="text-2xl sm:text-3xl font-bold text-zinc-900 mb-2 leading-tight">
@@ -1028,6 +1088,12 @@ export default function ProductDetailPage() {
                   <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-bold shadow-md">
                     <Star size={11} className="fill-white" />
                     Best Seller
+                  </div>
+                )}
+
+                {(product.totalStock ?? 1) <= 0 && (
+                  <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold shadow-md uppercase tracking-wide">
+                    Out of Stock
                   </div>
                 )}
 
@@ -1818,56 +1884,219 @@ export default function ProductDetailPage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* ── STEP: Purchase type (last step, right before checkout) ── */}
+                  {selectedVariant?.subscriptionEnabled && (
+                    <div
+                      className={`px-5 py-5 transition-opacity duration-200 ${
+                        !step3Done
+                          ? "opacity-30 pointer-events-none"
+                          : "opacity-100"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold text-zinc-900 mb-3">
+                        How would you like this delivered?
+                      </p>
+
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <button
+                          type="button"
+                          onClick={() => setPurchaseType("onetime")}
+                          aria-pressed={purchaseType === "onetime"}
+                          className={`relative rounded-xl border-2 px-4 py-3.5 text-left cursor-pointer transition-all duration-200 ${
+                            purchaseType === "onetime"
+                              ? "border-zinc-900 bg-zinc-900 text-white shadow-sm"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400"
+                          }`}
+                        >
+                          <p className="text-sm font-bold">
+                            One-time purchase
+                          </p>
+                          <p
+                            className={`text-xs mt-0.5 ${
+                              purchaseType === "onetime"
+                                ? "text-zinc-300"
+                                : "text-zinc-400"
+                            }`}
+                          >
+                            £{selectedVariant.price.toFixed(2)}
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setPurchaseType("subscribe")}
+                          aria-pressed={purchaseType === "subscribe"}
+                          className={`relative rounded-xl border-2 px-4 py-3.5 text-left cursor-pointer transition-all duration-200 ${
+                            purchaseType === "subscribe"
+                              ? "border-zinc-900 bg-zinc-900 text-white shadow-sm"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400"
+                          }`}
+                        >
+                          {(selectedVariant.subscriptionDiscountPercent || 0) >
+                            0 && (
+                            <span
+                              className={`absolute -top-2 right-3 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${
+                                purchaseType === "subscribe"
+                                  ? "bg-white text-zinc-900"
+                                  : "bg-zinc-900 text-white"
+                              }`}
+                            >
+                              Save {selectedVariant.subscriptionDiscountPercent}
+                              %
+                            </span>
+                          )}
+                          <p className="text-sm font-bold">
+                            Subscribe &amp; Save
+                          </p>
+                          <p
+                            className={`text-xs mt-0.5 ${
+                              purchaseType === "subscribe"
+                                ? "text-zinc-300"
+                                : "text-zinc-400"
+                            }`}
+                          >
+                            £
+                            {(
+                              selectedVariant.price *
+                              (1 -
+                                (selectedVariant.subscriptionDiscountPercent ||
+                                  0) /
+                                  100)
+                            ).toFixed(2)}
+                            /delivery
+                          </p>
+                        </button>
+                      </div>
+
+                      {purchaseType === "subscribe" && (
+                        <div className="mt-3 px-3.5 py-3.5 rounded-xl border border-zinc-200 bg-zinc-50/60">
+                          <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-[0.12em] mb-2.5">
+                            Delivery frequency
+                          </p>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {SUBSCRIBE_FREQUENCY_OPTIONS.map((weeks) => (
+                              <button
+                                key={weeks}
+                                type="button"
+                                onClick={() =>
+                                  setSubscribeFrequencyWeeks(weeks)
+                                }
+                                className={`py-2 rounded-lg text-xs font-medium border-2 transition-all cursor-pointer ${
+                                  subscribeFrequencyWeeks === weeks
+                                    ? "border-zinc-900 bg-zinc-900 text-white"
+                                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400"
+                                }`}
+                              >
+                                Every {weeks} wk{weeks > 1 ? "s" : ""}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-zinc-400 mt-2.5 leading-relaxed">
+                            Cancel anytime. Your card is only charged when
+                            each delivery ships.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                {/* ── Add to Cart Button ── */}
+                {/* ── Add to Cart / Subscribe Button ── */}
                 <div className="px-5 pb-5 pt-1">
-                  <button
-                    onClick={handleAddToCart}
-                    disabled={
-                      isAdded ||
-                      filteredGrindOptions.length === 0 ||
-                      !selectedVariant ||
-                      isOutOfStock ||
-                      quantity > availableStock
-                    }
-                    className={`w-full py-4 cursor-pointer rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2.5
-                      ${
-                        isAdded
-                          ? "bg-zinc-700 text-white"
-                          : isOutOfStock || !selectedVariant
-                          ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
-                          : "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] shadow-sm hover:shadow"
-                      }`}
-                    aria-disabled={
-                      isAdded ||
-                      filteredGrindOptions.length === 0 ||
-                      !selectedVariant ||
-                      isOutOfStock
-                    }
-                  >
-                    {isAdded ? (
-                      <>
-                        <Check size={18} strokeWidth={3} />
-                        Added to Cart!
-                      </>
-                    ) : isOutOfStock ? (
-                      <>
-                        <AlertCircle size={18} />
-                        Out of Stock
-                      </>
-                    ) : !selectedVariant ? (
-                      <>
-                        <ShoppingCart size={18} />
-                        Complete your selection
-                      </>
-                    ) : (
-                      <>
-                        <ShoppingCart size={18} />
-                        Add to Cart — £{totalPrice.toFixed(2)}
-                      </>
-                    )}
-                  </button>
+                  {purchaseType === "subscribe" &&
+                  selectedVariant?.subscriptionEnabled ? (
+                    <button
+                      onClick={handleSubscribe}
+                      disabled={
+                        subscribing ||
+                        filteredGrindOptions.length === 0 ||
+                        !selectedVariant ||
+                        isOutOfStock
+                      }
+                      className={`w-full py-4 cursor-pointer rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2.5
+                        ${
+                          isOutOfStock || !selectedVariant
+                            ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                            : "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] shadow-sm hover:shadow disabled:opacity-50"
+                        }`}
+                    >
+                      {subscribing ? (
+                        "Adding…"
+                      ) : isOutOfStock ? (
+                        <>
+                          <AlertCircle size={18} />
+                          Out of Stock
+                        </>
+                      ) : !selectedVariant ? (
+                        <>
+                          <ShoppingCart size={18} />
+                          Complete your selection
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingCart size={18} />
+                          Subscribe — £
+                          {(
+                            selectedVariant.price *
+                            (1 -
+                              (selectedVariant.subscriptionDiscountPercent ||
+                                0) /
+                                100) *
+                            quantity
+                          ).toFixed(2)}
+                          /delivery
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleAddToCart}
+                      disabled={
+                        isAdded ||
+                        filteredGrindOptions.length === 0 ||
+                        !selectedVariant ||
+                        isOutOfStock ||
+                        quantity > availableStock
+                      }
+                      className={`w-full py-4 cursor-pointer rounded-xl font-bold text-base transition-all duration-200 flex items-center justify-center gap-2.5
+                        ${
+                          isAdded
+                            ? "bg-zinc-700 text-white"
+                            : isOutOfStock || !selectedVariant
+                            ? "bg-zinc-100 text-zinc-400 cursor-not-allowed"
+                            : "bg-zinc-900 text-white hover:bg-zinc-800 active:scale-[0.99] shadow-sm hover:shadow"
+                        }`}
+                      aria-disabled={
+                        isAdded ||
+                        filteredGrindOptions.length === 0 ||
+                        !selectedVariant ||
+                        isOutOfStock
+                      }
+                    >
+                      {isAdded ? (
+                        <>
+                          <Check size={18} strokeWidth={3} />
+                          Added to Cart!
+                        </>
+                      ) : isOutOfStock ? (
+                        <>
+                          <AlertCircle size={18} />
+                          Out of Stock
+                        </>
+                      ) : !selectedVariant ? (
+                        <>
+                          <ShoppingCart size={18} />
+                          Complete your selection
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingCart size={18} />
+                          Add to Cart — £{totalPrice.toFixed(2)}
+                        </>
+                      )}
+                    </button>
+                  )}
 
                   <div className="mt-3 flex items-center justify-center gap-4">
                     <span className="text-[11px] text-zinc-400 flex items-center gap-1">

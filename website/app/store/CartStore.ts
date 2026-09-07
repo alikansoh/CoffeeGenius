@@ -1,54 +1,55 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ProductType = "coffee" | "equipment" | "accessory" | "subscription";
+type ProductType = "coffee" | "equipment";
+
+export interface CartItemMetadata {
+  brand?: string;
+  [key: string]: unknown;
+}
 
 export interface CartItem {
+  metadata?: CartItemMetadata;
   id: string;
-  productType: ProductType;
-  productId: string;
-  variantId?: string;
   name: string;
   price: number;
   quantity: number;
-  img: string;
-  
-  // Coffee-specific fields (optional)
+  productType: ProductType;
+  img?: string;
+  slug?: string;
   size?: string;
   grind?: string;
-  sku?: string;
   roastType?: string;
-  
-  // Equipment/general fields (optional)
-  color?: string;
-  model?: string;
-  
-  // Stock info
   stock?: number;
-  
-  // Metadata - use string indexing for safety
-  metadata?: {
-    brand?: string;
-    category?: string;
-    [key: string]: string | number | boolean | undefined;
-  };
+  /** Parent product id (e.g. the Coffee document's _id) — id above is the variant's _id for coffee */
+  productId?: string;
+  variantId?: string;
+  sku?: string;
+  /** Subscribe & save — the basket can hold one subscription alongside normal one-off items;
+   *  checkout charges them as two separate payments (Stripe can't bill a recurring
+   *  subscription and a one-off purchase in a single payment). */
+  isSubscription?: boolean;
+  frequencyWeeks?: number;
+  /** The standard subscribe & save discount % baked into `price` — shown on checkout
+   *  as "Delivery every N weeks with X% discount", separate from any coupon/intro offer. */
+  subscriptionDiscountPercent?: number;
 }
 
 interface CartStore {
   items: CartItem[];
   isOpen: boolean;
-  
+
   addItem: (item: Omit<CartItem, "quantity">, quantity?: number) => void;
   removeItem: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
-  
+
   open: () => void;
   close: () => void;
   toggle: () => void;
-  
+
   getTotalItems: () => number;
-  getTotalPrice: () => number;
+  getTotalPrice: () => number; // subtotal
   getItemsByType: (type: ProductType) => CartItem[];
 }
 
@@ -60,14 +61,18 @@ const useCart = create<CartStore>()(
 
       addItem: (item, quantity = 1) => {
         set((state) => {
-          const existingItem = state.items. find((i) => i.id === item.id);
+          // Subscription cart keys already encode variant + frequency (see CoffeeClient), so
+          // the same lookup-by-id below naturally keeps "1kg every week" and "1kg every 2
+          // weeks" as separate lines, while re-subscribing to the exact same combo just bumps
+          // its quantity like any other item — no special-casing needed here.
+          const existingItem = state.items.find((i) => i.id === item.id);
 
           if (existingItem) {
-            const newQuantity = existingItem. quantity + quantity;
+            const newQuantity = existingItem.quantity + quantity;
             const stockLimit = item.stock ?? 999;
 
             if (newQuantity > stockLimit) {
-              console.warn(`Cannot add more.  Only ${stockLimit} in stock. `);
+              console.warn(`Cannot add more. Only ${stockLimit} in stock.`);
               return state;
             }
 
@@ -90,7 +95,7 @@ const useCart = create<CartStore>()(
 
       removeItem: (id) => {
         set((state) => ({
-          items: state.items. filter((item) => item.id !== id),
+          items: state.items.filter((item) => item.id !== id),
         }));
       },
 
@@ -136,7 +141,7 @@ const useCart = create<CartStore>()(
     }),
     {
       name: "universal-cart-storage",
-      version: 1,
+      version: 3,
       partialize: (state) => ({ items: state.items }),
     }
   )

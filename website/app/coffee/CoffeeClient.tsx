@@ -152,6 +152,7 @@ export default function ShopPage({ params }: { params: { slug?: string } }) {
               availableSizes: coffee.availableSizes,
               minPrice: coffee.minPrice,
               variants: coffee.variants,
+              totalStock: coffee.totalStock,
               bestSeller: coffee.bestSeller,
             };
           }

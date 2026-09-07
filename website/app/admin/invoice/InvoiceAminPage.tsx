@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
   Mail,
@@ -10,20 +10,22 @@ import {
   Eye,
   Plus,
   MoreHorizontal,
-  Trash2,
-  AlertCircle,
   Edit,
+  Trash2,
+  Bell,
+  AlertCircle,
   X,
   Calendar,
   Package,
-  DollarSign,
 } from "lucide-react";
 
 /*
   Classic (black & white) Admin Invoices Page
   - Uses neutral black/white/grays for UI
   - Keeps red badge for unpaid invoices
-  - Retains delete functionality and existing behavior
+  - Card actions redesigned: two primary actions (View / PDF) always visible,
+    secondary actions (Edit / Send reminder / Mark paid / Delete) live in a "more" menu
+  - Marking an invoice as paid now requires confirmation, same pattern as delete
 */
 
 type Address = {
@@ -93,12 +95,36 @@ export default function InvoicesPage() {
 
   const [selected, setSelected] = useState<Invoice | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Invoice | null>(null);
+  const [payConfirm, setPayConfirm] = useState<Invoice | null>(null);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
+  // which card's "more" menu is open
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     fetchInvoices();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // close the "more" menu on outside click / escape
+  useEffect(() => {
+    if (!menuOpenId) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpenId(null);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpenId(null);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [menuOpenId]);
 
   const fetchInvoices = async () => {
     setLoading(true);
@@ -191,6 +217,25 @@ export default function InvoicesPage() {
     } catch (err: unknown) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Failed to mark paid");
+    } finally {
+      setActionLoading((s) => ({ ...s, [id]: false }));
+      setPayConfirm(null);
+    }
+  };
+
+  const sendReminder = async (id: string) => {
+    setActionLoading((s) => ({ ...s, [id]: true }));
+    try {
+      const res = await fetch(`/api/invoices/${id}/send-reminder`, { method: "POST" });
+      if (!res.ok) {
+        const json: ApiError = await res.json().catch(() => ({ error: "" }));
+        throw new Error(json.error || `Failed to send reminder (${res.status})`);
+      }
+      setError("Reminder sent successfully");
+      setTimeout(() => setError(null), 4000);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to send reminder");
     } finally {
       setActionLoading((s) => ({ ...s, [id]: false }));
     }
@@ -321,7 +366,7 @@ export default function InvoicesPage() {
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error / status message */}
         {error && (
           <div className="bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-md mb-6 flex items-center gap-3">
             <AlertCircle size={20} />
@@ -361,120 +406,161 @@ export default function InvoicesPage() {
           <>
             {/* Invoice cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-              {pageItems.map((inv) => (
-                <article
-                  key={inv._id}
-                  className="group bg-white rounded-md border border-gray-100 shadow-sm hover:shadow-md transition overflow-hidden"
-                >
-                  {/* Thin status stripe (keeps red for unpaid) */}
-                  <div className="relative h-1 bg-gray-50">
-                    {inv.paymentStatus === "unpaid" && (
-                      <div className="absolute inset-0 bg-red-500" />
-                    )}
-                    {inv.paymentStatus === "paid" && <div className="absolute inset-0 bg-black/5" />}
-                    {inv.paymentStatus === "partial" && <div className="absolute inset-0 bg-gray-200" />}
-                  </div>
+              {pageItems.map((inv) => {
+                const canRemind = inv.source === "manual" && inv.paymentStatus !== "paid" && !!inv.client?.email;
+                return (
+                  <article
+                    key={inv._id}
+                    className="group bg-white rounded-md border border-gray-100 shadow-sm hover:shadow-md transition overflow-visible relative"
+                  >
+                    {/* Thin status stripe (keeps red for unpaid) */}
+                    <div className="relative h-1 bg-gray-50 rounded-t-md overflow-hidden">
+                      {inv.paymentStatus === "unpaid" && (
+                        <div className="absolute inset-0 bg-red-500" />
+                      )}
+                      {inv.paymentStatus === "paid" && <div className="absolute inset-0 bg-black/10" />}
+                      {inv.paymentStatus === "partial" && <div className="absolute inset-0 bg-gray-300" />}
+                    </div>
 
-                  <div className="p-6">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs text-gray-500 mb-1">#{inv.orderNumber}</div>
-                        <h3 className="text-lg font-semibold text-gray-900 truncate mb-1">
-                          {inv.client?.name || "Unnamed client"}
-                        </h3>
-                        <div className="text-xs text-gray-500 truncate flex items-center gap-1">
-                          <Mail size={12} />
-                          {inv.client?.email || "No email"}
+                    <div className="p-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs text-gray-500 mb-1">#{inv.orderNumber}</div>
+                          <h3 className="text-lg font-semibold text-gray-900 truncate mb-1">
+                            {inv.client?.name || "Unnamed client"}
+                          </h3>
+                          <div className="text-xs text-gray-500 truncate flex items-center gap-1">
+                            <Mail size={12} />
+                            {inv.client?.email || "No email"}
+                          </div>
+                        </div>
+
+                        <div className="text-right ml-4">
+                          <div className="text-xs text-gray-500 mb-1">Total</div>
+                          <div className="text-2xl font-bold text-gray-900">{formatCurrency(inv.total, inv.currency?.toUpperCase() ?? "GBP")}</div>
                         </div>
                       </div>
 
-                      <div className="text-right ml-4">
-                        <div className="text-xs text-gray-500 mb-1">Total</div>
-                        <div className="text-2xl font-bold text-gray-900">{formatCurrency(inv.total, inv.currency?.toUpperCase() ?? "GBP")}</div>
-                      </div>
-                    </div>
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <Calendar size={14} className="text-gray-400" />
+                          <span>{new Date(inv.createdAt || "").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
+                        </div>
 
-                    <div className="space-y-2 mb-4">
-                      <div className="flex items-center gap-2 text-xs text-gray-600">
-                        <Calendar size={14} className="text-gray-400" />
-                        <span>{new Date(inv.createdAt || "").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</span>
-                      </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {inv.paymentStatus === "paid" ? (
+                            <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <CheckCircle size={14} /> Paid
+                            </span>
+                          ) : inv.paymentStatus === "partial" ? (
+                            <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <Clock size={14} /> Partial
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                              <AlertCircle size={14} /> Unpaid
+                            </span>
+                          )}
 
-                      <div className="flex items-center gap-2">
-                        {inv.paymentStatus === "paid" ? (
-                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs font-medium">
-                            <CheckCircle size={14} /> Paid
+                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                            <Package size={12} /> {inv.items?.length ?? 0} items
                           </span>
-                        ) : inv.paymentStatus === "partial" ? (
-                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs font-medium">
-                            <Clock size={14} /> Partial
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 bg-red-50 text-red-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                            <AlertCircle size={14} /> Unpaid
-                          </span>
-                        )}
 
-                        <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                          <Package size={12} /> {inv.items?.length ?? 0} items
-                        </span>
-
-                        <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
-                          {inv.source === "stripe" ? "Stripe" : "Manual"}
-                        </span>
+                          <span className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-xs font-medium">
+                            {inv.source === "stripe" ? "Stripe" : "Manual"}
+                          </span>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                      <button
-                        onClick={() => setSelected(inv)}
-                        className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 transition"
-                        title="View details"
-                      >
-                        <Eye size={14} /> View
-                      </button>
-
-                      {inv.source === "manual" && (
-                        <a
-                          href={`/admin/invoice/edit/${inv._id}`}
-                          className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 transition"
-                          title="Edit invoice"
-                        >
-                          <Edit size={14} /> Edit
-                        </a>
-                      )}
-
-                      <button
-                        onClick={() => downloadInvoice(inv._id, inv.orderNumber)}
-                        disabled={!!actionLoading[inv._id]}
-                        className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 transition disabled:opacity-50"
-                        title="Download PDF"
-                      >
-                        <Download size={14} /> {actionLoading[inv._id] ? "..." : "PDF"}
-                      </button>
-
-                      {inv.paymentStatus !== "paid" ? (
+                      {/* Action row: two clear primary buttons + a "more" menu for secondary actions */}
+                      <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
                         <button
-                          onClick={() => markPaid(inv._id)}
-                          disabled={!!actionLoading[inv._id]}
-                          className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm transition disabled:opacity-50"
-                          title="Mark as paid"
+                          onClick={() => setSelected(inv)}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-black text-white rounded-md text-sm font-medium hover:opacity-90 active:opacity-80 transition"
                         >
-                          <CheckCircle size={14} />
+                          <Eye size={15} /> View
                         </button>
-                      ) : null}
 
-                      <button
-                        onClick={() => setDeleteConfirm(inv)}
-                        className="px-3 py-2 border border-red-100 text-red-600 rounded-md text-sm hover:bg-red-50 transition"
-                        title="Delete invoice"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                        <button
+                          onClick={() => downloadInvoice(inv._id, inv.orderNumber)}
+                          disabled={!!actionLoading[inv._id]}
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm font-medium hover:bg-gray-50 active:bg-gray-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Download size={15} /> {actionLoading[inv._id] ? "…" : "PDF"}
+                        </button>
+
+                        <div className="relative shrink-0" ref={menuOpenId === inv._id ? menuRef : undefined}>
+                          <button
+                            onClick={() => setMenuOpenId((cur) => (cur === inv._id ? null : inv._id))}
+                            className="inline-flex items-center justify-center w-9 h-9 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 active:bg-gray-100 transition"
+                            aria-haspopup="menu"
+                            aria-expanded={menuOpenId === inv._id}
+                            aria-label="More actions"
+                            title="More actions"
+                          >
+                            <MoreHorizontal size={16} />
+                          </button>
+
+                          {menuOpenId === inv._id && (
+                            <div
+                              role="menu"
+                              className="absolute right-0 bottom-full mb-2 w-48 bg-white border border-gray-200 rounded-md shadow-lg py-1 z-20"
+                            >
+                              {inv.source === "manual" && (
+                                <a
+                                  href={`/admin/invoice/edit/${inv._id}`}
+                                  role="menuitem"
+                                  className="flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50"
+                                >
+                                  <Edit size={14} /> Edit invoice
+                                </a>
+                              )}
+
+                              {canRemind && (
+                                <button
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setMenuOpenId(null);
+                                    sendReminder(inv._id);
+                                  }}
+                                  disabled={!!actionLoading[inv._id]}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 text-left disabled:opacity-50"
+                                >
+                                  <Bell size={14} /> Send reminder
+                                </button>
+                              )}
+
+                              {inv.paymentStatus !== "paid" && (
+                                <button
+                                  role="menuitem"
+                                  onClick={() => {
+                                    setMenuOpenId(null);
+                                    setPayConfirm(inv);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-gray-50 text-left"
+                                >
+                                  <CheckCircle size={14} /> Mark as paid
+                                </button>
+                              )}
+
+                              <button
+                                role="menuitem"
+                                onClick={() => {
+                                  setMenuOpenId(null);
+                                  setDeleteConfirm(inv);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 text-left"
+                              >
+                                <Trash2 size={14} /> Delete invoice
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
 
             {/* Pagination */}
@@ -521,7 +607,7 @@ export default function InvoicesPage() {
                 <h2 className="text-xl font-semibold">#{selected.orderNumber}</h2>
                 <div className="text-sm text-gray-600 mt-1">{selected.client?.name} • {selected.client?.email}</div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap justify-end">
                 <button
                   onClick={() => downloadInvoice(selected._id, selected.orderNumber)}
                   disabled={!!actionLoading[selected._id]}
@@ -539,14 +625,21 @@ export default function InvoicesPage() {
                   </a>
                 )}
 
+                {selected.source === "manual" && selected.paymentStatus !== "paid" && selected.client?.email && (
+                  <button
+                    onClick={() => sendReminder(selected._id)}
+                    disabled={!!actionLoading[selected._id]}
+                    className="inline-flex items-center gap-2 px-3 py-2 border border-gray-300 text-gray-800 rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <Bell size={16} /> {actionLoading[selected._id] ? "Sending…" : "Send Reminder"}
+                  </button>
+                )}
+
                 {selected.paymentStatus !== "paid" && (
                   <button
-                    onClick={() => {
-                      markPaid(selected._id);
-                      setSelected(null);
-                    }}
+                    onClick={() => setPayConfirm(selected)}
                     disabled={!!actionLoading[selected._id]}
-                    className="inline-flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-md text-sm hover:bg-green-700 disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-3 py-2 bg-black text-white rounded-md text-sm hover:opacity-90 disabled:opacity-50"
                   >
                     <CheckCircle size={16} /> Mark paid
                   </button>
@@ -659,9 +752,42 @@ export default function InvoicesPage() {
         </div>
       )}
 
+      {/* Mark as paid confirmation modal */}
+      {payConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-md shadow-xl w-full max-w-md p-6">
+            <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle size={26} className="text-black" />
+            </div>
+
+            <h3 className="text-lg font-semibold text-gray-900 text-center mb-2">Mark as paid?</h3>
+            <p className="text-sm text-gray-600 text-center mb-6">
+              This will mark invoice <span className="font-medium">#{payConfirm.orderNumber}</span> (
+              {formatCurrency(payConfirm.total, payConfirm.currency?.toUpperCase())}) as paid and record today&apos;s date. This action cannot be undone.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPayConfirm(null)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-md text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => markPaid(payConfirm._id)}
+                disabled={!!actionLoading[payConfirm._id]}
+                className="flex-1 px-4 py-2 bg-black text-white rounded-md text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                {actionLoading[payConfirm._id] ? "Marking…" : "Mark as Paid"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Delete confirmation modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-md shadow-xl w-full max-w-md p-6">
             <div className="w-14 h-14 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
               <Trash2 size={26} className="text-red-600" />

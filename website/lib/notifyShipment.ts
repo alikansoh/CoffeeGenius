@@ -60,7 +60,7 @@ type OrderLike = {
 };
 
 type SendResult =
-  | { sent: true; info: any }
+  | { sent: true; info: unknown }
   | { sent: false; error?: string; reason?: "no-recipient" | "send-failed" };
 
 function formatCurrency(value = 0, currency = "GBP") {
@@ -202,7 +202,7 @@ export async function notifyShipmentToCustomer(opts: {
   const email =
     (opts.order.shippingAddress && opts.order.shippingAddress.email) ||
     (opts.order.client && opts.order.client.email) ||
-    (opts.order as any).billingAddress?.email;
+    (opts.order as { billingAddress?: { email?: string } }).billingAddress?.email;
 
   if (!email || typeof email !== "string") {
     return {
@@ -532,7 +532,7 @@ export async function notifyShipmentToCustomer(opts: {
 
   const textContent = textContentLines.join("\n");
 
-  const payload: Record<string, any> = {
+  const payload: Record<string, unknown> = {
     sender: { name: senderName, email: senderEmail },
     to: [{ email }],
     subject: `${companyName} — Your order ${orderNumber} has shipped`,
@@ -562,7 +562,7 @@ export async function notifyShipmentToCustomer(opts: {
 
     const info = await resp.json().catch(() => ({}));
     return { sent: true, info };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       sent: false,
       error: err instanceof Error ? err.message : String(err),

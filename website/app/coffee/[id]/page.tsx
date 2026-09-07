@@ -31,6 +31,9 @@ export async function generateStaticParams() {
 }
 
 export const dynamicParams = true;
+// Product data (price, stock, subscription settings) can change in the admin
+// at any time — always render with fresh data instead of a stale static page.
+export const revalidate = 0;
 
 // ── Per-product metadata ─────────────────────────────────────────────────────
 export async function generateMetadata({

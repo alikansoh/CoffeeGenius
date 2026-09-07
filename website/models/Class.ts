@@ -115,8 +115,8 @@ CourseSchema.statics.migrateSessionStringsToDates = async function migrateSessio
   const cursor = this.find({ "sessions.end": { $exists: true } }).cursor();
   for await (const doc of cursor) {
     let changed = false;
-    const newSessions = (doc.sessions || []).map((s: any) => {
-      const out: any = { ...s };
+    const newSessions = (doc.sessions || []).map((s: Record<string, unknown>) => {
+      const out: Record<string, unknown> = { ...s };
       if (typeof out.start === "string") {
         const d = new Date(out.start);
         if (!Number.isNaN(d.getTime())) {
@@ -167,18 +167,19 @@ CourseSchema.statics.attachLazyCleanup = function attachLazyCleanup(rateMs = 5 *
     }
   }
 
-  async function preHook(this: any) {
+  async function preHook(this: unknown) {
     if (typeof window !== "undefined") return;
     await maybeRun();
   }
 
   const flag = "__course_lazy_cleanup_attached__";
-  if (!(CourseSchema as any)[flag]) {
+  const taggedSchema = CourseSchema as unknown as Record<string, boolean>;
+  if (!taggedSchema[flag]) {
     CourseSchema.pre("find", preHook);
     CourseSchema.pre("findOne", preHook);
     CourseSchema.pre("aggregate", preHook);
     CourseSchema.pre("findOneAndUpdate", preHook);
-    (CourseSchema as any)[flag] = true;
+    taggedSchema[flag] = true;
   }
 };
 

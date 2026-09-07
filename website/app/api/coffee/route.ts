@@ -41,6 +41,7 @@ interface CoffeeAggregateResult {
   variety?: string;
   brewing?: string;
   bestSeller?: boolean;
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
   variants: CoffeeVariantData[];
@@ -69,6 +70,7 @@ interface TransformedCoffee {
   variety?: string;
   brewing?: string;
   bestSeller?: boolean;
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
   variantCount: number;
@@ -197,9 +199,10 @@ export async function GET(request: NextRequest) {
             ],
           },
           bestSeller: { $ifNull: ["$bestSeller", false] },
+          order: { $ifNull: ["$order", 0] },
         },
       },
-      { $sort: { createdAt: -1 } },
+      { $sort: { order: 1, createdAt: -1 } },
       { $skip: skip },
       { $limit: limit },
       {
@@ -221,6 +224,7 @@ export async function GET(request: NextRequest) {
           variety: 1,
           brewing: 1,
           bestSeller: 1,
+          order: 1,
           variantCount: 1,
           minPrice: 1,
           availableGrinds: 1,
@@ -291,6 +295,7 @@ export async function GET(request: NextRequest) {
         variety: coffee.variety,
         brewing: coffee.brewing,
         bestSeller: coffee.bestSeller,
+        order: coffee.order,
         createdAt: coffee.createdAt,
         updatedAt: coffee.updatedAt,
         variantCount: coffee.variantCount,
@@ -363,6 +368,7 @@ export async function POST(request: NextRequest) {
       variety,
       brewing,
       bestSeller,
+      order,
     } = body;
 
     // Validate required fields
@@ -405,6 +411,7 @@ export async function POST(request: NextRequest) {
       variety,
       brewing,
       bestSeller: bestSeller || false,
+      order: order ?? 0,
     });
 
     await coffee.save();

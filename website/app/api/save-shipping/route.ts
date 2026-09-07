@@ -23,6 +23,22 @@ function truncateForStripe(s: string, max = 500) {
   return s.slice(0, max - 3) + '...';
 }
 
+/**
+ * Apple Pay / Google Pay (the Payment Request "one-tap" flow) pulls the shipping address
+ * straight from the device's Wallet/Contacts entry with no review step shown to the customer.
+ * Those entries frequently omit a house/door number entirely — a real, common failure mode,
+ * not a Stripe or UK-specific edge case. Simple, deliberately conservative heuristic: if the
+ * first address line has no digit anywhere in it, it's very likely missing a house number
+ * (accepts some false positives on genuinely-named-only properties — that's fine, this only
+ * flags the order for a human to glance at, it never blocks the order).
+ */
+function looksLikeMissingHouseNumber(line1: unknown): boolean {
+  if (typeof line1 !== 'string') return false;
+  const trimmed = line1.trim();
+  if (!trimmed) return false;
+  return !/\d/.test(trimmed);
+}
+
 export async function POST(req: Request) {
   try {
     const raw = await req.json().catch(() => ({} as Record<string, unknown>));
@@ -32,6 +48,8 @@ export async function POST(req: Request) {
     if (!paymentIntentId) {
       return NextResponse.json({ success: false, message: 'Missing paymentIntentId' }, { status: 400 });
     }
+
+    const source = typeof body['source'] === 'string' ? body['source'] : undefined;
 
     // Allow shipping/billing provided as objects OR JSON strings
     const shippingAddressRaw = parseMaybeJson(body['shippingAddress']);
@@ -57,9 +75,26 @@ export async function POST(req: Request) {
     }
 
     let updated = false;
+    // metadata is Schema.Types.Mixed — Mongoose doesn't reliably track nested mutations on
+    // Mixed fields (only a full reassignment + markModified is guaranteed to persist), so build
+    // the whole object here in a plain local variable and assign it to order.metadata exactly
+    // once at the end, rather than mutating order.metadata's properties as we go.
+    const orderMetadata: Record<string, unknown> = { ...(order.metadata ?? {}) };
+
     if (shippingAddress) {
       order.shippingAddress = shippingAddress;
       updated = true;
+
+      // Flag, don't block — a wallet-paid order with no digit anywhere in the street address
+      // likely means Apple/Google Pay handed over a Contacts entry with no house number. The
+      // order still goes through; this just puts a warning in front of whoever packs it.
+      if (source === 'payment_request' && looksLikeMissingHouseNumber(shippingAddress.line1)) {
+        orderMetadata.addressNeedsReview = true;
+        orderMetadata.addressReviewReason =
+          'Apple Pay / Google Pay — address may be missing a house or door number';
+      } else {
+        orderMetadata.addressNeedsReview = false;
+      }
     }
     if (billingAddress) {
       order.billingAddress = billingAddress;
@@ -71,9 +106,10 @@ export async function POST(req: Request) {
     }
 
     if (updated) {
-      order.metadata = { ...(order.metadata ?? {}) };
-      order.metadata.shippingConfirmed = true;
-      order.metadata.shippingSavedAt = new Date().toISOString();
+      orderMetadata.shippingConfirmed = true;
+      orderMetadata.shippingSavedAt = new Date().toISOString();
+      order.metadata = orderMetadata;
+      order.markModified('metadata');
       await order.save();
       console.log('save-shipping: saved addresses to DB for order', order._id?.toString());
     } else {

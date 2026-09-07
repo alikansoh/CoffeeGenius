@@ -30,8 +30,10 @@ interface InvoiceData {
   orderNumber: string;
   items: InvoiceItem[];
   subtotal: number;
+  discount?: number;
   shipping: number;
   total: number;
+  couponName?: string | null;
   client: {
     name: string;
     email: string;
@@ -112,7 +114,6 @@ function formatAddress(addr: InvoiceAddress | null | undefined, clientName?: str
   return lines.filter(Boolean);
 }
 
-// Helper to wrap text to fit within a maximum width
 function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: number): string[] {
   const words = text.split(' ');
   const lines: string[] = [];
@@ -141,7 +142,6 @@ function wrapText(text: string, font: PDFFont, fontSize: number, maxWidth: numbe
 export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyInfo): Promise<Buffer> {
   const pdfDoc = await PDFDocument.create();
 
-  // Embed fonts
   const fontBytes = tryLoadFontBytes();
   let font: PDFFont;
   let boldFont: PDFFont;
@@ -149,7 +149,6 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   try {
     if (fontBytes) {
       font = await pdfDoc.embedFont(fontBytes);
-      // If the ttf doesn't provide a bold variant we'll reuse the same font for bold.
       boldFont = font;
       console.log('[Invoice] Embedded custom TTF font for PDF');
     } else {
@@ -157,18 +156,15 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
     }
   } catch (err) {
-    // Fallback to built-in fonts
     console.warn('[Invoice] Failed to embed custom font, falling back to Helvetica:', (err as Error).message);
     font = await pdfDoc.embedFont(StandardFonts.Helvetica);
     boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   }
 
-  // Optional logo
   const logoBytes = tryLoadLogoBytes(company.logoPath);
   let logoImage: unknown | undefined;
   if (logoBytes) {
     try {
-      // PNG files start with the PNG signature bytes 89 50 4E 47
       const isPng = logoBytes.length >= 8 && logoBytes.slice(0, 8).toString('hex').includes('89504e47');
       logoImage = isPng ? await pdfDoc.embedPng(logoBytes) : await pdfDoc.embedJpg(logoBytes);
     } catch {
@@ -176,16 +172,14 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     }
   }
 
-  // IMPORTANT: use a proper tuple type for pageSize so TS accepts it where a tuple is expected.
-  const pageSize: [number, number] = [595.28, 841.89]; // A4 in points
+  const pageSize: [number, number] = [595.28, 841.89];
   let page = pdfDoc.addPage(pageSize);
   let pageWidth = page.getWidth();
   let pageHeight = page.getHeight();
   const margin = 50;
-  const sectionGap = 25; // Gap between major sections
+  const sectionGap = 25;
   let cursorY = pageHeight - margin;
 
-  // Clean color scheme
   const darkText = rgb(0.15, 0.15, 0.15);
   const lightText = rgb(0.45, 0.45, 0.45);
   const accentBlue = rgb(0.2, 0.4, 0.7);
@@ -205,10 +199,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   // ============= HEADER SECTION =============
   cursorY = pageHeight - 60;
 
-  // Company logo or name
   if (logoImage) {
-    // The embedded image types returned by pdf-lib have a scale() method and width/height properties.
-    // Use a runtime narrow to access those safely.
     const maybeImage = logoImage as
       | {
           scale: (n: number) => { width: number; height: number };
@@ -225,7 +216,6 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       const logoW = dims.width * scale;
       const logoH = dims.height * scale;
 
-      // pdf-lib's page.drawImage accepts the embedded image object directly.
       page.drawImage(maybeImage as unknown as Parameters<typeof page.drawImage>[0], {
         x: margin + 20,
         y: cursorY - logoH,
@@ -253,7 +243,6 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     cursorY -= 5;
   }
 
-  // Company details on the left (with width constraint)
   const companyDetailsStartY = cursorY;
   const companyDetails = [
     company.address,
@@ -266,7 +255,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
 
   let companyY = companyDetailsStartY;
   const maxCompanyWidth = 250;
-  
+
   for (const line of companyDetails) {
     const wrappedLines = wrapText(line, font, 9, maxCompanyWidth);
     for (const wrappedLine of wrappedLines) {
@@ -275,16 +264,14 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     }
   }
 
-  // Invoice title and details on the right (ensure no overlap)
   const rightColX = pageWidth - margin - 180;
   const rightColStartY = companyDetailsStartY + 10;
-  
+
   drawText('INVOICE', rightColX, rightColStartY, 24, accentBlue, boldFont);
 
   let rightY = rightColStartY - 35;
   drawText('Invoice Number', rightColX, rightY, 9, lightText);
-  
-  // Wrap invoice number if too long
+
   const invoiceNumLines = wrapText(invoice.orderNumber, boldFont, 11, 180);
   rightY -= 14;
   for (const line of invoiceNumLines) {
@@ -313,29 +300,25 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   );
   rightY -= 30;
 
-  // Set cursor to the lower of the two columns plus section gap
   cursorY = Math.min(companyY, rightY) - sectionGap;
 
   // ============= ADDRESSES SECTION =============
   const addressStartY = cursorY;
-  
-  // Bill To (left side, constrained width)
+
   drawText('BILL TO', margin, cursorY, 10, lightText, boldFont);
   cursorY -= 18;
 
   const maxAddressWidth = 220;
   const billing = invoice.billingAddress ?? invoice.shippingAddress;
   const billLines = formatAddress(billing ?? null, invoice.client.name);
-  
+
   if (billLines.length > 0) {
-    // First line (name) in bold, wrapped if needed
     const nameLines = wrapText(billLines[0], boldFont, 11, maxAddressWidth);
     for (const line of nameLines) {
       drawText(line, margin, cursorY, 11, darkText, boldFont);
       cursorY -= 14;
     }
-    
-    // Rest of address lines
+
     for (let i = 1; i < billLines.length; i++) {
       const wrappedLines = wrapText(billLines[i], font, 9, maxAddressWidth);
       for (const line of wrappedLines) {
@@ -359,7 +342,7 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       cursorY -= 12;
     }
   }
-  
+
   if (invoice.client.phone) {
     const phoneLines = wrapText(invoice.client.phone, font, 9, maxAddressWidth);
     for (const line of phoneLines) {
@@ -368,7 +351,6 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     }
   }
 
-  // Ship To (right side, constrained width)
   const shipX = pageWidth / 2 + 30;
   let shipY = addressStartY;
 
@@ -377,14 +359,12 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
 
   const shipLines = formatAddress(invoice.shippingAddress, invoice.client.name);
   if (shipLines.length > 0) {
-    // First line (name) in bold, wrapped
     const shipNameLines = wrapText(shipLines[0], boldFont, 11, maxAddressWidth);
     for (const line of shipNameLines) {
       drawText(line, shipX, shipY, 11, darkText, boldFont);
       shipY -= 14;
     }
-    
-    // Rest of shipping address
+
     for (let i = 1; i < shipLines.length; i++) {
       const wrappedLines = wrapText(shipLines[i], font, 9, maxAddressWidth);
       for (const line of wrappedLines) {
@@ -397,13 +377,11 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
     shipY -= 12;
   }
 
-  // Move cursor below both address blocks
   cursorY = Math.min(cursorY, shipY) - sectionGap;
 
   // ============= ITEMS TABLE =============
   const tableStartY = cursorY;
 
-  // Table header
   const headerHeight = 35;
   page.drawRectangle({
     x: margin,
@@ -427,25 +405,21 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
 
   cursorY = tableStartY - headerHeight - 10;
 
-  // Table rows with dynamic height based on content
   const baseRowHeight = 35;
   const minBottomMargin = 200;
 
   for (let i = 0; i < invoice.items.length; i++) {
     const item = invoice.items[i];
 
-    // Calculate wrapped lines for item name
     const itemNameLines = wrapText(item.name, font, 10, descriptionMaxWidth);
     const rowHeight = Math.max(baseRowHeight, itemNameLines.length * 14 + 15);
 
     if (cursorY - rowHeight < minBottomMargin) {
-      // New page (use the same tuple-typed pageSize)
       page = pdfDoc.addPage(pageSize);
       pageWidth = page.getWidth();
       pageHeight = page.getHeight();
       cursorY = pageHeight - margin - 50;
 
-      // Redraw header
       page.drawRectangle({
         x: margin,
         y: cursorY - headerHeight,
@@ -462,7 +436,6 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       cursorY -= headerHeight + 10;
     }
 
-    // Row separator line
     page.drawLine({
       start: { x: margin, y: cursorY },
       end: { x: pageWidth - margin, y: cursorY },
@@ -470,16 +443,16 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
       color: borderGray,
     });
 
-    // Draw item name (wrapped)
     let itemY = cursorY - 18;
     for (const line of itemNameLines) {
       drawText(line, colDescX, itemY, 10, darkText);
       itemY -= 14;
     }
-if (item.roastType) {   drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8, lightText);
-   itemY -= 12; }
+    if (item.roastType) {
+      drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8, lightText);
+      itemY -= 12;
+    }
 
-    // Draw quantity, price, and total (aligned to first line)
     const firstLineY = cursorY - 18;
     drawText(String(item.qty), colQtyX, firstLineY, 10, darkText);
     drawText(`£${Number(item.unitPrice ?? 0).toFixed(2)}`, colPriceX, firstLineY, 10, lightText);
@@ -488,7 +461,6 @@ if (item.roastType) {   drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8,
     cursorY -= rowHeight;
   }
 
-  // Bottom table border
   page.drawLine({
     start: { x: margin, y: cursorY },
     end: { x: pageWidth - margin, y: cursorY },
@@ -502,6 +474,9 @@ if (item.roastType) {   drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8,
   const totalsX = pageWidth - margin - 200;
   let totalsY = cursorY;
 
+  const discount = Number(invoice.discount ?? 0);
+  const hasDiscount = discount > 0;
+
   // Subtotal
   drawText('Subtotal', totalsX, totalsY, 10, lightText);
   const subtotalStr = `£${Number(invoice.subtotal ?? 0).toFixed(2)}`;
@@ -509,6 +484,16 @@ if (item.roastType) {   drawText(`Roast: ${item.roastType}`, colDescX, itemY, 8,
   drawText(subtotalStr, pageWidth - margin - subtotalW, totalsY, 10, darkText);
 
   totalsY -= 25;
+
+  // Discount
+  if (hasDiscount) {
+    const couponLabel = invoice.couponName ? ` (${invoice.couponName})` : '';
+    drawText(`Discount${couponLabel}`, totalsX, totalsY, 10, lightText);
+    const discountStr = `-£${discount.toFixed(2)}`;
+    const discountW = font.widthOfTextAtSize(discountStr, 10);
+    drawText(discountStr, pageWidth - margin - discountW, totalsY, 10, rgb(0.8, 0.25, 0.25));
+    totalsY -= 25;
+  }
 
   // Shipping
   drawText('Shipping', totalsX, totalsY, 10, lightText);
@@ -584,6 +569,12 @@ export async function sendInvoiceEmail(invoice: InvoiceData, pdfBuffer: Buffer):
   const toEmail = invoice.client.email;
   const subject = `Invoice #${invoice.orderNumber} - Thank you for your order!`;
   const paidDate = typeof invoice.paidAt === 'string' ? new Date(invoice.paidAt) : invoice.paidAt;
+  const discount = Number(invoice.discount ?? 0);
+  const hasDiscount = discount > 0;
+
+  const discountRow = hasDiscount
+    ? `<tr><td style="padding: 8px 0; color: #666;">Discount${invoice.couponName ? ` (${escapeHtml(invoice.couponName)})` : ''}</td><td style="padding: 8px 0; text-align: right; color: #c0392b;">-£${discount.toFixed(2)}</td></tr>`
+    : '';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -594,6 +585,9 @@ export async function sendInvoiceEmail(invoice: InvoiceData, pdfBuffer: Buffer):
         .container { max-width: 600px; margin: 0 auto; padding: 20px; }
         .header { background: #f5f5f5; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
         .invoice-details { background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 5px; }
+        .summary-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .summary-table td { border-bottom: 1px solid #eee; }
+        .summary-table .total-row td { font-weight: bold; border-top: 2px solid #333; border-bottom: none; font-size: 16px; }
         .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #666; }
       </style>
     </head>
@@ -610,12 +604,18 @@ export async function sendInvoiceEmail(invoice: InvoiceData, pdfBuffer: Buffer):
           <p><strong>Invoice Number:</strong> ${escapeHtml(invoice.orderNumber)}</p>
           <p><strong>Order ID:</strong> ${escapeHtml(invoice.orderId)}</p>
           <p><strong>Date:</strong> ${paidDate ? paidDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}</p>
-          <p><strong>Total Amount:</strong> £${invoice.total.toFixed(2)}</p>
         </div>
         
         <h3>Items Ordered:</h3>
         <ul>
 ${invoice.items.map(item => `<li>${escapeHtml(item.name)}${item.roastType ? ` (${item.roastType} roast)` : ''} - Qty: ${item.qty} - £${item.totalPrice.toFixed(2)}</li>`).join('')}        </ul>
+
+        <table class="summary-table">
+          <tr><td>Subtotal</td><td style="text-align: right;">£${invoice.subtotal.toFixed(2)}</td></tr>
+          ${discountRow}
+          <tr><td>Shipping</td><td style="text-align: right;">£${invoice.shipping.toFixed(2)}</td></tr>
+          <tr class="total-row"><td>Total</td><td style="text-align: right; color: #2d5a8d;">£${invoice.total.toFixed(2)}</td></tr>
+        </table>
         
         ${invoice.shippingAddress ? `
         <div style="margin-top: 20px;">
@@ -657,7 +657,6 @@ ${invoice.items.map(item => `<li>${escapeHtml(item.name)}${item.roastType ? ` ($
 
   let res: globalThis.Response;
   try {
-    // Use the platform fetch (available in Node 18+ / Next.js). Provide appropriate headers.
     res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -708,7 +707,6 @@ export async function processInvoice(invoice: InvoiceData, company: CompanyInfo)
 }
 
 /* ---------------------- Utilities ----------------------------------- */
-// Minimal HTML-escaping to avoid injection in the email body.
 function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')

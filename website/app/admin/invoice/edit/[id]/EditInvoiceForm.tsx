@@ -43,6 +43,8 @@ interface Invoice {
   source?: "manual" | "stripe";
   paymentStatus?: "unpaid" | "paid" | "partial";
   paidAt?: string | null;
+  remindersEnabled?: boolean;
+  recurring?: { enabled?: boolean; dayOfMonth?: number };
 }
 
 interface FetchInvoiceResponse {

@@ -21,6 +21,8 @@ import {
   FaFileAlt,
   FaMugHot,
   FaReceipt,
+  FaTag,
+  FaSyncAlt,
 } from "react-icons/fa";
 import { TbCodeVariablePlus } from "react-icons/tb";
 
@@ -124,6 +126,13 @@ export default function AdminLayout({
       category: "commerce",
     },
     {
+      id: "subscriptions",
+      label: "Subscriptions",
+      icon: <FaSyncAlt size={20} />,
+      href: "/admin/subscriptions",
+      category: "commerce",
+    },
+    {
       id: "customers",
       label: "Customers",
       icon: <FaUsers size={20} />,
@@ -163,6 +172,13 @@ export default function AdminLayout({
       label: "Invoice ",
       icon: <FaReceipt size={20} />,
       href: "/admin/invoice",
+      category: "settings",
+    },
+    {
+      id: "coupons",
+      label: "Coupons",
+      icon: <FaTag size={20} />,
+      href: "/admin/coupons",
       category: "settings",
     },
     {

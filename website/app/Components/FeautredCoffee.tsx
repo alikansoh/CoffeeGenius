@@ -49,6 +49,7 @@ interface ApiCoffee {
   availableGrinds: string[];
   availableSizes: SizePrice[];
   variants: Variant[];
+  totalStock?: number;
   bestSeller: boolean;
 }
 
@@ -66,6 +67,7 @@ export type Product = {
   availableSizes?: SizePrice[];
   availableGrinds?: string[];
   variants?: Variant[];
+  totalStock?: number;
   bestSeller?: boolean;
 };
 
@@ -532,6 +534,11 @@ function ProductCard({
                 <span>Best Seller</span>
               </div>
             )}
+            {(product.totalStock ?? 1) <= 0 && (
+              <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold shadow-lg uppercase tracking-wide">
+                Out of Stock
+              </div>
+            )}
             <Image
               src={cardImageSrc}
               alt={product.name}
@@ -952,6 +959,7 @@ export default function BestSellerSlider() {
               availableSizes: coffee.availableSizes,
               availableGrinds: coffee.availableGrinds,
               variants: coffee.variants,
+              totalStock: coffee.totalStock,
               bestSeller: coffee.bestSeller,
             };
           }

@@ -1,5 +1,12 @@
 'use client';
 
+// Explicit reference instead of relying on implicit global type acquisition — this is the
+// only file in the project using google.maps types, and editor TS servers (as opposed to a
+// full `tsc` build) can intermittently drop rarely-referenced ambient global libs during
+// incremental reanalysis, causing phantom "implicitly any" errors here that a clean CLI
+// compile never shows.
+/// <reference types="google.maps" />
+
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
   useStripe,
@@ -12,20 +19,29 @@ import useCart from '@/app/store/CartStore';
 import { useRouter } from 'next/navigation';
 import { User, Mail, Phone, MapPin, Lock } from 'lucide-react';
 
-/*
-  Updated to fix the TypeScript error where functional updaters could return `undefined`.
-  - All setState functional updaters now always return the correct typed value (no `undefined`).
-  - No explicit `any` usage remains.
-  - Per-field validation, UK phone/postcode checks, single-apply autofill preserved.
-  - Added optional `shippingPence` prop so parent checkout page can pass it without TS errors.
-*/
-
 type Props = {
   total: number;
   clientSecret: string;
   paymentIntentId?: string | null;
-  // added so CheckoutPage can pass shippingPence without changing the checkout page
   shippingPence?: number;
+  email: string;
+  onEmailChange: (email: string) => void;
+  /** True when this checkout is ONLY a Stripe Subscription (no one-off items alongside it) —
+   *  skips the one-off-only save-shipping/complete-order steps after payment confirms. */
+  isSubscriptionCheckout?: boolean;
+  /**
+   * Set when there's more to charge after the primary payment — e.g. the basket has one-off
+   * items (primary = the order) plus one or more subscriptions, or multiple subscriptions with
+   * no one-off items (primary = the first subscription, these are the rest). Stripe can't
+   * charge a recurring subscription and anything else in a single payment, so after the
+   * primary payment confirms, each of these gets confirmed too using the same card, as its
+   * own charge — the customer only enters their card once.
+   */
+  secondaryClientSecrets?: string[];
+  /** Human-readable lines describing each subscription's recurring charge, e.g.
+   *  "Two Brothers Blend — Delivery every 1 week with 5% discount (£7.60/week)".
+   *  Shown right by the card input so it's clear what will recur, not just what's due today. */
+  subscriptionDescriptions?: string[];
 };
 
 type ShippingOption = {
@@ -117,7 +133,7 @@ declare global {
 
 const MIN_AUTOCOMPLETE_CHARS = 4;
 const DEBOUNCE_MS = 800;
-const SESSION_EXPIRE_MS = 2 * 60 * 1000; // 2 minutes
+const SESSION_EXPIRE_MS = 2 * 60 * 1000;
 
 type LocalConfirmResult = {
   error?: { message?: string } | null;
@@ -142,19 +158,27 @@ type Client = {
   address?: ClientAddress | null;
 };
 
-export default function CheckoutFormWithAutofill({
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export default function CheckoutForm({
   total,
   clientSecret,
   paymentIntentId: paymentIntentIdProp,
   shippingPence,
+  email,
+  onEmailChange,
+  isSubscriptionCheckout,
+  secondaryClientSecrets,
+  subscriptionDescriptions,
 }: Props): React.JSX.Element {
   const stripe = useStripe();
   const elements = useElements();
   const router = useRouter();
   const clearCart = useCart((s) => s.clearCart);
 
-  // shipping / client fields
-  const [email, setEmail] = useState<string>('');
+  // shipping fields
   const [phone, setPhone] = useState<string>('');
   const [firstName, setFirstName] = useState<string>('');
   const [lastName, setLastName] = useState<string>('');
@@ -174,7 +198,6 @@ export default function CheckoutFormWithAutofill({
 
   const [billingSame, setBillingSame] = useState<boolean>(true);
 
-  // per-field errors
   type FieldKey =
     | 'firstName'
     | 'lastName'
@@ -201,15 +224,12 @@ export default function CheckoutFormWithAutofill({
 
   const sessionTokenRef = useRef<google.maps.places.AutocompleteSessionToken | null>(null);
   const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const justSelectedPredictionRef = useRef<boolean>(false);
 
-  type Prediction = { id: string; text: string; placeId?: string; isGeocode?: boolean };
-  const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [predictions, setPredictions] = useState<Array<{ id: string; text: string; placeId?: string; isGeocode?: boolean }>>([]);
   const [activePredictionIndex, setActivePredictionIndex] = useState<number>(-1);
   const [showPredictions, setShowPredictions] = useState<boolean>(false);
 
-  type Timer = ReturnType<typeof setTimeout>;
-  const debounceTimerRef = useRef<Timer | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [paymentRequest, setPaymentRequest] = useState<PaymentRequest | null>(null);
   const [canUsePaymentRequest, setCanUsePaymentRequest] = useState<boolean>(false);
@@ -217,26 +237,20 @@ export default function CheckoutFormWithAutofill({
   const [processing, setProcessing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // autofill states
   const [lookupLoading, setLookupLoading] = useState<boolean>(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
   const [showAutofillPreview, setShowAutofillPreview] = useState<boolean>(false);
 
-  // Track if user has already dismissed or applied autofill
   const hasHandledAutofillRef = useRef<boolean>(false);
 
-  // used to cancel inflight lookup requests
   const lookupAbortRef = useRef<AbortController | null>(null);
-  const lookupDebounceRef = useRef<Timer | null>(null);
+  const lookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const amountPence = useMemo(() => Math.round(total * 100), [total]);
 
-  /* ---------------------------
-     Helpers
-  ----------------------------*/
   const loadGooglePlaces = (apiKey: string): Promise<void> =>
-    new Promise<void>((resolve, reject) => {
+    new Promise((resolve, reject) => {
       if (typeof window === 'undefined') return reject(new Error('No window'));
       if (window.google && window.google.maps && window.google.maps.places) {
         return resolve();
@@ -251,9 +265,7 @@ export default function CheckoutFormWithAutofill({
 
       const script = document.createElement('script');
       script.id = 'google-maps-places';
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
-        apiKey
-      )}&libraries=places`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
       script.async = true;
       script.defer = true;
       script.onload = () => resolve();
@@ -270,8 +282,7 @@ export default function CheckoutFormWithAutofill({
   const isValidUkPostcode = (value: string): boolean => {
     if (!value) return false;
     const normalized = normalizeUkPostcode(value);
-    const re = /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i;
-    return re.test(normalized);
+    return /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i.test(normalized);
   };
 
   const isProbablyUkPostcode = (value: string): boolean => {
@@ -280,12 +291,10 @@ export default function CheckoutFormWithAutofill({
     return /^[A-Z]{1,2}\d/.test(normalized);
   };
 
-  // Phone helpers: normalize to digits and validate typical UK formats:
   const normalizePhoneDigits = (p?: string | null) => (p ? String(p).replace(/\D/g, '') : '');
   const isValidUkPhone = (raw: string | undefined | null): boolean => {
     const digits = normalizePhoneDigits(raw ?? '');
     if (!digits) return false;
-    // 11 digits starting with 0 OR 12 digits starting with 44
     return /^(0\d{10}|44\d{10})$/.test(digits);
   };
 
@@ -330,16 +339,15 @@ export default function CheckoutFormWithAutofill({
         geocoderRef.current = new g.maps.Geocoder();
 
         try {
-          type MapsWithImport = typeof g.maps & {
+          const mapsWithImport = g.maps as typeof g.maps & {
             importLibrary?: (name: string) => Promise<unknown>;
           };
-          const mapsWithImport = g.maps as MapsWithImport;
           if (typeof mapsWithImport.importLibrary === 'function') {
             const mod = await mapsWithImport.importLibrary('places');
             placesLibRef.current = mod as unknown as PlacesModule;
           }
         } catch (err) {
-          console.warn('[Places] importLibrary failed, new API may not be available:', err);
+          console.warn('[Places] importLibrary failed:', err);
         }
       })
       .catch(() => {
@@ -348,23 +356,15 @@ export default function CheckoutFormWithAutofill({
 
     return () => {
       mounted = false;
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      if (sessionTimerRef.current) clearTimeout(sessionTimerRef.current);
-      sessionTokenRef.current = null;
     };
   }, []);
 
-  /* ---------------------------
-     Google Places helpers
-  ----------------------------*/
   const startSession = (): void => {
     if (!placesLibRef.current || !window.google?.maps?.places) return;
     if (!sessionTokenRef.current) {
       sessionTokenRef.current = new placesLibRef.current.AutocompleteSessionToken();
     }
-    if (sessionTimerRef.current) {
-      clearTimeout(sessionTimerRef.current);
-    }
+    if (sessionTimerRef.current) clearTimeout(sessionTimerRef.current);
     sessionTimerRef.current = setTimeout(() => {
       sessionTokenRef.current = null;
       sessionTimerRef.current = null;
@@ -390,7 +390,7 @@ export default function CheckoutFormWithAutofill({
     startSession();
 
     const placesLib = placesLibRef.current;
-    const results: Prediction[] = [];
+    const results: Array<{ id: string; text: string; placeId?: string; isGeocode?: boolean }> = [];
 
     if (placesLib) {
       try {
@@ -482,12 +482,12 @@ export default function CheckoutFormWithAutofill({
     scheduleFetchPredictions(value);
   };
 
-  const selectPrediction = async (p: Prediction): Promise<void> => {
-    justSelectedPredictionRef.current = true;
-    window.setTimeout(() => {
-      justSelectedPredictionRef.current = false;
-    }, 400);
-
+  const selectPrediction = async (p: {
+    id: string;
+    text: string;
+    placeId?: string;
+    isGeocode?: boolean;
+  }): Promise<void> => {
     setAddress(p.text);
     setFieldErrors((prev) => ({ ...prev, address: null }));
     setPredictions([]);
@@ -521,9 +521,11 @@ export default function CheckoutFormWithAutofill({
       const lookup = (type: string): string | null => {
         const comp = components.find((c) => (c.types ?? []).includes(type));
         if (!comp) return null;
-        const longText = (comp as { longText?: string }).longText;
-        const long_name = (comp as { long_name?: string }).long_name;
-        return longText ?? long_name ?? null;
+        return (
+          ((comp as unknown as { longText?: string }).longText) ??
+          (comp as unknown as { long_name?: string }).long_name ??
+          null
+        );
       };
 
       const streetNumber = lookup('street_number');
@@ -593,7 +595,6 @@ export default function CheckoutFormWithAutofill({
     }
   };
 
-  // Use shorter timeout and clear predictions immediately on blur
   const handleAddressBlur = (): void => {
     setTimeout(() => {
       setShowPredictions(false);
@@ -654,15 +655,13 @@ export default function CheckoutFormWithAutofill({
   );
 
   /* ---------------------------
-     Automatic client lookup (debounced + onBlur)
+     Client lookup
   ----------------------------*/
-  const normalizeEmail = (e?: string | null) => (e ? String(e).trim().toLowerCase() : '');
+  const normalizeEmailStr = (e?: string | null) => (e ? String(e).trim().toLowerCase() : '');
 
   const performLookup = useCallback(
     async (opts: { email?: string | null; phone?: string | null }) => {
-      if (hasHandledAutofillRef.current) {
-        return;
-      }
+      if (hasHandledAutofillRef.current) return;
 
       lookupAbortRef.current?.abort();
       lookupAbortRef.current = new AbortController();
@@ -675,46 +674,43 @@ export default function CheckoutFormWithAutofill({
         const res = await fetch('/api/clients/find', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: opts.email ?? undefined, phone: opts.phone ?? undefined }),
+          body: JSON.stringify({
+            email: opts.email ?? undefined,
+            phone: opts.phone ?? undefined,
+          }),
           signal: lookupAbortRef.current.signal,
         });
 
         if (res.status === 404) {
-          setLookupError(null);
           setLookupLoading(false);
-          setFoundClient(null);
-          setShowAutofillPreview(false);
           return;
         }
 
         if (!res.ok) {
-          const json = await res.json().catch(() => ({} as Record<string, unknown>));
-          const message = (json && ((json as Record<string, unknown>)['error'] || (json as Record<string, unknown>)['message'])) || 'Lookup failed';
+          const json = await res.json().catch(() => ({}));
+          const message =
+            (json as { error?: string; message?: string }).error ||
+            (json as { error?: string; message?: string }).message ||
+            'Lookup failed';
           setLookupError(String(message));
           setLookupLoading(false);
           return;
         }
 
-        const data = (await res.json().catch(() => ({} as Record<string, unknown>))) as {
+        const data = (await res.json().catch(() => ({}))) as {
           found?: boolean;
           client?: Client;
         };
 
-        if (data && data.found && data.client) {
+        if (data?.found && data.client) {
           setFoundClient(data.client);
           setShowAutofillPreview(true);
           setLookupError(null);
-        } else {
-          setFoundClient(null);
-          setShowAutofillPreview(false);
         }
       } catch (err) {
-        if ((err as { name?: string }).name === 'AbortError') {
-          // ignored
-        } else {
-          console.error('client lookup error', err);
-          setLookupError('Network error while looking up profile.');
-        }
+        if ((err as { name?: string }).name === 'AbortError') return;
+        console.error('client lookup error', err);
+        setLookupError('Network error while looking up profile.');
       } finally {
         setLookupLoading(false);
       }
@@ -722,21 +718,18 @@ export default function CheckoutFormWithAutofill({
     []
   );
 
-  // Debounced effect: trigger lookup when email or phone changes and looks valid
   useEffect(() => {
     if (lookupDebounceRef.current) {
       clearTimeout(lookupDebounceRef.current);
       lookupDebounceRef.current = null;
     }
 
-    if (hasHandledAutofillRef.current) {
-      return;
-    }
+    if (hasHandledAutofillRef.current) return;
 
-    const emailNorm = normalizeEmail(email) || '';
+    const emailNorm = normalizeEmailStr(email) || '';
     const phoneDigits = normalizePhoneDigits(phone) || '';
 
-    const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
+    const looksLikeEmail = !!emailNorm && isValidEmail(emailNorm);
     const looksLikePhone = phoneDigits.length >= 7;
 
     if (!looksLikeEmail && !looksLikePhone) {
@@ -747,7 +740,10 @@ export default function CheckoutFormWithAutofill({
     }
 
     lookupDebounceRef.current = setTimeout(() => {
-      void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits : undefined });
+      void performLookup({
+        email: looksLikeEmail ? emailNorm : undefined,
+        phone: looksLikePhone ? phoneDigits : undefined,
+      });
     }, DEBOUNCE_MS);
 
     return () => {
@@ -760,36 +756,40 @@ export default function CheckoutFormWithAutofill({
 
   const handleEmailBlur = () => {
     if (hasHandledAutofillRef.current) return;
-    const emailNorm = normalizeEmail(email);
+    const emailNorm = normalizeEmailStr(email);
     const phoneDigits = normalizePhoneDigits(phone);
-    const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
+    const looksLikeEmail = !!emailNorm && isValidEmail(emailNorm);
     const looksLikePhone = phoneDigits.length >= 7;
     if (!looksLikeEmail && !looksLikePhone) return;
-    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? phoneDigits : undefined });
+    void performLookup({
+      email: looksLikeEmail ? emailNorm : undefined,
+      phone: looksLikePhone ? phoneDigits : undefined,
+    });
   };
 
   const handlePhoneBlur = () => {
     const digits = normalizePhoneDigits(phone);
     if (!isValidUkPhone(digits)) {
-      setFieldErrors((prev) => ({ ...prev, phone: 'Please enter a valid UK phone number (e.g. 07700 900000 or +44 7700 900000).' }));
+      setFieldErrors((prev) => ({ ...prev, phone: 'Please enter a valid UK phone number.' }));
     } else {
       setFieldErrors((prev) => ({ ...prev, phone: null }));
     }
 
     if (hasHandledAutofillRef.current) return;
-    const emailNorm = normalizeEmail(email);
-    const looksLikeEmail = !!emailNorm && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailNorm);
+    const emailNorm = normalizeEmailStr(email);
+    const looksLikeEmail = !!emailNorm && isValidEmail(emailNorm);
     const looksLikePhone = digits.length >= 7;
     if (!looksLikeEmail && !looksLikePhone) return;
-    void performLookup({ email: looksLikeEmail ? emailNorm : undefined, phone: looksLikePhone ? digits : undefined });
+    void performLookup({
+      email: looksLikeEmail ? emailNorm : undefined,
+      phone: looksLikePhone ? digits : undefined,
+    });
   };
 
-  // Apply found client: ensure we cancel inflight lookups and prevent the preview from reappearing.
   const applyFoundClient = useCallback(() => {
     if (!foundClient) return;
 
     hasHandledAutofillRef.current = true;
-
     lookupAbortRef.current?.abort();
     if (lookupDebounceRef.current) {
       clearTimeout(lookupDebounceRef.current);
@@ -801,19 +801,19 @@ export default function CheckoutFormWithAutofill({
     const l = rest.join(' ');
 
     if (f) {
-      setFirstName(() => f || '');
+      setFirstName(f);
       setFieldErrors((prev) => ({ ...prev, firstName: null }));
     }
     if (l) {
-      setLastName(() => l || '');
+      setLastName(l);
       setFieldErrors((prev) => ({ ...prev, lastName: null }));
     }
     if (foundClient.email) {
-      setEmail(() => foundClient.email ?? '');
+      onEmailChange(foundClient.email);
       setFieldErrors((prev) => ({ ...prev, email: null }));
     }
     if (foundClient.phone) {
-      setPhone(() => foundClient.phone ?? '');
+      setPhone(foundClient.phone);
       setFieldErrors((prev) => ({ ...prev, phone: null }));
     }
 
@@ -821,31 +821,29 @@ export default function CheckoutFormWithAutofill({
     if (addr) {
       if (addr.firstName) {
         const [af, ...ar] = String(addr.firstName).split(/\s+/);
-        // ensure updater returns string (never undefined)
         setFirstName((prev) => prev || af || '');
         if (ar.length) setLastName((prev) => prev || ar.join(' ') || '');
       }
-      // addr.lastName may be undefined; ensure string fallback
       if (addr.lastName) setLastName((prev) => prev || addr.lastName || '');
       if (addr.line1 || addr.address) {
-        setAddress(() => (addr.line1 ?? addr.address ?? '') as string);
+        setAddress((addr.line1 ?? addr.address ?? '') as string);
         setFieldErrors((prev) => ({ ...prev, address: null }));
       }
-      if (addr.unit) setUnit(() => addr.unit ?? '');
+      if (addr.unit) setUnit(addr.unit ?? '');
       if (addr.city) {
-        setCity(() => addr.city ?? '');
+        setCity(addr.city ?? '');
         setFieldErrors((prev) => ({ ...prev, city: null }));
       }
       if (addr.postcode) {
-        setPostcode(() => normalizeUkPostcode(String(addr.postcode ?? '')));
+        setPostcode(normalizeUkPostcode(String(addr.postcode ?? '')));
         setFieldErrors((prev) => ({ ...prev, postcode: null }));
       }
-      if (addr.country) setCountry(() => addr.country ?? 'GB');
+      if (addr.country) setCountry(addr.country ?? 'GB');
     }
 
     setShowAutofillPreview(false);
     setFoundClient(null);
-  }, [foundClient]);
+  }, [foundClient, onEmailChange]);
 
   const discardFoundClient = useCallback(() => {
     hasHandledAutofillRef.current = true;
@@ -859,13 +857,10 @@ export default function CheckoutFormWithAutofill({
     setLookupError(null);
   }, []);
 
-  /* ---------------------------
-     Centralized result handling for Stripe confirm responses
-  ----------------------------*/
   const handleConfirmResult = useCallback(
     async (result: LocalConfirmResult): Promise<boolean> => {
       if (result.error) {
-        const msg = result.error.message ?? 'Payment failed. ';
+        const msg = result.error.message ?? 'Payment failed.';
         setError(msg);
         return false;
       }
@@ -894,7 +889,7 @@ export default function CheckoutFormWithAutofill({
       }
 
       if (status === 'requires_payment_method') {
-        setError('Payment method was declined.  Please try another card or payment method.');
+        setError('Payment method was declined. Please try another card or payment method.');
         return false;
       }
 
@@ -909,38 +904,59 @@ export default function CheckoutFormWithAutofill({
     [stripe, clientSecret]
   );
 
-  /* ---------------------------
-     Save shipping / finalize helpers
-  ----------------------------*/
   const saveShipping = useCallback(
     async (opts: {
       paymentIntentId?: string | null;
       shippingAddress: Record<string, unknown> | null;
       billingAddress?: Record<string, unknown> | null;
       client: { name?: string | null; email?: string | null; phone?: string | null } | null;
+      /** Set to "payment_request" for the Apple Pay / Google Pay one-tap flow — its address
+       *  comes straight from the device's Wallet/Contacts entry with no review step shown to
+       *  the customer, so the server flags it for a house-number sanity check. */
+      source?: 'payment_request';
     }) => {
-      try {
-        const res = await fetch('/api/save-shipping', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            paymentIntentId: opts.paymentIntentId ?? undefined,
-            shippingAddress: opts.shippingAddress,
-            billingAddress: opts.billingAddress ?? undefined,
-            client: opts.client,
-          }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({} as Record<string, unknown>));
-          const msg = (body as { message?: string })?.message ?? `Failed to save shipping (status ${res.status})`;
-          throw new Error(msg);
-        }
-        return true;
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('saveShipping error:', msg);
+      const res = await fetch('/api/save-shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: opts.paymentIntentId ?? undefined,
+          shippingAddress: opts.shippingAddress,
+          billingAddress: opts.billingAddress ?? undefined,
+          client: opts.client,
+          source: opts.source ?? undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = (body as { message?: string }).message ?? `Failed to save shipping (status ${res.status})`;
         throw new Error(msg);
       }
+      return true;
+    },
+    []
+  );
+
+  const saveSubscriptionShipping = useCallback(
+    async (opts: {
+      paymentIntentId?: string | null;
+      shippingAddress: Record<string, unknown> | null;
+      client: { name?: string | null; email?: string | null; phone?: string | null } | null;
+    }) => {
+      const res = await fetch('/api/subscriptions/save-shipping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          paymentIntentId: opts.paymentIntentId ?? undefined,
+          shippingAddress: opts.shippingAddress,
+          client: opts.client,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = (body as { message?: string }).message ?? `Failed to save shipping (status ${res.status})`;
+        throw new Error(msg);
+      }
+      return true;
     },
     []
   );
@@ -974,16 +990,12 @@ export default function CheckoutFormWithAutofill({
         return { ok: true, status: res.status, body };
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
-        console.warn('finalizeOrder network error:', message);
         return { ok: false, status: 0, body: { message: message || 'Network error' } };
       }
     },
     []
   );
 
-  /* ---------------------------
-     PaymentRequest handlers
-  ----------------------------*/
   useEffect(() => {
     if (!paymentRequest || !stripe) return;
 
@@ -1010,7 +1022,7 @@ export default function CheckoutFormWithAutofill({
 
       const shippingAddressRaw = event.shippingAddress ?? null;
 
-      const recipient = (shippingAddressRaw?.recipient ?? payerNameVal ?? '')?.trim();
+      const recipient = (shippingAddressRaw?.recipient ?? payerNameVal ?? '').trim();
       let normalizedFirst = '';
       let normalizedLast = '';
       if (recipient) {
@@ -1029,7 +1041,7 @@ export default function CheckoutFormWithAutofill({
           : '';
 
       const cityVal = (shippingAddressRaw?.city ?? shippingAddressRaw?.administrativeArea ?? city) ?? '';
-      const postcodeVal = (shippingAddressRaw?.postalCode ?? '') ?? '';
+      const postcodeVal = shippingAddressRaw?.postalCode ?? '';
       const countryVal = (shippingAddressRaw?.country ?? shippingAddressRaw?.countryCode ?? country) ?? '';
 
       const phoneVal = payerPhoneVal ?? (shippingAddressRaw?.phone as string | null | undefined) ?? null;
@@ -1042,12 +1054,15 @@ export default function CheckoutFormWithAutofill({
       };
 
       const shippingPayload: Record<string, unknown> = {
-        firstName: normalizedFirst || (firstName || ''),
-        lastName: normalizedLast || (lastName || ''),
+        firstName: normalizedFirst || firstName || '',
+        lastName: normalizedLast || lastName || '',
         email: emailVal ?? email,
         phone: phoneVal ?? phone,
         unit: addressLine1 || '',
-        address: addressLine0 || address || '',
+        // Order.shippingAddress's schema field is `line1`, not `address` — using the wrong key
+        // here meant Mongoose silently dropped the street address on every wallet-paid order
+        // (it only keeps fields matching the subdocument schema).
+        line1: addressLine0 || address || '',
         city: cityVal || city,
         postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : postcode || '',
         country: countryVal || country,
@@ -1057,7 +1072,7 @@ export default function CheckoutFormWithAutofill({
         firstName: normalizedFirst || firstName,
         lastName: normalizedLast || lastName,
         unit: addressLine1 || unit,
-        address: addressLine0 || address,
+        line1: addressLine0 || address,
         city: cityVal || city,
         postcode: postcodeVal ? normalizeUkPostcode(String(postcodeVal)) : postcode,
         country: countryVal || country,
@@ -1074,9 +1089,11 @@ export default function CheckoutFormWithAutofill({
             firstName: bFirst || billingPayload.firstName,
             lastName: bRest.length ? bRest.join(' ') : billingPayload.lastName,
             unit: addr.line2 ?? billingPayload.unit,
-            address: addr.line1 ?? billingPayload.address,
+            line1: addr.line1 ?? billingPayload.line1,
             city: addr.city ?? billingPayload.city,
-            postcode: addr.postal_code ? normalizeUkPostcode(String(addr.postal_code)) : billingPayload.postcode,
+            postcode: addr.postal_code
+              ? normalizeUkPostcode(String(addr.postal_code))
+              : billingPayload.postcode,
             country: addr.country ?? billingPayload.country,
             sameAsShipping: false,
           };
@@ -1086,13 +1103,19 @@ export default function CheckoutFormWithAutofill({
       }
 
       try {
-        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: payer });
+        await saveShipping({
+          paymentIntentId,
+          shippingAddress: shippingPayload,
+          billingAddress: billingPayload,
+          client: payer,
+          source: 'payment_request',
+        });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         try {
           event.complete('fail');
         } catch {}
-        setError(message || 'Failed to save shipping details.  Please try again.');
+        setError(message || 'Failed to save shipping details. Please try again.');
         return;
       }
 
@@ -1151,7 +1174,9 @@ export default function CheckoutFormWithAutofill({
 
         const finalizeResp = await finalizeOrder({ paymentIntentId });
         if (!finalizeResp.ok) {
-          const serverMsg = (finalizeResp.body as Record<string, unknown>)?.message || `Order finalization failed (status ${finalizeResp.status})`;
+          const serverMsg =
+            (finalizeResp.body as Record<string, unknown>)?.message ||
+            `Order finalization failed (status ${finalizeResp.status})`;
           setError(String(serverMsg));
           try {
             event.complete('fail');
@@ -1164,7 +1189,7 @@ export default function CheckoutFormWithAutofill({
         router.push('/checkout/success');
       } catch (err) {
         try {
-          event.complete && event.complete('fail');
+          if (event.complete) event.complete('fail');
         } catch {}
         const message = err instanceof Error ? err.message : String(err);
         setError(message || 'Unexpected error during wallet payment.');
@@ -1173,7 +1198,6 @@ export default function CheckoutFormWithAutofill({
       }
     };
 
-    // attach listeners using the PaymentRequest API as provided by Stripe (guarded)
     try {
       paymentRequest.on('shippingaddresschange', (ev: unknown) => onShippingAddressChange(ev));
       paymentRequest.on('paymentmethod', (ev: unknown) => onPaymentMethod(ev));
@@ -1183,7 +1207,9 @@ export default function CheckoutFormWithAutofill({
 
     return () => {
       try {
-        const prWithOff = paymentRequest as unknown as { off?: (evName: string, fn: (e: unknown) => void) => void };
+        const prWithOff = paymentRequest as unknown as {
+          off?: (evName: string, fn: (e: unknown) => void) => void;
+        };
         prWithOff.off?.('shippingaddresschange', (ev: unknown) => onShippingAddressChange(ev));
         prWithOff.off?.('paymentmethod', (ev: unknown) => onPaymentMethod(ev));
       } catch {}
@@ -1210,15 +1236,10 @@ export default function CheckoutFormWithAutofill({
     handleConfirmResult,
   ]);
 
-  /* ---------------------------
-     Form submit
-  ----------------------------*/
-  const clearAllFieldErrors = () => setFieldErrors({});
-
   const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setError(null);
-    clearAllFieldErrors();
+    setFieldErrors({});
 
     if (!stripe || !elements) {
       setError('Stripe is not loaded yet.');
@@ -1230,13 +1251,13 @@ export default function CheckoutFormWithAutofill({
     if (!firstName.trim()) newErrors.firstName = 'First name is required';
     if (!lastName.trim()) newErrors.lastName = 'Last name is required';
     if (!email.trim()) newErrors.email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) newErrors.email = 'Please enter a valid email address';
+    else if (!isValidEmail(email)) newErrors.email = 'Please enter a valid email address';
     if (!phone.trim()) newErrors.phone = 'Phone number is required';
-    else if (!isValidUkPhone(normalizePhoneDigits(phone))) newErrors.phone = 'Please enter a valid UK phone number (e.g. 07700 900000 or +44 7700 900000).';
+    else if (!isValidUkPhone(normalizePhoneDigits(phone))) newErrors.phone = 'Please enter a valid UK phone number.';
     if (!address.trim()) newErrors.address = 'Street address is required';
     if (!city.trim()) newErrors.city = 'City is required';
     if (!postcode.trim()) newErrors.postcode = 'Postcode is required';
-    else if (!isValidUkPostcode(postcode)) newErrors.postcode = 'Please enter a valid UK postcode (e.g. EC1A 1BB)';
+    else if (!isValidUkPostcode(postcode)) newErrors.postcode = 'Please enter a valid UK postcode.';
 
     if (!billingSame) {
       if (!billingFirstName.trim()) newErrors.billingFirstName = 'Billing first name is required';
@@ -1244,7 +1265,7 @@ export default function CheckoutFormWithAutofill({
       if (!billingAddress.trim()) newErrors.billingAddress = 'Billing address is required';
       if (!billingCity.trim()) newErrors.billingCity = 'Billing city is required';
       if (!billingPostcode.trim()) newErrors.billingPostcode = 'Billing postcode is required';
-      else if (!isValidUkPostcode(billingPostcode)) newErrors.billingPostcode = 'Please enter a valid UK postcode for billing (e.g. EC1A 1BB).';
+      else if (!isValidUkPostcode(billingPostcode)) newErrors.billingPostcode = 'Please enter a valid UK postcode for billing.';
     }
 
     if (Object.keys(newErrors).length > 0) {
@@ -1275,7 +1296,7 @@ export default function CheckoutFormWithAutofill({
         email,
         phone,
         unit,
-        line1: address,  // ✅ Map to line1
+        line1: address,
         city,
         postcode: normalizeUkPostcode(postcode),
         country,
@@ -1287,7 +1308,7 @@ export default function CheckoutFormWithAutofill({
             firstName,
             lastName,
             unit,
-            line1: address,  // ✅ Map to line1
+            line1: address,
             city,
             postcode: normalizeUkPostcode(postcode),
             country,
@@ -1305,10 +1326,23 @@ export default function CheckoutFormWithAutofill({
           };
 
       try {
-        await saveShipping({ paymentIntentId, shippingAddress: shippingPayload, billingAddress: billingPayload, client: clientPayload });
+        if (isSubscriptionCheckout) {
+          await saveSubscriptionShipping({
+            paymentIntentId,
+            shippingAddress: shippingPayload,
+            client: clientPayload,
+          });
+        } else {
+          await saveShipping({
+            paymentIntentId,
+            shippingAddress: shippingPayload,
+            billingAddress: billingPayload,
+            client: clientPayload,
+          });
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        setError(msg || 'Failed to save shipping details.  Please try again.');
+        setError(msg || 'Failed to save shipping details. Please try again.');
         setProcessing(false);
         return;
       }
@@ -1353,12 +1387,60 @@ export default function CheckoutFormWithAutofill({
         return;
       }
 
-      const finalizeResp = await finalizeOrder({ paymentIntentId });
-      if (!finalizeResp.ok) {
-        const serverMsg = (finalizeResp.body as Record<string, unknown>)?.message || `Order finalization failed (status ${finalizeResp.status})`;
-        setError(String(serverMsg));
-        setProcessing(false);
-        return;
+      // Subscriptions don't create an Order — there's nothing to "finalize" here.
+      // The Subscription record itself was already created before this page loaded,
+      // and the webhook flips its status to active once Stripe confirms the invoice.
+      if (!isSubscriptionCheckout) {
+        const finalizeResp = await finalizeOrder({ paymentIntentId });
+        if (!finalizeResp.ok) {
+          const serverMsg =
+            (finalizeResp.body as Record<string, unknown>)?.message ||
+            `Order finalization failed (status ${finalizeResp.status})`;
+          setError(String(serverMsg));
+          setProcessing(false);
+          return;
+        }
+      }
+
+      // Basket had one-off items and/or more than one subscription — the primary payment above
+      // is paid (and, if it was an order, finalized); now charge every remaining subscription
+      // too, one at a time, using the same card.
+      for (const [index, secretToConfirm] of (secondaryClientSecrets ?? []).entries()) {
+        const secondaryPaymentIntentId = extractPaymentIntentId(secretToConfirm);
+
+        try {
+          await saveSubscriptionShipping({
+            paymentIntentId: secondaryPaymentIntentId,
+            shippingAddress: shippingPayload,
+            client: clientPayload,
+          });
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setError(
+            `Some of your order went through, but we couldn't save shipping details for subscription ${
+              index + 1
+            }: ${msg}. Please contact us.`
+          );
+          setProcessing(false);
+          return;
+        }
+
+        const secondaryResult = (await stripe.confirmCardPayment(secretToConfirm, {
+          payment_method: {
+            card: elements.getElement(CardElement)!,
+            billing_details: billingDetails,
+          },
+        })) as LocalConfirmResult;
+
+        if (secondaryResult.error) {
+          setError(
+            `Some of your order went through, but subscription ${index + 1} failed: ${
+              secondaryResult.error.message || 'please try subscribing again.'
+            }`
+          );
+          setProcessing(false);
+          return;
+        }
       }
 
       clearCart();
@@ -1383,21 +1465,18 @@ export default function CheckoutFormWithAutofill({
     },
   };
 
-  /* ---------------------------
-     Render helpers
-  ----------------------------*/
   const inputBaseClass =
     'w-full px-3 sm:px-4 py-2 sm:py-3 text-base rounded-lg focus:ring-2 focus:ring-black focus:border-black transition-all border-2';
 
   const errorBorder = 'border-red-400';
   const normalBorder = 'border-gray-300';
 
-  /* ---------------------------
-     Render
-  ----------------------------*/
   return (
     <form onSubmit={handleSubmit} method="POST" autoComplete="on" noValidate className="space-y-4 sm:space-y-6">
-      {canUsePaymentRequest && paymentRequest && (
+      {/* Apple Pay / Google Pay isn't offered for subscriptions in this phase — the express-pay
+          confirmation path below assumes a single one-off charge and isn't wired up to also
+          confirm a second (subscription) charge the way the normal card form below is. */}
+      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && isValidEmail(email) && (
         <div className="mb-2">
           <PaymentRequestButtonElement
             options={{
@@ -1412,6 +1491,23 @@ export default function CheckoutFormWithAutofill({
             }}
           />
           <div className="text-xs text-gray-500 mt-2">Pay with Apple Pay / Google Pay</div>
+        </div>
+      )}
+
+      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && !isValidEmail(email) && (
+        <div className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
+          Enter a valid email address above to use Apple Pay or Google Pay
+        </div>
+      )}
+
+      {(isSubscriptionCheckout || !!secondaryClientSecrets?.length) && subscriptionDescriptions?.length && (
+        <div className="mb-2 p-3 bg-black/5 border border-gray-200 rounded-lg text-sm text-black">
+          {secondaryClientSecrets?.length
+            ? `Your card will be charged ${
+                secondaryClientSecrets.length + 1
+              } times today: once for your one-off items and once per subscription below.`
+            : "You're subscribing — you'll be billed on the schedule below."}{" "}
+          Cancel anytime from the link in your confirmation email.
         </div>
       )}
 
@@ -1475,7 +1571,8 @@ export default function CheckoutFormWithAutofill({
                 autoComplete="email"
                 value={email}
                 onChange={(e) => {
-                  setEmail(e.target.value);
+                  const val = e.target.value;
+                  onEmailChange(val);
                   setFieldErrors((prev) => ({ ...prev, email: null }));
                 }}
                 onBlur={handleEmailBlur}
@@ -1511,13 +1608,16 @@ export default function CheckoutFormWithAutofill({
             {fieldErrors.phone ? (
               <div className="text-xs text-red-600 mt-1">{fieldErrors.phone}</div>
             ) : (
-              <div className="text-xs text-gray-500 mt-1">Enter a UK phone number (we will normalize it for you)</div>
+              <div className="text-xs text-gray-500 mt-1">Enter a UK phone number</div>
             )}
           </div>
 
+          {lookupLoading && (
+            <div className="text-xs text-gray-400 col-span-full mt-1">Checking for existing details…</div>
+          )}
+
           {lookupError && <div className="text-sm text-yellow-700 col-span-full mt-1">{lookupError}</div>}
 
-          {/* Automatic preview banner */}
           {showAutofillPreview && foundClient && (
             <div className="col-span-full mt-2 p-3 bg-white border rounded-md flex items-start justify-between">
               <div>
@@ -1578,7 +1678,6 @@ export default function CheckoutFormWithAutofill({
               className={`${inputBaseClass} ${fieldErrors.unit ? errorBorder : normalBorder}`}
               placeholder="Flat 4 / Apt 2B"
             />
-            <div className="text-xs text-gray-500 mt-1">Optional — apartment, suite, unit or building name. </div>
           </div>
 
           <div className="relative">
@@ -1599,9 +1698,6 @@ export default function CheckoutFormWithAutofill({
               placeholder="123 High Street or SW1A 1AA"
             />
             {fieldErrors.address && <div className="text-xs text-red-600 mt-1">{fieldErrors.address}</div>}
-            <div className="text-xs text-gray-500 mt-1">
-              💡 <strong>Tip:</strong> Enter your <strong>postcode first</strong> (e.g. SW1A 1AA or EC1 2NV) for faster results, or start typing your street name.
-            </div>
 
             {showPredictions && predictions.length > 0 && (
               <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md max-h-60 overflow-auto text-sm shadow-lg">
@@ -1613,7 +1709,6 @@ export default function CheckoutFormWithAutofill({
                       void selectPrediction(p);
                     }}
                     className={`px-3 py-2 cursor-pointer ${idx === activePredictionIndex ? 'bg-gray-100' : 'hover:bg-gray-50'}`}
-                    onMouseEnter={() => setActivePredictionIndex(idx)}
                   >
                     {p.text}
                     {p.isGeocode ? <span className="text-xs text-gray-400 ml-2"> (postcode search)</span> : null}
@@ -1657,7 +1752,10 @@ export default function CheckoutFormWithAutofill({
                   const normalized = normalizeUkPostcode(postcode);
                   setPostcode(normalized);
                   if (normalized && !isValidUkPostcode(normalized)) {
-                    setFieldErrors((prev) => ({ ...prev, postcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB or SW1A 1AA).' }));
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      postcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB).',
+                    }));
                   } else {
                     setFieldErrors((prev) => ({ ...prev, postcode: null }));
                   }
@@ -1669,7 +1767,7 @@ export default function CheckoutFormWithAutofill({
               {fieldErrors.postcode ? (
                 <div className="text-xs text-red-600 mt-1">{fieldErrors.postcode}</div>
               ) : (
-                <div className="text-xs text-gray-500 mt-1">Enter a UK postcode (we will normalize it for you)</div>
+                <div className="text-xs text-gray-500 mt-1">Enter a UK postcode</div>
               )}
             </div>
 
@@ -1688,7 +1786,6 @@ export default function CheckoutFormWithAutofill({
               >
                 <option value="GB">United Kingdom</option>
               </select>
-              {fieldErrors.country && <div className="text-xs text-red-600 mt-1">{fieldErrors.country}</div>}
             </div>
           </div>
 
@@ -1702,7 +1799,6 @@ export default function CheckoutFormWithAutofill({
               />
               <span>Billing address same as shipping</span>
             </label>
-            <div className="text-xs text-gray-500 mt-1">If unchecked, you&apos;ll be able to enter a different billing address. </div>
           </div>
         </div>
       </div>
@@ -1821,7 +1917,10 @@ export default function CheckoutFormWithAutofill({
                     const normalized = normalizeUkPostcode(billingPostcode);
                     setBillingPostcode(normalized);
                     if (normalized && !isValidUkPostcode(normalized)) {
-                      setFieldErrors((prev) => ({ ...prev, billingPostcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB).' }));
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        billingPostcode: 'Please enter a valid UK postcode (e.g. EC1A 1BB).',
+                      }));
                     } else {
                       setFieldErrors((prev) => ({ ...prev, billingPostcode: null }));
                     }
@@ -1833,7 +1932,7 @@ export default function CheckoutFormWithAutofill({
                 {fieldErrors.billingPostcode ? (
                   <div className="text-xs text-red-600 mt-1">{fieldErrors.billingPostcode}</div>
                 ) : (
-                  <div className="text-xs text-gray-500 mt-1">Enter a UK postcode (we will normalize it for you)</div>
+                  <div className="text-xs text-gray-500 mt-1">Enter a UK postcode</div>
                 )}
               </div>
 
@@ -1874,9 +1973,18 @@ export default function CheckoutFormWithAutofill({
           <Lock className="w-3 h-3 mr-1" />
           Your payment information is encrypted and secure
         </p>
-        {/* If parent passes shippingPence we optionally show it here as a small helper (non-required) */}
         {typeof shippingPence === 'number' && (
           <div className="text-xs text-gray-500 mt-2">Shipping: £{(shippingPence / 100).toFixed(2)}</div>
+        )}
+        {!!subscriptionDescriptions?.length && (
+          <div className="mt-3 p-3 bg-black/5 border border-gray-200 rounded-lg text-sm text-black space-y-1">
+            <span className="font-semibold block">
+              Subscription{subscriptionDescriptions.length > 1 ? "s" : ""}:
+            </span>
+            {subscriptionDescriptions.map((desc, i) => (
+              <div key={i}>{desc}</div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -1885,10 +1993,10 @@ export default function CheckoutFormWithAutofill({
       <button
         type="submit"
         disabled={!stripe || processing}
-        className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white font-bold py-3 sm:py-4 px-4 sm:px-6 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center text-base sm:text-base"
+        className="w-full bg-black hover:bg-gray-800 disabled:bg-gray-400 text-white font-bold py-3 sm:py-4 px-4 sm:px-6 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center text-base"
       >
         {processing ? (
-          <svg className="animate-spin -ml-1 mr-2 sm:mr-3 h-4 w-4 sm:h-5 sm:h-5 text-white" fill="none" viewBox="0 0 24 24">
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>

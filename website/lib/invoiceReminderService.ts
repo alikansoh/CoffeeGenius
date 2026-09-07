@@ -5,17 +5,20 @@ interface ReminderInput {
     clientName: string;
     clientEmail: string;
     dueDate: Date;
+    /** When provided, the invoice PDF is attached to the reminder email — so the customer
+     *  doesn't have to hunt down the original invoice email to know what they're paying. */
+    pdfBuffer?: Buffer;
   }
-  
+
   export async function sendInvoiceReminderEmail(input: ReminderInput): Promise<void> {
     const apiKey = process.env.BREVO_API_KEY;
     const senderEmail = (process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM || '').trim();
     const senderName = process.env.BREVO_SENDER_NAME || process.env.COMPANY_NAME || 'Your Company';
-  
+
     if (!apiKey) throw new Error('Missing BREVO_API_KEY');
     if (!senderEmail) throw new Error('Missing sender email');
-  
-    const { orderNumber, total, currency = 'gbp', clientName, clientEmail, dueDate } = input;
+
+    const { orderNumber, total, currency = 'gbp', clientName, clientEmail, dueDate, pdfBuffer } = input;
   
     const formattedTotal = new Intl.NumberFormat('en-GB', {
       style: 'currency',
@@ -46,7 +49,7 @@ interface ReminderInput {
           </div>
           
           <p>Dear ${escapeHtml(clientName)},</p>
-          <p>This is a friendly reminder that payment for your invoice is due soon.</p>
+          <p>This is a reminder that payment for your invoice is due soon${pdfBuffer ? " — your invoice is attached" : ""}.</p>
           
           <div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 5px;">
             <p><strong>Invoice Number:</strong> ${escapeHtml(orderNumber)}</p>
@@ -67,6 +70,24 @@ interface ReminderInput {
   
     const textContent = `Payment Reminder - Invoice #${orderNumber}\n\nDear ${clientName},\n\nThis is a friendly reminder that payment for your invoice is due on ${formattedDueDate}.\n\nAmount Due: ${formattedTotal}\n\nIf you have already paid, please disregard this reminder.`;
   
+    const payload: Record<string, unknown> = {
+      sender: { email: senderEmail, name: senderName },
+      to: [{ email: clientEmail, name: clientName }],
+      subject: `Payment Reminder: Invoice #${orderNumber}`,
+      htmlContent,
+      textContent,
+    };
+
+    if (pdfBuffer) {
+      payload.attachment = [
+        {
+          name: `invoice-${orderNumber}.pdf`,
+          content: pdfBuffer.toString('base64'),
+          contentType: 'application/pdf',
+        },
+      ];
+    }
+
     const res = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -74,13 +95,7 @@ interface ReminderInput {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({
-        sender: { email: senderEmail, name: senderName },
-        to: [{ email: clientEmail, name: clientName }],
-        subject: `Payment Reminder: Invoice #${orderNumber}`,
-        htmlContent,
-        textContent,
-      }),
+      body: JSON.stringify(payload),
     });
   
     if (!res.ok) {

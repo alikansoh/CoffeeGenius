@@ -16,6 +16,7 @@ export interface ICoffee extends Document {
   variety?: string;
   brewing?: string;
   bestSeller?: boolean;
+  order?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -90,6 +91,11 @@ const CoffeeSchema = new Schema<ICoffee>(
       default: false,
       index: true,
     },
+    order: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -99,9 +105,10 @@ const CoffeeSchema = new Schema<ICoffee>(
 // Text index for search
 CoffeeSchema.index({ name: "text", origin: "text", notes: "text", story: "text" });
 
-// Compound index for filtering by best sellers ordered by creation date
-CoffeeSchema.index({ bestSeller: 1, createdAt: -1 });
+// Compound index for filtering by best sellers or ordering
+CoffeeSchema.index({ order: 1, createdAt: -1 });
 
-// Prevent model recompilation in Next.js dev mode
-export default mongoose.models.Coffee ||
-  mongoose.model<ICoffee>("Coffee", CoffeeSchema);
+const Coffee =
+  mongoose.models.Coffee || mongoose.model<ICoffee>("Coffee", CoffeeSchema);
+
+export default Coffee;

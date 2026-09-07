@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import NavBar from "./Navbar";
 import Footer from "./Footer";
+import FloatingContactButtons from "./FloatingContactButtons";
 
 export default function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? ''; // Fixes the TS warning
@@ -18,6 +19,7 @@ export default function LayoutWrapper({ children }: { children: React.ReactNode 
       <NavBar />
       {children}
       <Footer />
+      <FloatingContactButtons />
     </>
   );
 }

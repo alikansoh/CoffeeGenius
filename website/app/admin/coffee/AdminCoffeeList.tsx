@@ -11,8 +11,27 @@ import {
   Coffee as CoffeeIcon,
   X,
   ArrowLeft,
+  GripVertical,
+  Save,
 } from "lucide-react";
 import { getCloudinaryThumbnail } from "@/app/utils/cloudinary";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export interface Coffee {
   _id: string;
@@ -21,6 +40,7 @@ export interface Coffee {
   origin: string;
   img?: string;
   images?: string[];
+  order?: number;
 }
 
 type ToastType = "error" | "success";
@@ -60,6 +80,91 @@ function Toast({
   );
 }
 
+interface SortableCoffeeRowProps {
+  coffee: Coffee;
+  onEdit: (id: string) => void;
+  onDelete: (id: string, name: string) => void;
+}
+
+function SortableCoffeeRow({ coffee, onEdit, onDelete }: SortableCoffeeRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: coffee._id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className="hover:bg-gray-50 transition-colors bg-white"
+    >
+      <td className="px-4 py-4">
+        <button
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 p-1"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={20} />
+        </button>
+      </td>
+      <td className="px-6 py-4">
+        <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200">
+          {coffee.img ? (
+            <Image
+              src={getCloudinaryThumbnail(coffee.img, 200)}
+              alt={coffee.name}
+              width={64}
+              height={64}
+              className="object-cover w-full h-full"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <CoffeeIcon size={24} className="text-gray-400" />
+            </div>
+          )}
+        </div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="font-bold text-gray-900">{coffee.name}</div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="text-sm text-gray-600">{coffee.origin}</div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="text-sm text-gray-500 font-mono">{coffee.slug}</div>
+      </td>
+      <td className="px-6 py-4">
+        <div className="flex items-center justify-end gap-2">
+          <button
+            onClick={() => onEdit(coffee._id)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-xl hover:bg-gray-800 transition-all font-medium"
+          >
+            <PencilIcon size={14} />
+            Edit
+          </button>
+          <button
+            onClick={() => onDelete(coffee._id, coffee.name)}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl border-2 border-red-200 hover:bg-red-100 transition-all font-medium"
+          >
+            <Trash2 size={14} />
+            Delete
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 interface AdminCoffeeListProps {
   sendCookies?: boolean;
 }
@@ -67,10 +172,19 @@ interface AdminCoffeeListProps {
 export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListProps) {
   const router = useRouter();
   const [coffees, setCoffees] = useState<Coffee[]>([]);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     const fetchCoffees = async () => {
@@ -105,6 +219,46 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
       c.origin.toLowerCase().includes(search.toLowerCase()) ||
       c.slug.toLowerCase().includes(search.toLowerCase())
   );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || active.id === over.id) return;
+
+    setCoffees((items) => {
+      const oldIndex = items.findIndex((c) => c._id === active.id);
+      const newIndex = items.findIndex((c) => c._id === over.id);
+      return arrayMove(items, oldIndex, newIndex);
+    });
+
+    setHasChanges(true);
+  };
+
+  const saveOrder = async () => {
+    setSaving(true);
+    try {
+      const ids = coffees.map((c) => c._id);
+      const res = await window.fetch("/api/coffee/reorder", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        ...(sendCookies ? { credentials: "include" as RequestCredentials } : {}),
+        body: JSON.stringify({ ids }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text().catch(() => null);
+        throw new Error(`Save failed: ${res.status} ${text ?? ""}`);
+      }
+
+      setHasChanges(false);
+      setSuccess("Order saved successfully");
+    } catch (err) {
+      console.error(err);
+      setError("Failed to save order");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleDelete = async (id: string, name: string) => {
     if (!confirm(`Delete "${name}"? This action cannot be undone.`)) return;
@@ -153,18 +307,30 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
                 <div>
                   <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Manage Coffees</h1>
                   <p className="text-xs sm:text-sm text-gray-600 mt-0.5">
-                    View, edit, and manage your coffee products
+                    Drag to reorder. Coffees at the top appear first on the website.
                   </p>
                 </div>
               </div>
-              <button
-                onClick={() => router.push("/admin/coffee/create")}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all shadow-md hover:shadow-lg font-medium text-sm"
-              >
-                <Plus size={18} />
-                <span className="hidden sm:inline">Create Coffee</span>
-                <span className="sm:hidden">Create</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => router.push("/admin/coffee/create")}
+                  className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all shadow-md hover:shadow-lg font-medium text-sm"
+                >
+                  <Plus size={18} />
+                  <span className="hidden sm:inline">Create Coffee</span>
+                  <span className="sm:hidden">Create</span>
+                </button>
+                {hasChanges && (
+                  <button
+                    onClick={saveOrder}
+                    disabled={saving}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl hover:bg-green-700 transition-all shadow-md hover:shadow-lg font-medium text-sm disabled:opacity-50"
+                  >
+                    <Save size={18} />
+                    {saving ? "Saving..." : "Save Order"}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -174,10 +340,7 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
           {/* Search */}
           <div className="mb-6">
             <div className="relative">
-              <Search
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                size={18}
-              />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="text"
                 value={search}
@@ -199,112 +362,84 @@ export default function AdminCoffeeList({ sendCookies = true }: AdminCoffeeListP
           {/* Desktop Table */}
           <div className="hidden lg:block bg-white rounded-2xl border-2 border-gray-200 overflow-hidden shadow-lg">
             <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b-2 border-gray-200">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      Image
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      Name
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      Origin
-                    </th>
-                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      Slug
-                    </th>
-                    <th className="px-6 py-4 text-right text-xs font-bold text-gray-900 uppercase tracking-wide">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {loading ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-16 text-center">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
-                          <p className="text-sm text-gray-600">Loading coffees...</p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-16 text-center">
-                        <div className="flex flex-col items-center justify-center gap-3">
-                          <CoffeeIcon size={48} className="text-gray-300" />
-                          <p className="text-gray-900 font-medium">
-                            {search ? "No coffees match your search" : "No coffees found"}
-                          </p>
-                          {!search && (
-                            <button
-                              onClick={() => router.push("/admin/coffee/create")}
-                              className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all font-medium text-sm"
-                            >
-                              <Plus size={16} />
-                              Create Your First Coffee
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map((coffee) => (
-                      <tr key={coffee._id} className="hover:bg-gray-50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="w-16 h-16 rounded-xl overflow-hidden bg-gray-100 ring-2 ring-gray-200">
-                            {coffee.img ? (
-                              <Image
-                                src={getCloudinaryThumbnail(coffee.img, 200)}
-                                alt={coffee.name}
-                                width={64}
-                                height={64}
-                                className="object-cover w-full h-full"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                <CoffeeIcon size={24} className="text-gray-400" />
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-bold text-gray-900">{coffee.name}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-600">{coffee.origin}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm text-gray-500 font-mono">{coffee.slug}</div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() =>
-                                router.push(
-                                  `/admin/coffee/edit/${encodeURIComponent(coffee._id)}`
-                                )
-                              }
-                              className="inline-flex items-center gap-2 px-3 py-2 bg-gray-900 text-white text-sm rounded-xl hover:bg-gray-800 transition-all font-medium"
-                            >
-                              <PencilIcon size={14} />
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(coffee._id, coffee.name)}
-                              className="inline-flex items-center gap-2 px-3 py-2 bg-red-50 text-red-600 text-sm rounded-xl border-2 border-red-200 hover:bg-red-100 transition-all font-medium"
-                            >
-                              <Trash2 size={14} />
-                              Delete
-                            </button>
-                          </div>
-                        </td>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={filtered.map((c) => c._id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <table className="w-full">
+                    <thead className="bg-gray-50 border-b-2 border-gray-200">
+                      <tr>
+                        <th className="px-4 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide w-14">
+                          Order
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                          Image
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                          Name
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                          Origin
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-bold text-gray-900 uppercase tracking-wide">
+                          Slug
+                        </th>
+                        <th className="px-6 py-4 text-right text-xs font-bold text-gray-900 uppercase tracking-wide">
+                          Actions
+                        </th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {loading ? (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-16 text-center">
+                            <div className="flex flex-col items-center justify-center gap-3">
+                              <div className="w-10 h-10 border-3 border-gray-200 border-t-gray-900 rounded-full animate-spin" />
+                              <p className="text-sm text-gray-600">Loading coffees...</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : filtered.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-6 py-16 text-center">
+                            <div className="flex flex-col items-center justify-center gap-3">
+                              <CoffeeIcon size={48} className="text-gray-300" />
+                              <p className="text-gray-900 font-medium">
+                                {search ? "No coffees match your search" : "No coffees found"}
+                              </p>
+                              {!search && (
+                                <button
+                                  onClick={() => router.push("/admin/coffee/create")}
+                                  className="mt-2 inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-xl hover:bg-gray-800 transition-all font-medium text-sm"
+                                >
+                                  <Plus size={16} />
+                                  Create Your First Coffee
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        filtered.map((coffee) => (
+                          <SortableCoffeeRow
+                            key={coffee._id}
+                            coffee={coffee}
+                            onEdit={(id) =>
+                              router.push(`/admin/coffee/edit/${encodeURIComponent(id)}`)
+                            }
+                            onDelete={handleDelete}
+                          />
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
 

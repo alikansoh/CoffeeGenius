@@ -43,6 +43,8 @@ interface RequestBody {
   shipping?: number;
   notes?: string;
   dueDate?: string;
+  remindersEnabled?: boolean;
+  recurring?: { enabled: boolean; dayOfMonth?: number };
   sendEmail?: boolean;
   createdAt?: string;
   currency?: string;
@@ -76,7 +78,14 @@ export async function POST(req: Request) {
     const wantPdf = url.searchParams.get('pdf') === 'true';
 
     const body: RequestBody = await req.json();
-    const { client, items, shipping = 0, notes, dueDate, sendEmail = false } = body;
+    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false } = body;
+
+    if (recurring?.enabled && (!recurring.dayOfMonth || recurring.dayOfMonth < 1 || recurring.dayOfMonth > 28)) {
+      return NextResponse.json(
+        { error: 'Recurring day of month must be between 1 and 28' },
+        { status: 400 }
+      );
+    }
 
     if (!client?.name) {
       return NextResponse.json(
@@ -135,6 +144,10 @@ export async function POST(req: Request) {
       paymentStatus: 'unpaid',
       paidAt: null,
       dueDate: dueDate ? new Date(dueDate) : null,
+      remindersEnabled,
+      recurring: recurring?.enabled
+        ? { enabled: true, dayOfMonth: recurring.dayOfMonth }
+        : { enabled: false },
       createdAt,
       notes: notes || undefined,
       recipientEmail: client.email || '',

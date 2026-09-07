@@ -39,7 +39,7 @@ type RefundRecord = {
 };
 
 type SendResult =
-  | { sent: true; info: any }
+  | { sent: true; info: unknown }
   | { sent: false; error?: string; reason?: "no-recipient" | "send-failed" };
 
 function formatCurrency(value = 0, currency = "GBP") {
@@ -184,7 +184,7 @@ export async function notifyRefundToCustomer(opts: {
 
   const textContent = textLines.join("\n");
 
-  const payload: Record<string, any> = {
+  const payload: Record<string, unknown> = {
     sender: { name: senderName, email: senderEmail },
     to: [{ email }],
     subject: `${companyName} — Refund issued for order ${orderNumber}`,
@@ -214,7 +214,7 @@ export async function notifyRefundToCustomer(opts: {
 
     const info = await resp.json().catch(() => ({}));
     return { sent: true, info };
-  } catch (err: any) {
+  } catch (err: unknown) {
     return {
       sent: false,
       error: err instanceof Error ? err.message : String(err),

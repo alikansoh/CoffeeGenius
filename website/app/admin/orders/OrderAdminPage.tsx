@@ -18,24 +18,12 @@ import {
   ChevronDown,
   Filter,
   Download,
+  Tag,
 } from "lucide-react";
 import Fuse, { FuseResult } from "fuse.js";
 
 /**
  * Client-side searching approach
- *
- * Notes:
- * - This page fetches all orders from the server (paginated fetch loop)
- *   and performs search locally in the browser using Fuse.js for fuzzy search.
- *
- * Improvements:
- * - Better handling of refunds: compute refunded and refundable amounts from
- *   order.refund and order.metadata.refunds/refundedAmount. Prefill refund modal
- *   with remaining refundable amount. Prevent over-refunds.
- * - Revenue now accounts for refunds (net revenue).
- * - Partial refunds supported; status 'partially_refunded' used for partials.
- * - Added refund confirmation modal so user reviews before submitting.
- * - Added "Export orders" (CSV) button + API integration to download orders as CSV.
  */
 
 /* -------------------------- Types -------------------------- */
@@ -100,7 +88,9 @@ type Order = {
   shippingAddress?: Address | null;
   shipping?: number;
   subtotal?: number;
+  discount?: number;
   total?: number;
+  couponName?: string | null;
   shipment?: Shipment | null;
   refund?: Refund | null;
 };
@@ -173,9 +163,7 @@ function getStatusIcon(status?: string) {
 }
 
 /* ---------------------- Refund helpers --------------------- */
-
 function getRefundedAmount(order: Order): number {
-  // Priority: metadata.refundedAmount -> metadata.refunds sum -> order.refund.amount -> 0
   const meta = order.metadata || {};
   if (typeof meta.refundedAmount === "number" && !Number.isNaN(meta.refundedAmount)) {
     return Number(meta.refundedAmount);
@@ -198,36 +186,27 @@ function getRefundableAmount(order: Order): number {
 
 /* ------------------------ Component ------------------------ */
 export default function OrdersPage() {
-  // full dataset stored in memory for client-side search
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const fuseRef = useRef<Fuse<Order> | null>(null);
 
-  // UI & behavior
   const [loadingAll, setLoadingAll] = useState(false);
-  const [loadingPageSample, setLoadingPageSample] = useState(false); // optional initial sample
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Controls
   const [query, setQuery] = useState("");
-  const [searchField, setSearchField] = useState<
-    "auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking"
-  >("auto");
+  const [searchField, setSearchField] = useState<"auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking">("auto");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  // Client-side pagination / view
   const [page, setPage] = useState(1);
   const perPage = 12;
 
-  // Modals & action state (refund/ship/delete)
   const [selected, setSelected] = useState<Order | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Order | null>(null);
   const [refundModal, setRefundModal] = useState<Order | null>(null);
   const [shipmentModal, setShipmentModal] = useState<Order | null>(null);
   const [shipmentConfirmOpen, setShipmentConfirmOpen] = useState(false);
 
-  // NEW: Refund confirmation modal open state
   const [refundConfirmOpen, setRefundConfirmOpen] = useState(false);
 
   const [refundAmount, setRefundAmount] = useState("");
@@ -239,16 +218,12 @@ export default function OrdersPage() {
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [exportLoading, setExportLoading] = useState(false);
 
-  // debounce
   const debounceRef = useRef<number | null>(null);
 
-  // Safety caps for fetching all records
-  const BATCH_LIMIT = 200; // server-side limit per page (match API)
-  const MAX_RECORDS_TO_FETCH = 5000; // safety cap:  abort if this many reached
+  const BATCH_LIMIT = 200;
+  const MAX_RECORDS_TO_FETCH = 5000;
 
-  // Derived:  filtered and searched results (memoized)
   const filteredAndSearched = useMemo(() => {
-    // start from allOrders and apply status filter
     let base = allOrders;
     if (statusFilter && statusFilter !== "all") {
       base = base.filter((o) => o.status === statusFilter);
@@ -257,17 +232,14 @@ export default function OrdersPage() {
     const q = query.trim();
     if (!q) return base;
 
-    // heuristic: if user typed a 24-hex id and searching orderId or auto, prefer exact match first
     const isHex24 = /^[0-9a-fA-F]{24}$/.test(q);
     if (isHex24 && (searchField === "orderId" || searchField === "auto")) {
       const exact = base.filter((o) => o._id.toLowerCase() === q.toLowerCase());
       if (exact.length > 0) return exact;
     }
 
-    // If a Fuse index is available, use it for fuzzy search
     const fuse = fuseRef.current;
     if (fuse) {
-      // map searchField to Fuse keys when field-specific search required
       const keysForField: Record<string, string[]> = {
         orderId: ["_id"],
         clientId: ["clientId"],
@@ -282,16 +254,14 @@ export default function OrdersPage() {
         ],
         item: ["items.name", "items.source"],
         tracking: ["shipment.trackingCode", "shipment.provider"],
-        auto: [], // let Fuse use global keys defined at creation
+        auto: [],
       };
 
       if (searchField !== "auto") {
         try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const results = fuse.search(q, { keys: keysForField[searchField] } as any).map((r: FuseResult<Order>) => r.item);
           return results;
         } catch {
-          // fall through to global search
         }
       } else {
         const results = fuse.search(q).map((r: FuseResult<Order>) => r.item);
@@ -299,7 +269,6 @@ export default function OrdersPage() {
       }
     }
 
-    // fallback naive filtering (if Fuse not ready)
     const low = q.toLowerCase();
     const matchAddress = (addr: Address | null | undefined) =>
       !!addr &&
@@ -310,7 +279,6 @@ export default function OrdersPage() {
         addr.city?.toLowerCase().includes(low) ||
         addr.postcode?.toLowerCase().includes(low));
     return base.filter((o) => {
-      // check multiple fields
       if (o._id?.toLowerCase().includes(low)) return true;
       if (o.clientId?.toLowerCase().includes(low)) return true;
       if (o.paymentIntentId?.toLowerCase().includes(low)) return true;
@@ -322,14 +290,11 @@ export default function OrdersPage() {
     });
   }, [allOrders, query, searchField, statusFilter]);
 
-  // pagination of the filtered results
   const totalResults = filteredAndSearched.length;
   const totalPages = Math.max(1, Math.ceil(totalResults / perPage));
   const paginated = filteredAndSearched.slice((page - 1) * perPage, page * perPage);
 
   /* ------------------------ Effects ------------------------ */
-
-  // On mount:  fetch all orders in the background
   useEffect(() => {
     let mounted = true;
     async function loadAll() {
@@ -342,7 +307,6 @@ export default function OrdersPage() {
           const params = new URLSearchParams();
           params.set("page", String(pageNum));
           params.set("limit", String(BATCH_LIMIT));
-          // we fetch "all" statuses here; later user's status filter will apply client-side
           const res = await fetch(`/api/orders?${params.toString()}`);
           if (!res.ok) {
             const json = await res.json().catch(() => ({}));
@@ -352,13 +316,11 @@ export default function OrdersPage() {
           const pageOrders: Order[] = json.data || [];
           accumulated.push(...pageOrders);
 
-          // safety cap
           if (accumulated.length >= MAX_RECORDS_TO_FETCH) {
             console.warn(`Reached MAX_RECORDS_TO_FETCH=${MAX_RECORDS_TO_FETCH}, stopping fetch`);
             break;
           }
 
-          // stop when last page reached
           const meta = json.meta || { page: pageNum, pages: pageNum };
           if (meta.page >= meta.pages) break;
           pageNum += 1;
@@ -368,8 +330,6 @@ export default function OrdersPage() {
 
         setAllOrders(accumulated);
 
-        // build Fuse index for client-side fuzzy search
-        // tuned weights to prioritize items. name, then ids and names/emails
         fuseRef.current = new Fuse(accumulated, {
           includeScore: true,
           threshold: 0.4,
@@ -404,14 +364,12 @@ export default function OrdersPage() {
     return () => {
       mounted = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // debounce the query for responsive UI
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(() => {
-      setPage(1); // reset page when query changes
+      setPage(1);
     }, 200);
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
@@ -419,7 +377,6 @@ export default function OrdersPage() {
   }, [query, searchField, statusFilter]);
 
   /* ---------------------- Action handlers --------------------- */
-
   const deleteOrder = async (id: string) => {
     setActionLoading((s) => ({ ...s, [id]: true }));
     try {
@@ -429,7 +386,6 @@ export default function OrdersPage() {
         throw new Error(json.error || `Failed to delete order (${res.status})`);
       }
       showSuccess("Order deleted successfully");
-      // remove from local store
       setAllOrders((arr) => arr.filter((o) => o._id !== id));
       setDeleteConfirm(null);
       setSelected(null);
@@ -456,10 +412,7 @@ export default function OrdersPage() {
       const res = await fetch(`/api/orders/${refundModal._id}/refund`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount,
-          reason: refundReason.trim() || undefined,
-        }),
+        body: JSON.stringify({ amount, reason: refundReason.trim() || undefined }),
       });
       if (!res.ok) {
         const json: ApiError = await res.json().catch(() => ({ error: "" }));
@@ -467,25 +420,20 @@ export default function OrdersPage() {
       }
 
       const json = await res.json().catch(() => ({}));
-      // server returns { data: { refund, order } } — prefer the updated order if present
       const returnedOrder: Order | undefined = json?.data?.order ?? json?.data;
 
       showSuccess(`Order refunded successfully (${formatCurrency(amount, (refundModal.currency || "GBP").toUpperCase())})`);
 
       if (returnedOrder) {
         setAllOrders((arr) => arr.map((o) => (o._id === returnedOrder._id ? returnedOrder : o)));
-        // if the modal order is the same, refresh it
         if (refundModal._id === returnedOrder._id) {
-          setRefundModal(null); // CLOSE refund modal after success
-          setSelected(null); // CLOSE details modal too (user requested both closed)
-          // set refund amount to remaining refundable amount for convenience (if user reopens)
-          // ensure the amount input is reset
+          setRefundModal(null);
+          setSelected(null);
           setRefundAmount("");
         } else {
           setRefundModal(null);
         }
       } else {
-        // best effort: mark refunded locally
         setAllOrders((arr) =>
           arr.map((o) =>
             o._id === refundModal._id
@@ -506,7 +454,6 @@ export default function OrdersPage() {
         setRefundAmount("");
       }
 
-      // close the confirmation modal (if open)
       setRefundConfirmOpen(false);
       setRefundReason("");
     } catch (err: unknown) {
@@ -524,11 +471,7 @@ export default function OrdersPage() {
       const res = await fetch(`/api/orders/${shipmentModal._id}/shipment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: shipmentProvider,
-          trackingCode: trackingCode.trim() || undefined,
-          estimatedDelivery: estimatedDelivery || undefined,
-        }),
+        body: JSON.stringify({ provider: shipmentProvider, trackingCode: trackingCode.trim() || undefined, estimatedDelivery: estimatedDelivery || undefined }),
       });
       if (!res.ok) {
         const json: ApiError = await res.json().catch(() => ({ error: "" }));
@@ -562,7 +505,6 @@ export default function OrdersPage() {
   };
 
   /* ---------------------- Export handler --------------------- */
-
   async function exportOrdersCSV() {
     try {
       setExportLoading(true);
@@ -592,26 +534,24 @@ export default function OrdersPage() {
   }
 
   /* ------------------------ Render ------------------------ */
-
   const isEmpty = !loadingAll && allOrders.length === 0;
 
-  // Stats: totalRevenue should subtract refunded amounts (net revenue)
   const stats = useMemo(() => {
     const orders = allOrders;
-    // totalRevenue = sum of (order.total - refundedAmount) across orders
     const totalRevenue = orders.reduce((sum, o) => {
       const total = Number(o.total || 0);
       const refunded = getRefundedAmount(o);
-      // don't let a single order push revenue below 0
       const net = Math.max(0, Number((total - refunded).toFixed(2)));
       return sum + net;
     }, 0);
+
+    const totalDiscount = orders.reduce((sum, o) => sum + Number(o.discount || 0), 0);
 
     const paidOrders = orders.filter((o) => o.status === "paid" || o.status === "shipped").length;
     const shippedOrders = orders.filter((o) => o.status === "shipped").length;
     const refundedOrders = orders.filter((o) => o.status === "refunded").length;
 
-    return { totalRevenue, paidOrders, shippedOrders, refundedOrders };
+    return { totalRevenue, totalDiscount, paidOrders, shippedOrders, refundedOrders };
   }, [allOrders]);
 
   return (
@@ -644,7 +584,7 @@ export default function OrdersPage() {
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-6">
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mt-6">
             <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
@@ -672,11 +612,23 @@ export default function OrdersPage() {
             <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Total Discounts</p>
+                  <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 truncate">{formatCurrency(stats.totalDiscount)}</p>
+                </div>
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0 ml-3">
+                  <Tag className="text-purple-600" size={20} />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gradient-to-br from-white to-gray-50 rounded-xl p-4 sm:p-5 border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Shipped</p>
                   <p className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 truncate">{stats.shippedOrders}</p>
                 </div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-50 rounded-xl flex items-center justify-center flex-shrink-0 ml-3">
-                  <Truck className="text-purple-600" size={20} />
+                <div className="w-10 h-10 sm:w-12 sm:h-12 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0 ml-3">
+                  <Truck className="text-indigo-600" size={20} />
                 </div>
               </div>
             </div>
@@ -706,7 +658,7 @@ export default function OrdersPage() {
               <Search className="absolute left-3 sm:left-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none z-10" size={18} />
               <input
                 aria-label="Search orders"
-                className="w-full pl-10 sm:pl-11 pr-10 sm:pr-32 py-3 sm:py-3.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm sm:text-base"
+                className="w-full pl-10 sm:pl-11 pr-10 sm:pr-32 py-3 sm:py-3.5 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition text-sm"
                 placeholder="Search orders..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -731,11 +683,9 @@ export default function OrdersPage() {
                   <select
                     value={searchField}
                     onChange={(e) =>
-                      setSearchField(
-                        e.target.value as "auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking"
-                      )
+                      setSearchField(e.target.value as "auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking")
                     }
-                    className="appearance-none pl-3 pr-9 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50 transition"
+                    className="appearance-none pl-3 pr-9 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-medium text-gray-700 cursor-pointer"
                     aria-label="Search scope"
                   >
                     <option value="auto">All Fields</option>
@@ -757,9 +707,7 @@ export default function OrdersPage() {
                 <select
                   value={searchField}
                   onChange={(e) =>
-                    setSearchField(
-                      e.target.value as "auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking"
-                    )
+                    setSearchField(e.target.value as "auto" | "orderId" | "clientId" | "paymentIntent" | "emailName" | "item" | "tracking")
                   }
                   className="appearance-none w-full pl-3 pr-9 py-2.5 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-medium text-gray-700"
                   aria-label="Search scope"
@@ -809,7 +757,7 @@ export default function OrdersPage() {
                     setStatusFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="appearance-none pl-3 pr-9 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50 transition"
+                  className="appearance-none pl-3 pr-9 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm font-medium text-gray-700 cursor-pointer"
                   aria-label="Filter by status"
                 >
                   <option value="all">All Status</option>
@@ -886,6 +834,7 @@ export default function OrdersPage() {
               {paginated.map((o) => {
                 const refunded = getRefundedAmount(o);
                 const refundable = getRefundableAmount(o);
+                const discount = Number(o.discount || 0);
                 return (
                   <article key={o._id} className="group bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-lg hover:border-gray-300 transition-all duration-200 overflow-hidden">
                     {/* Status indicator bar */}
@@ -937,6 +886,27 @@ export default function OrdersPage() {
                             {getStatusIcon(o.status)}
                             <span className="capitalize">{o.status || "pending"}</span>
                           </span>
+
+                          {o.metadata?.addressNeedsReview ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-lg text-xs font-medium"
+                              title={
+                                typeof o.metadata?.addressReviewReason === "string"
+                                  ? o.metadata.addressReviewReason
+                                  : "Verify the delivery address before shipping"
+                              }
+                            >
+                              <AlertCircle size={12} />
+                              Verify address
+                            </span>
+                          ) : null}
+
+                          {discount > 0 ? (
+                            <span className="inline-flex items-center gap-1.5 bg-purple-50 text-purple-700 border border-purple-200 px-2.5 py-1 rounded-lg text-xs font-medium">
+                              <Tag size={12} />
+                              {o.couponName ? `${o.couponName}` : "Discount"} -{formatCurrency(discount, (o.currency || "GBP").toUpperCase())}
+                            </span>
+                          ) : null}
 
                           <span className="inline-flex items-center gap-1.5 bg-gray-100 text-gray-700 border border-gray-200 px-2.5 py-1 rounded-lg text-xs font-medium">
                             <Package size={12} /> {o.items?.length ?? 0}
@@ -1007,7 +977,7 @@ export default function OrdersPage() {
                         ) : (
                           <button
                             disabled
-                            className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 bg-gray-50 text-gray-300 rounded-lg text-xs sm:text-sm transition font-medium cursor-not-allowed"
+                            className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 border border-gray-200 bg-gray-50 text-gray-300 rounded-lg text-xs sm:text-sm transition font-medium"
                             title="No refundable amount"
                             aria-label={`No refundable amount for order ${shortId(o._id)}`}
                           >
@@ -1121,6 +1091,19 @@ export default function OrdersPage() {
                       <Package size={16} className="text-gray-600" />
                       Shipping Address
                     </h3>
+                    {selected.metadata?.addressNeedsReview ? (
+                      <div className="mb-3 px-3.5 py-3 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2.5">
+                        <AlertCircle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-sm font-semibold text-amber-800">Verify address before shipping</p>
+                          <p className="text-xs text-amber-700 mt-0.5">
+                            {typeof selected.metadata?.addressReviewReason === "string"
+                              ? selected.metadata.addressReviewReason
+                              : "This address may be incomplete — worth confirming with the customer."}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 space-y-2 border border-gray-200">
                       <div className="text-sm font-semibold text-gray-900">
                         {[selected.shippingAddress?.firstName, selected.shippingAddress?.lastName].filter(Boolean).join(" ") || "—"}
@@ -1170,6 +1153,28 @@ export default function OrdersPage() {
                       )}
                     </div>
                   </div>
+
+                  {/* Coupon / Discount block */}
+                  {Number(selected.discount || 0) > 0 && (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-800 mb-3 flex items-center gap-2">
+                        <Tag size={16} className="text-purple-600" />
+                        Coupon Applied
+                      </h3>
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-purple-900 font-medium">Coupon</span>
+                          <span className="text-sm font-semibold text-purple-900">{selected.couponName || "—"}</span>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-purple-200">
+                          <span className="text-sm text-purple-900 font-medium">Discount</span>
+                          <span className="text-lg font-bold text-purple-700">
+                            -{formatCurrency(selected.discount, selected.currency || "GBP")}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Shipment Details */}
                   {selected.shipment && (
@@ -1267,6 +1272,17 @@ export default function OrdersPage() {
                           {formatCurrency(selected.subtotal, (selected.currency || "GBP").toUpperCase())}
                         </div>
                       </div>
+                      {Number(selected.discount || 0) > 0 && (
+                        <div className="flex justify-between text-sm text-purple-700">
+                          <div className="font-medium flex items-center gap-1.5">
+                            <Tag size={14} />
+                            Discount{selected.couponName ? ` (${selected.couponName})` : ""}
+                          </div>
+                          <div className="font-semibold">
+                            -{formatCurrency(selected.discount, (selected.currency || "GBP").toUpperCase())}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between text-sm text-gray-700">
                         <div className="font-medium">Shipping</div>
                         <div className="font-semibold text-gray-900">
@@ -1290,34 +1306,34 @@ export default function OrdersPage() {
                       Order Items ({selected.items?.length ?? 0})
                     </h3>
                     <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                    {selected.items?.map((it, idx) => (
-  <div
-    key={idx}
-    className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition"
-  >
-    <div className="flex items-start justify-between gap-3">
-      <div className="flex-1 min-w-0">
-        <div className="font-medium text-gray-900 mb-1.5">{it.name}</div>
-        <div className="text-xs text-gray-600 space-y-0.5">
-          <div>Qty: <span className="font-semibold text-gray-900">{it.qty}</span></div>
-          <div>
-            Unit Price: <span className="font-semibold text-gray-900">
-              {formatCurrency(it.unitPrice, (selected.currency || "GBP").toUpperCase())}
-            </span>
-          </div>
-          {it.roastType && (
-            <div>
-              Roast: <span className="font-semibold text-gray-900">{it.roastType}</span>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="font-bold text-gray-900 flex-shrink-0">
-        {formatCurrency(it.totalPrice, (selected.currency || "GBP").toUpperCase())}
-      </div>
-    </div>
-  </div>
-))}
+                      {selected.items?.map((it, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white border border-gray-200 rounded-xl p-4 hover:border-gray-300 hover:shadow-sm transition"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-gray-900 mb-1.5">{it.name}</div>
+                              <div className="text-xs text-gray-600 space-y-0.5">
+                                <div>Qty: <span className="font-semibold text-gray-900">{it.qty}</span></div>
+                                <div>
+                                  Unit Price: <span className="font-semibold text-gray-900">
+                                    {formatCurrency(it.unitPrice, (selected.currency || "GBP").toUpperCase())}
+                                  </span>
+                                </div>
+                                {it.roastType && (
+                                  <div>
+                                    Roast: <span className="font-semibold text-gray-900">{it.roastType}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div className="font-bold text-gray-900 flex-shrink-0">
+                              {formatCurrency(it.totalPrice, (selected.currency || "GBP").toUpperCase())}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
 
@@ -1377,7 +1393,7 @@ export default function OrdersPage() {
                 </div>
 
                 {/* Action Buttons */}
-                <div className="mt-8 flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200">
+                <div className="mt-8 flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-200 lg:col-span-2">
                   {!selected.shipment && selected.status !== "refunded" && (
                     <button
                       onClick={() => {
@@ -1480,7 +1496,6 @@ export default function OrdersPage() {
                   Cancel
                 </button>
 
-                {/* Instead of calling refund immediately, open a confirmation modal */}
                 <button
                   onClick={() => setRefundConfirmOpen(true)}
                   disabled={!!actionLoading[refundModal._id] || !refundAmount || parseFloat(refundAmount) <= 0 || parseFloat(refundAmount) > getRefundableAmount(refundModal)}
@@ -1549,7 +1564,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Shipment Modal & Confirmation (unchanged) */}
+      {/* Shipment Modal */}
       {shipmentModal && !shipmentConfirmOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" onClick={() => setShipmentModal(null)}>
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
@@ -1573,7 +1588,7 @@ export default function OrdersPage() {
                       id="shipmentProvider"
                       value={shipmentProvider}
                       onChange={(e) => setShipmentProvider(e.target.value as ShipmentProvider)}
-                      className="appearance-none w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white font-medium cursor-pointer"
+                      className="appearance-none w-full px-4 py-3 pr-10 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition bg-white"
                     >
                       {SHIPMENT_PROVIDERS.map((provider) => (
                         <option key={provider.value} value={provider.value}>
@@ -1597,7 +1612,7 @@ export default function OrdersPage() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition font-mono"
                     placeholder="Enter tracking code..."
                   />
-                  <p className="text-xs text-gray-500 mt-2">You can add this later if not available yet. </p>
+                  <p className="text-xs text-gray-500 mt-2">You can add this later if not available yet.</p>
                 </div>
 
                 <div>
@@ -1724,7 +1739,7 @@ export default function OrdersPage() {
                 <Trash2 size={32} className="text-red-600" />
               </div>
 
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2">Delete Order? </h3>
+              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 text-center mb-2">Delete Order?</h3>
               <p className="text-sm text-gray-600 text-center mb-6">
                 Are you sure you want to delete order <span className="font-semibold text-gray-900">#{shortId(deleteConfirm._id)}</span>?
                 <span className="block mt-2 text-red-600 font-medium">This action cannot be undone.</span>

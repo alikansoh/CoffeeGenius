@@ -63,7 +63,18 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const { coffeeId, sku, size, grind, roastType, price, stock, img } = body;
+    const {
+      coffeeId,
+      sku,
+      size,
+      grind,
+      roastType,
+      price,
+      stock,
+      img,
+      subscriptionEnabled,
+      subscriptionDiscountPercent,
+    } = body;
 
     if (!coffeeId || !sku || !size || !grind || !roastType || price === undefined || stock === undefined) {
       return NextResponse.json(
@@ -95,10 +106,21 @@ export async function POST(request: NextRequest) {
       price,
       stock,
       img,
+      subscriptionEnabled: subscriptionEnabled ?? false,
+      subscriptionDiscountPercent: subscriptionDiscountPercent ?? 0,
     });
 
     await variant.save();
     await variant.populate("coffeeId");
+
+    if (variant.subscriptionEnabled) {
+      try {
+        const { syncVariantSubscriptionPrices } = await import("@/lib/subscriptionPricing");
+        await syncVariantSubscriptionPrices(variant._id.toString());
+      } catch (err) {
+        console.error("⚠️ Failed to sync Stripe subscription price for new variant:", err);
+      }
+    }
 
     return NextResponse.json(
       {

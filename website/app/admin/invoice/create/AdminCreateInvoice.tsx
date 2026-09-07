@@ -19,6 +19,8 @@ import {
   FileText,
   Search,
   ChevronDown,
+  BellOff,
+  Repeat,
 } from "lucide-react";
 
 interface Address {
@@ -53,6 +55,12 @@ interface FormData {
   dueDate: string;
   invoiceDate: string;
   currency: string;
+  /** When off, this invoice is skipped by the automated reminder cron entirely. */
+  remindersEnabled: boolean;
+  /** When on, a fresh copy of this invoice (same client/items/shipping) is auto-generated and
+   *  emailed on recurringDayOfMonth every month, until turned off. */
+  recurringEnabled: boolean;
+  recurringDayOfMonth: string;
 }
 
 interface ApiInvoiceItem {
@@ -80,6 +88,8 @@ interface ApiInvoice {
   dueDate?: string;
   createdAt?: string;
   currency?: string;
+  remindersEnabled?: boolean;
+  recurring?: { enabled?: boolean; dayOfMonth?: number };
 }
 
 interface ClientSearchResult {
@@ -180,6 +190,9 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
         dueDate: formatDateInput(invoice.dueDate),
         invoiceDate: formatDateInput(invoice.createdAt),
         currency: invoice.currency || "gbp",
+        remindersEnabled: invoice.remindersEnabled ?? true,
+        recurringEnabled: invoice.recurring?.enabled ?? false,
+        recurringDayOfMonth: invoice.recurring?.dayOfMonth?.toString() ?? "1",
       };
     }
 
@@ -204,6 +217,9 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
       dueDate: "",
       invoiceDate: "",
       currency: "gbp",
+      remindersEnabled: true,
+      recurringEnabled: false,
+      recurringDayOfMonth: "1",
     };
   });
 
@@ -411,6 +427,11 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
       shipping: getNumberValue(formData.shipping),
       notes: formData.notes || undefined,
       dueDate: formData.dueDate || undefined,
+      remindersEnabled: formData.remindersEnabled,
+      recurring: {
+        enabled: formData.recurringEnabled,
+        dayOfMonth: formData.recurringEnabled ? Number(formData.recurringDayOfMonth) : undefined,
+      },
       currency: formData.currency,
       billingAddress: formData.billingAddress || null,
       createdAt: formData.invoiceDate || undefined,
@@ -917,6 +938,71 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
                     />
                   </div>
+                </div>
+
+                <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 hover:border-gray-300 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={!formData.remindersEnabled}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, remindersEnabled: !e.target.checked }))
+                    }
+                    className="mt-1 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer"
+                  />
+                  <span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                      <BellOff size={15} />
+                      Turn off automatic reminders
+                    </span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      This invoice will never be picked up by the automatic payment reminder emails, even after the due date passes.
+                    </span>
+                  </span>
+                </label>
+
+                <div className="p-4 rounded-xl border-2 border-gray-200">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.recurringEnabled}
+                      onChange={(e) =>
+                        setFormData((prev) => ({ ...prev, recurringEnabled: e.target.checked }))
+                      }
+                      className="mt-1 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer"
+                    />
+                    <span>
+                      <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                        <Repeat size={15} />
+                        Make this a recurring invoice
+                      </span>
+                      <span className="block text-xs text-gray-500 mt-0.5">
+                        A fresh copy of this invoice (same client, items, price) is automatically generated and emailed every month. Turn off any time to pause it.
+                      </span>
+                    </span>
+                  </label>
+
+                  {formData.recurringEnabled && (
+                    <div className="mt-3 pl-7">
+                      <label className="block text-xs font-bold text-gray-700 mb-1.5">Send on day of month</label>
+                      <select
+                        value={formData.recurringDayOfMonth}
+                        onChange={(e) =>
+                          setFormData((prev) => ({ ...prev, recurringDayOfMonth: e.target.value }))
+                        }
+                        className="w-full sm:w-40 px-3 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900 bg-white text-sm"
+                      >
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                          <option key={day} value={day}>
+                            {day}
+                            {day === 1 ? "st" : day === 2 ? "nd" : day === 3 ? "rd" : "th"} of the month
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        Capped at 28 so it fires on the same day every month, including February.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

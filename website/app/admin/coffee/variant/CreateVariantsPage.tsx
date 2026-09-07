@@ -49,6 +49,8 @@ interface ServerVariant {
   price?: number;
   stock?: number;
   img?: string;
+  subscriptionEnabled?: boolean;
+  subscriptionDiscountPercent?: number;
 }
 
 interface VariantFormData {
@@ -63,6 +65,8 @@ interface VariantFormData {
   roastType: RoastTypeOption;
   price: number;
   stock: number;
+  subscriptionEnabled: boolean;
+  subscriptionDiscountPercent: number;
   error?: string | null;
   isDirty?: boolean;
 }
@@ -288,7 +292,7 @@ export default function CreateVariantsPage({
   );
 
   const handleVariantChange = useCallback(
-    (index: number, field: keyof VariantFormData, value: string | number) => {
+    (index: number, field: keyof VariantFormData, value: string | number | boolean) => {
       setVariants((prev) => {
         const copy = [...prev];
         const variant = { ...copy[index] };
@@ -330,6 +334,13 @@ export default function CreateVariantsPage({
             typeof value === "number"
               ? value
               : parseInt(String(value || "0"), 10);
+        } else if (field === "subscriptionEnabled") {
+          variant.subscriptionEnabled = Boolean(value);
+        } else if (field === "subscriptionDiscountPercent") {
+          variant.subscriptionDiscountPercent =
+            typeof value === "number"
+              ? value
+              : parseFloat(String(value || "0"));
         } else if (field === "grind") {
           variant.grind = value as GrindOption;
           if (variant.useAutoSku ?? true) {
@@ -400,6 +411,8 @@ export default function CreateVariantsPage({
         roastType: "espresso",
         price: DEFAULT_PRICES["g"] ?? 14.99,
         stock: 0,
+        subscriptionEnabled: false,
+        subscriptionDiscountPercent: 0,
         error: null,
         isDirty: true,
         useAutoSku: true,
@@ -568,6 +581,8 @@ export default function CreateVariantsPage({
               roastType: "espresso",
               price: DEFAULT_PRICES["g"] ?? 14.99,
               stock: 0,
+              subscriptionEnabled: false,
+              subscriptionDiscountPercent: 0,
               error: null,
               isDirty: false,
               useAutoSku: true,
@@ -603,6 +618,8 @@ export default function CreateVariantsPage({
                 : "espresso",
               price: sv.price ?? DEFAULT_PRICES[unit] ?? 14.99,
               stock: sv.stock ?? 0,
+              subscriptionEnabled: sv.subscriptionEnabled ?? false,
+              subscriptionDiscountPercent: sv.subscriptionDiscountPercent ?? 0,
               error: null,
               isDirty: false,
             };
@@ -627,6 +644,8 @@ export default function CreateVariantsPage({
             roastType: "espresso",
             price: DEFAULT_PRICES["g"] ?? 14.99,
             stock: 0,
+            subscriptionEnabled: false,
+            subscriptionDiscountPercent: 0,
             error: null,
             isDirty: false,
             useAutoSku: true,
@@ -723,6 +742,8 @@ export default function CreateVariantsPage({
           roastType: variant.roastType,
           price: variant.price,
           stock: variant.stock,
+          subscriptionEnabled: variant.subscriptionEnabled,
+          subscriptionDiscountPercent: variant.subscriptionDiscountPercent,
         };
 
         if (variant.id) {
@@ -795,6 +816,10 @@ export default function CreateVariantsPage({
             : previous.roastType;
           const price = serverVariant.price ?? previous.price;
           const stock = serverVariant.stock ?? previous.stock;
+          const subscriptionEnabled =
+            serverVariant.subscriptionEnabled ?? previous.subscriptionEnabled ?? false;
+          const subscriptionDiscountPercent =
+            serverVariant.subscriptionDiscountPercent ?? previous.subscriptionDiscountPercent ?? 0;
           return {
             id,
             sku,
@@ -805,6 +830,8 @@ export default function CreateVariantsPage({
             roastType,
             price,
             stock,
+            subscriptionEnabled,
+            subscriptionDiscountPercent,
             isDirty: false,
             error: null,
             useAutoSku: true,
@@ -1367,6 +1394,55 @@ export default function CreateVariantsPage({
                             </div>
                           </div>
                           {/* ====== END FIXED GRID LAYOUT ====== */}
+
+                          <div className="mt-4 pt-4 border-t-2 border-gray-200">
+                            <label className="flex items-center gap-2 text-sm font-bold text-gray-900 mb-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={variant.subscriptionEnabled}
+                                onChange={(e) =>
+                                  handleVariantChange(i, "subscriptionEnabled", e.target.checked)
+                                }
+                                className="w-4 h-4"
+                              />
+                              Available as a subscription
+                            </label>
+                            {variant.subscriptionEnabled && (
+                              <div className="flex flex-wrap items-end gap-3 mb-1">
+                                <div className="w-32">
+                                  <label className="text-xs font-bold text-gray-900 uppercase tracking-wide block mb-1">
+                                    Discount (%)
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    step={1}
+                                    value={variant.subscriptionDiscountPercent}
+                                    onChange={(e) =>
+                                      handleVariantChange(
+                                        i,
+                                        "subscriptionDiscountPercent",
+                                        e.target.value
+                                      )
+                                    }
+                                    className="w-full px-3 py-2 border-2 border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-gray-900"
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-500 pb-2">
+                                  Subscribers pay{" "}
+                                  <span className="font-semibold text-gray-900">
+                                    {formatPrice(
+                                      priceNum * (1 - (variant.subscriptionDiscountPercent || 0) / 100)
+                                    )}
+                                  </span>{" "}
+                                  {" "}per delivery instead of {formatPrice(priceNum)} (customer picks every 1, 2, 3,
+                                  or 4 weeks at checkout). Existing subscribers keep their price if you change this
+                                  later.
+                                </p>
+                              </div>
+                            )}
+                          </div>
 
                           <div className="mt-4 pt-4 border-t-2 border-gray-200">
                             <div className="flex items-center justify-between">

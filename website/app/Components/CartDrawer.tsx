@@ -8,6 +8,7 @@ import {
   Lock,
   ShoppingBag,
   Coffee as CoffeeIcon,
+  Repeat,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -104,7 +105,9 @@ export default function CartDrawer() {
   // Calculate totals only after mount to avoid hydration mismatch
   const totalPrice = mounted ? getTotalPrice() : 0; // in pounds
   const totalItems = mounted ? getTotalItems() : 0;
-  const coffeeItems = mounted ? getItemsByType("coffee") : [];
+  const allCoffeeItems = mounted ? getItemsByType("coffee") : [];
+  const subscriptionItems = allCoffeeItems.filter((item) => item.isSubscription);
+  const coffeeItems = allCoffeeItems.filter((item) => !item.isSubscription);
   const equipmentItems = mounted ? getItemsByType("equipment") : [];
 
   // Shipping calculation uses pence internally
@@ -275,6 +278,116 @@ export default function CartDrawer() {
               </div>
             ) : (
               <div className="space-y-4">
+                {/* Subscription Items */}
+                {subscriptionItems.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Repeat size={16} className="text-black" />
+                      <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                        Subscription
+                      </h3>
+                    </div>
+                    <ul className="space-y-3">
+                      {subscriptionItems.map((item) => (
+                        <li
+                          key={item.id}
+                          className="flex items-start gap-4 p-3 bg-gray-50 rounded-lg border border-gray-200"
+                        >
+                          <div className="w-16 h-16 rounded-lg bg-white overflow-hidden flex-shrink-0 border border-gray-200">
+                            {item.img ? (
+                              <Image
+                                src={getImageSrc(item.img, "thumbnail")}
+                                alt={item.name}
+                                width={64}
+                                height={64}
+                                className="object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full bg-gray-200" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div
+                                  className="text-sm font-medium line-clamp-2"
+                                  style={{ color: COLORS.primary }}
+                                >
+                                  {item.name}
+                                </div>
+                                <div className="mt-1 flex gap-2 text-xs text-gray-500">
+                                  {item.size && <span>{item.size}</span>}
+                                  {item.grind && <span>• {item.grind}</span>}
+                                  {item.roastType && (
+                                    <span>• {item.roastType}</span>
+                                  )}
+                                </div>
+                                <div className="mt-1 text-xs font-medium" style={{ color: COLORS.primary }}>
+                                  Delivery every {item.frequencyWeeks} week
+                                  {(item.frequencyWeeks || 1) > 1 ? "s" : ""}
+                                  {item.subscriptionDiscountPercent
+                                    ? ` with ${item.subscriptionDiscountPercent}% discount`
+                                    : ""}
+                                </div>
+                              </div>
+                              <div className="text-sm font-semibold whitespace-nowrap">
+                                {formatPrice(item.price * item.quantity)}
+                              </div>
+                            </div>
+
+                            <div className="mt-2 flex items-center justify-between gap-3">
+                              <div className="inline-flex items-center rounded-lg border border-gray-200 overflow-hidden bg-white">
+                                <button
+                                  type="button"
+                                  aria-label={`Decrease quantity for ${item.name}`}
+                                  onClick={() =>
+                                    updateQuantity(
+                                      item.id,
+                                      Math.max(1, item.quantity - 1)
+                                    )
+                                  }
+                                  className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none"
+                                >
+                                  −
+                                </button>
+                                <div className="px-3 py-1 text-sm w-10 text-center font-medium">
+                                  {item.quantity}
+                                </div>
+                                <button
+                                  type="button"
+                                  aria-label={`Increase quantity for ${item.name}`}
+                                  onClick={() =>
+                                    updateQuantity(item.id, item.quantity + 1)
+                                  }
+                                  disabled={
+                                    item.stock
+                                      ? item.quantity >= item.stock
+                                      : false
+                                  }
+                                  className="px-2 py-1 text-sm hover:bg-gray-50 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  +
+                                </button>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item.id)}
+                                className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg focus:outline-none"
+                                aria-label={`Remove ${item.name}`}
+                                title="Remove"
+                              >
+                                <Trash size={16} />
+                              </button>
+                            </div>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {/* Coffee Items */}
                 {coffeeItems.length > 0 && (
                   <div>

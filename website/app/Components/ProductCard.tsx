@@ -42,6 +42,7 @@ export type Product = {
   availableGrinds?: string[];
   minPrice?: number;
   variants?: Variant[];
+  totalStock?: number;
   bestSeller?: boolean;
 };
 
@@ -539,6 +540,11 @@ export default function ProductCard({
               <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-900 text-white text-xs font-bold shadow-lg">
                 <Star size={14} className="fill-white" />
                 <span>Best Seller</span>
+              </div>
+            )}
+            {(product.totalStock ?? 1) <= 0 && (
+              <div className="absolute top-3 right-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-600 text-white text-xs font-bold shadow-lg uppercase tracking-wide">
+                Out of Stock
               </div>
             )}
             <Image
