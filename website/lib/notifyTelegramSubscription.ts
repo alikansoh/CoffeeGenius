@@ -5,8 +5,13 @@
  * the first charge AND every renewal — mirrors notifyTelegramOrder.ts's setup/behavior,
  * just for subscriptions. Renewals get flagged as "prepare this delivery" since there's
  * no automatic Order/fulfilment record for subscription deliveries yet. Uses the same
- * TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars.
+ * TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID env vars (TELEGRAM_CHAT_ID may be a
+ * comma-separated list) plus anyone who has pressed /start on the bot via the
+ * /api/webhooks/telegram webhook (see notifyTelegramOrder.ts for the shared helper).
  */
+
+import dbConnect from "@/lib/dbConnect";
+import TelegramSubscriber from "@/models/TelegramSubscriber";
 
 export type TelegramSubscriptionShippingAddress = {
   firstName?: string;
@@ -43,14 +48,32 @@ function fmtMoney(n: number): string {
   return `£${n.toFixed(2)}`;
 }
 
+async function getAllChatIds(): Promise<string[]> {
+  const envIds = (process.env.TELEGRAM_CHAT_ID || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  let dbIds: string[] = [];
+  try {
+    await dbConnect();
+    const subs = await TelegramSubscriber.find({ isActive: true }).select("chatId").lean();
+    dbIds = subs.map((s) => s.chatId);
+  } catch (err) {
+    console.error("Failed to load Telegram subscribers:", err);
+  }
+
+  return Array.from(new Set([...envIds, ...dbIds]));
+}
+
 export async function notifyTelegramNewSubscription(
   sub: TelegramSubscriptionSummary
 ): Promise<{ sent: true } | { sent: false; error: string }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const chatIds = await getAllChatIds();
 
   if (!botToken) return { sent: false, error: "TELEGRAM_BOT_TOKEN not configured" };
-  if (!chatId) return { sent: false, error: "TELEGRAM_CHAT_ID not configured" };
+  if (chatIds.length === 0) return { sent: false, error: "TELEGRAM_CHAT_ID not configured" };
 
   const isRenewal = sub.reason === "renewal";
   const lines = [
@@ -91,25 +114,30 @@ export async function notifyTelegramNewSubscription(
 
   const text = lines.join("\n");
 
-  try {
-    const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    });
+  const errors: string[] = [];
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      return { sent: false, error: `Telegram API ${resp.status}: ${body}` };
+  for (const chatId of chatIds) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        errors.push(`chat ${chatId}: Telegram API ${resp.status}: ${body}`);
+      }
+    } catch (err: unknown) {
+      errors.push(`chat ${chatId}: ${err instanceof Error ? err.message : String(err)}`);
     }
-
-    return { sent: true };
-  } catch (err: unknown) {
-    return { sent: false, error: err instanceof Error ? err.message : String(err) };
   }
+
+  if (errors.length > 0) return { sent: false, error: errors.join(" | ") };
+  return { sent: true };
 }

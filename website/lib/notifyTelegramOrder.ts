@@ -14,7 +14,15 @@
  * 4. Set in .env.local:
  *      TELEGRAM_BOT_TOKEN=123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
  *      TELEGRAM_CHAT_ID=123456789
+ *    To notify more than one person without doing this manually every time,
+ *    set up the /api/webhooks/telegram webhook (see that file) — anyone who
+ *    presses /start on the bot is auto-registered and gets alerts too.
+ *    TELEGRAM_CHAT_ID can also be a comma-separated list, e.g.:
+ *      TELEGRAM_CHAT_ID=123456789,987654321
  */
+
+import dbConnect from "@/lib/dbConnect";
+import TelegramSubscriber from "@/models/TelegramSubscriber";
 
 export type TelegramOrderAddress = {
   firstName?: string;
@@ -48,6 +56,24 @@ function escapeHtml(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+async function getAllChatIds(): Promise<string[]> {
+  const envIds = (process.env.TELEGRAM_CHAT_ID || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  let dbIds: string[] = [];
+  try {
+    await dbConnect();
+    const subs = await TelegramSubscriber.find({ isActive: true }).select("chatId").lean();
+    dbIds = subs.map((s) => s.chatId);
+  } catch (err) {
+    console.error("Failed to load Telegram subscribers:", err);
+  }
+
+  return Array.from(new Set([...envIds, ...dbIds]));
+}
+
 function fmtMoney(n: number | undefined, currency = "GBP"): string {
   if (typeof n !== "number" || Number.isNaN(n)) return "";
   const symbol = currency.toUpperCase() === "GBP" ? "£" : "";
@@ -58,10 +84,10 @@ export async function notifyTelegramOrder(
   order: TelegramOrderSummary
 ): Promise<{ sent: true } | { sent: false; error: string }> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID;
+  const chatIds = await getAllChatIds();
 
   if (!botToken) return { sent: false, error: "TELEGRAM_BOT_TOKEN not configured" };
-  if (!chatId) return { sent: false, error: "TELEGRAM_CHAT_ID not configured" };
+  if (chatIds.length === 0) return { sent: false, error: "TELEGRAM_CHAT_ID not configured" };
 
   const itemLines = order.items
     .map((it) => `• ${escapeHtml(it.name)} × ${it.qty}${it.totalPrice ? ` — ${fmtMoney(it.totalPrice, order.currency)}` : ""}`)
@@ -102,25 +128,30 @@ export async function notifyTelegramOrder(
 
   const text = lines.join("\n");
 
-  try {
-    const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text,
-        parse_mode: "HTML",
-        disable_web_page_preview: true,
-      }),
-    });
+  const errors: string[] = [];
 
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      return { sent: false, error: `Telegram API ${resp.status}: ${body}` };
+  for (const chatId of chatIds) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text,
+          parse_mode: "HTML",
+          disable_web_page_preview: true,
+        }),
+      });
+
+      if (!resp.ok) {
+        const body = await resp.text().catch(() => "");
+        errors.push(`chat ${chatId}: Telegram API ${resp.status}: ${body}`);
+      }
+    } catch (err: unknown) {
+      errors.push(`chat ${chatId}: ${err instanceof Error ? err.message : String(err)}`);
     }
-
-    return { sent: true };
-  } catch (err: unknown) {
-    return { sent: false, error: err instanceof Error ? err.message : String(err) };
   }
+
+  if (errors.length > 0) return { sent: false, error: errors.join(" | ") };
+  return { sent: true };
 }
