@@ -167,7 +167,12 @@ export default function Footer() {
 
         {/* Bottom bar */}
         <div className="mt-8 sm:mt-10 md:mt-12 border-t border-gray-100 pt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-xs text-gray-500">© {new Date().getFullYear()} Coffee Genius — All rights reserved.</p>
+          <p className="text-xs text-gray-500">
+            © {new Date().getFullYear()} Coffee Genius — All rights reserved. Website by{" "}
+            <a href="https://viorix.co.uk" target="_blank" rel="noopener" className="hover:underline text-gray-600">
+              Viorix Digital Solutions
+            </a>
+          </p>
 
           <div className="flex items-center gap-4">
             <nav aria-label="Footer secondary" className="flex items-center gap-3">
