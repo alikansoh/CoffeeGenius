@@ -48,6 +48,7 @@ interface RequestBody {
   sendEmail?: boolean;
   createdAt?: string;
   currency?: string;
+  isVatZero?: boolean;
   billingAddress?: {
     firstName?: string;
     lastName?: string;
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
     const wantPdf = url.searchParams.get('pdf') === 'true';
 
     const body: RequestBody = await req.json();
-    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false } = body;
+    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false, isVatZero = false } = body;
 
     if (recurring?.enabled && (!recurring.dayOfMonth || recurring.dayOfMonth < 1 || recurring.dayOfMonth > 28)) {
       return NextResponse.json(
@@ -150,6 +151,7 @@ export async function POST(req: Request) {
         : { enabled: false },
       createdAt,
       notes: notes || undefined,
+      isVatZero,
       recipientEmail: client.email || '',
       sender: {
         email: process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM,
@@ -273,6 +275,7 @@ export async function POST(req: Request) {
       paymentIntentId: invoice.paymentIntentId ?? null,
       currency: invoice.currency ?? 'gbp',
       notes: invoice.notes ?? undefined,
+      isVatZero: invoice.isVatZero ?? false,
     };
 
     const companyInfo: CompanyInfo = {

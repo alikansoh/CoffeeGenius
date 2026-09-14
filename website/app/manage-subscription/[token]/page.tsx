@@ -246,7 +246,7 @@ export default function ManageSubscriptionByTokenPage({
                       alt={sub.variantLabel}
                       width={80}
                       height={80}
-                      className="w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                       onError={() => setImgFailed(true)}
                     />
                   ) : (

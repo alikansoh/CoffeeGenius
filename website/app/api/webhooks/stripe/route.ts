@@ -126,6 +126,7 @@ interface InvoiceData {
     unitPrice: number;
     totalPrice: number;
     roastType?: string;
+    source?: ProductSource;
   }>;
   subtotal: number;
   discount: number;
@@ -1442,6 +1443,7 @@ async function fulfilSubscriptionDelivery(
                 qty,
                 unitPrice: unitPricePounds,
                 totalPrice: totalPricePounds,
+                source: 'coffee',
               },
             ],
             subtotal: totalPricePounds,
@@ -2261,6 +2263,7 @@ async function handlePaymentIntentSucceeded(
       unitPrice: it.unitPrice,
       totalPrice: it.totalPrice,
       roastType: it.roastType,
+      source: it.source,
     })),
     subtotal: Number(subtotal.toFixed(2)),
     discount: Number(couponDiscount.toFixed(2)),

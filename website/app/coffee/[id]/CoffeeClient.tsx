@@ -2177,7 +2177,7 @@ export default function ProductDetailPage() {
                         </div>
                       )}
 
-                      <div className="relative aspect-square bg-zinc-50">
+                      <div className="relative aspect-square bg-white">
                         <Image
                           src={
                             p.img
@@ -2186,7 +2186,7 @@ export default function ProductDetailPage() {
                           }
                           alt={p.name}
                           fill
-                          className="object-contain group-hover:scale-105 transition-transform duration-300"
+                          className="object-contain"
                         />
                       </div>
                       <div className="p-3.5">

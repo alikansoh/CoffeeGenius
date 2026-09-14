@@ -40,6 +40,7 @@ interface InvoiceDoc {
   paymentIntentId?: string;
   currency?: string;
   notes?: string;
+  isVatZero?: boolean;
 }
 
 export async function GET(req: Request) {
@@ -87,6 +88,7 @@ export async function GET(req: Request) {
       paymentIntentId: invoiceDoc.paymentIntentId ?? null,
       currency: invoiceDoc.currency ?? "gbp",
       notes: invoiceDoc.notes ?? undefined,
+      isVatZero: invoiceDoc.isVatZero ?? false,
     };
 
     const company: CompanyInfo = {

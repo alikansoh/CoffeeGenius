@@ -9,6 +9,7 @@ interface InvoiceItem {
   unitPrice: number;
   totalPrice: number;
   roastType?: string;
+  source?: 'variant' | 'coffee' | 'equipment';
 }
 
 interface InvoiceAddress {
@@ -99,6 +100,12 @@ function tryLoadLogoBytes(logoPath?: string): Buffer | null {
     }
   }
   return null;
+}
+
+// Coffee beans are zero-rated for UK VAT. Only show the "VAT (0%)" line when
+// every item on the invoice is a coffee product (not equipment).
+function isBeansOnlyOrder(items: InvoiceItem[]): boolean {
+  return items.length > 0 && items.every((it) => it.source === 'coffee' || it.source === 'variant');
 }
 
 function formatAddress(addr: InvoiceAddress | null | undefined, clientName?: string): string[] {
@@ -501,7 +508,18 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   const shippingW = font.widthOfTextAtSize(shippingStr, 10);
   drawText(shippingStr, pageWidth - margin - shippingW, totalsY, 10, darkText);
 
-  totalsY -= 30;
+  totalsY -= 25;
+
+  // VAT — coffee beans are zero-rated, only shown when the order is beans-only
+  if (isBeansOnlyOrder(invoice.items)) {
+    drawText('VAT (0%)', totalsX, totalsY, 10, lightText);
+    const vatStr = '£0.00';
+    const vatW = font.widthOfTextAtSize(vatStr, 10);
+    drawText(vatStr, pageWidth - margin - vatW, totalsY, 10, darkText);
+    totalsY -= 25;
+  } else {
+    totalsY -= 5;
+  }
 
   // Total separator
   page.drawLine({
@@ -614,6 +632,7 @@ ${invoice.items.map(item => `<li>${escapeHtml(item.name)}${item.roastType ? ` ($
           <tr><td>Subtotal</td><td style="text-align: right;">£${invoice.subtotal.toFixed(2)}</td></tr>
           ${discountRow}
           <tr><td>Shipping</td><td style="text-align: right;">£${invoice.shipping.toFixed(2)}</td></tr>
+          ${isBeansOnlyOrder(invoice.items) ? '<tr><td>VAT (0%)</td><td style="text-align: right;">£0.00</td></tr>' : ''}
           <tr class="total-row"><td>Total</td><td style="text-align: right; color: #2d5a8d;">£${invoice.total.toFixed(2)}</td></tr>
         </table>
         

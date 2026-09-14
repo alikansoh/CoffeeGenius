@@ -43,6 +43,7 @@ export interface InvoiceData {
   paymentIntentId?: Nullable<string>;
   currency?: string;
   notes?: string;
+  isVatZero?: boolean;
 }
 
 export interface CompanyInfo {
@@ -526,7 +527,18 @@ export async function generateInvoicePDF(invoice: InvoiceData, company: CompanyI
   const shippingStr = fmtCurrency(invoice.shipping, invoice.currency);
   const shippingW = font.widthOfTextAtSize(shippingStr, 9);
   drawText(shippingStr, pageWidth - margin - shippingW, totalsY, 9, darkText);
-  totalsY -= 16;
+  totalsY -= 14;
+
+  // VAT — coffee beans are zero-rated; only shown when the admin marked this invoice as such
+  if (invoice.isVatZero) {
+    drawText('VAT (0%)', totalsX, totalsY, 9, lightText);
+    const vatStr = fmtCurrency(0, invoice.currency);
+    const vatW = font.widthOfTextAtSize(vatStr, 9);
+    drawText(vatStr, pageWidth - margin - vatW, totalsY, 9, darkText);
+    totalsY -= 16;
+  } else {
+    totalsY -= 2;
+  }
 
   page.drawLine({
     start: { x: totalsX, y: totalsY + 4 },

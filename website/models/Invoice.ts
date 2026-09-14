@@ -51,6 +51,11 @@ const InvoiceSchema = new mongoose.Schema(
 
       couponName: { type: String, default: null },
 
+      // Coffee beans are zero-rated for UK VAT. Set on manual invoices (checked by the admin
+      // when the invoice is beans-only) and derived automatically for Stripe invoices from the
+      // order items' `source`. When true, the PDF/email show a "VAT (0%): £0.00" line.
+      isVatZero: { type: Boolean, default: false },
+
       // Recurring invoice — set on a "template" manual invoice. The cron at
       // app/api/cron/recurring-invoices creates a brand-new Invoice (new invoice number, fresh
       // due date, unpaid) on the configured day of every month, cloning this one's client/items/

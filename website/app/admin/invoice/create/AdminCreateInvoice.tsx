@@ -21,6 +21,7 @@ import {
   ChevronDown,
   BellOff,
   Repeat,
+  Coffee,
 } from "lucide-react";
 
 interface Address {
@@ -57,6 +58,9 @@ interface FormData {
   currency: string;
   /** When off, this invoice is skipped by the automated reminder cron entirely. */
   remindersEnabled: boolean;
+  /** Coffee beans are zero-rated for UK VAT — check this only when the invoice is beans-only,
+   *  to show a "VAT (0%): £0.00" line on the PDF/email. */
+  isVatZero: boolean;
   /** When on, a fresh copy of this invoice (same client/items/shipping) is auto-generated and
    *  emailed on recurringDayOfMonth every month, until turned off. */
   recurringEnabled: boolean;
@@ -90,6 +94,7 @@ interface ApiInvoice {
   currency?: string;
   remindersEnabled?: boolean;
   recurring?: { enabled?: boolean; dayOfMonth?: number };
+  isVatZero?: boolean;
 }
 
 interface ClientSearchResult {
@@ -191,6 +196,7 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
         invoiceDate: formatDateInput(invoice.createdAt),
         currency: invoice.currency || "gbp",
         remindersEnabled: invoice.remindersEnabled ?? true,
+        isVatZero: invoice.isVatZero ?? false,
         recurringEnabled: invoice.recurring?.enabled ?? false,
         recurringDayOfMonth: invoice.recurring?.dayOfMonth?.toString() ?? "1",
       };
@@ -218,6 +224,7 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
       invoiceDate: "",
       currency: "gbp",
       remindersEnabled: true,
+      isVatZero: false,
       recurringEnabled: false,
       recurringDayOfMonth: "1",
     };
@@ -428,6 +435,7 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
       notes: formData.notes || undefined,
       dueDate: formData.dueDate || undefined,
       remindersEnabled: formData.remindersEnabled,
+      isVatZero: formData.isVatZero,
       recurring: {
         enabled: formData.recurringEnabled,
         dayOfMonth: formData.recurringEnabled ? Number(formData.recurringDayOfMonth) : undefined,
@@ -956,6 +964,26 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
                     </span>
                     <span className="block text-xs text-gray-500 mt-0.5">
                       This invoice will never be picked up by the automatic payment reminder emails, even after the due date passes.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 p-4 rounded-xl border-2 border-gray-200 hover:border-gray-300 cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.isVatZero}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, isVatZero: e.target.checked }))
+                    }
+                    className="mt-1 w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900 cursor-pointer"
+                  />
+                  <span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-gray-900">
+                      <Coffee size={15} />
+                      This invoice is beans-only (VAT 0%)
+                    </span>
+                    <span className="block text-xs text-gray-500 mt-0.5">
+                      Coffee beans are zero-rated for UK VAT. Check this only when every item on this invoice is coffee — a &quot;VAT (0%): £0.00&quot; line will be shown on the PDF/email.
                     </span>
                   </span>
                 </label>

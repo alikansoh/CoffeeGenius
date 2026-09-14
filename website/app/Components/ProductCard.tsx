@@ -535,7 +535,7 @@ export default function ProductCard({
           className="w-full h-full flex flex-col bg-white rounded-2xl"
           style={{ backfaceVisibility: "hidden" }}
         >
-          <div className="relative w-full bg-gray-100 rounded-t-2xl overflow-hidden aspect-square">
+          <div className="relative w-full bg-white rounded-t-2xl overflow-hidden aspect-square">
             {product.bestSeller && (
               <div className="absolute top-3 left-3 z-10 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-900 text-white text-xs font-bold shadow-lg">
                 <Star size={14} className="fill-white" />
@@ -551,7 +551,7 @@ export default function ProductCard({
               src={cardImageSrc}
               alt={product.name}
               fill
-              style={{ objectFit: "cover" }}
+              style={{ objectFit: "contain" }}
               sizes="(max-width: 640px) 100vw, 320px"
               priority={index !== undefined && index < 4}
             />

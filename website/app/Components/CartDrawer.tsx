@@ -300,7 +300,7 @@ export default function CartDrawer() {
                                 alt={item.name}
                                 width={64}
                                 height={64}
-                                className="object-cover"
+                                className="object-contain"
                               />
                             ) : (
                               <div className="w-full h-full bg-gray-200" />
@@ -410,7 +410,7 @@ export default function CartDrawer() {
                                 alt={item.name}
                                 width={64}
                                 height={64}
-                                className="object-cover"
+                                className="object-contain"
                               />
                             ) : (
                               <div className="w-full h-full bg-gray-200" />
@@ -513,7 +513,7 @@ export default function CartDrawer() {
                                 alt={item.name}
                                 width={64}
                                 height={64}
-                                className="object-cover"
+                                className="object-contain"
                               />
                             ) : (
                               <div className="w-full h-full bg-gray-200" />

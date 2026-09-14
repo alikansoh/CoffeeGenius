@@ -45,6 +45,7 @@ interface Invoice {
   paidAt?: string | null;
   remindersEnabled?: boolean;
   recurring?: { enabled?: boolean; dayOfMonth?: number };
+  isVatZero?: boolean;
 }
 
 interface FetchInvoiceResponse {

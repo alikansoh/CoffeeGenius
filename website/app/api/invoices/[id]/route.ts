@@ -37,6 +37,7 @@ interface UpdateRequestBody {
   sendEmail?: boolean;
   createdAt?: string;
   currency?: string;
+  isVatZero?: boolean;
   billingAddress?: {
     firstName?: string;
     lastName?: string;
@@ -158,7 +159,7 @@ export async function PUT(
     }
 
     const body: UpdateRequestBody = await req.json();
-    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false } = body;
+    const { client, items, shipping = 0, notes, dueDate, remindersEnabled = true, recurring, sendEmail = false, isVatZero = false } = body;
 
     if (recurring?.enabled && (!recurring.dayOfMonth || recurring.dayOfMonth < 1 || recurring.dayOfMonth > 28)) {
       return NextResponse.json(
@@ -227,6 +228,7 @@ export async function PUT(
             : { enabled: false, lastGeneratedAt: existing.recurring?.lastGeneratedAt },
           createdAt,
           notes: notes || undefined,
+          isVatZero,
           recipientEmail: client.email || "",
           "metadata.updatedAt": new Date().toISOString(),
         },
@@ -332,6 +334,7 @@ export async function PUT(
       paymentIntentId: updated.paymentIntentId ?? null,
       currency: updated.currency ?? "gbp",
       notes: updated.notes ?? undefined,
+      isVatZero: updated.isVatZero ?? false,
     };
 
     const companyInfo: CompanyInfo = {

@@ -129,7 +129,7 @@ export default function CheckoutSuccessPage(): JSX.Element {
                         alt={item.name}
                         width={64}
                         height={64}
-                        className="object-cover w-full h-full"
+                        className="object-contain w-full h-full"
                       />
                     ) : (
                       <div className="w-full h-full bg-gray-200" />
