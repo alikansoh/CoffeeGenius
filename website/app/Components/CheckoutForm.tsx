@@ -1476,12 +1476,9 @@ export default function CheckoutForm({
       {/* Apple Pay / Google Pay isn't offered for subscriptions in this phase — the express-pay
           confirmation path below assumes a single one-off charge and isn't wired up to also
           confirm a second (subscription) charge the way the normal card form below is.
-          Reverted back to gating on a valid email: removing that gate didn't actually change
-          whether canMakePayment() resolves true (Apple/Safari decide that, not this condition),
-          but it demonstrably worked with the gate in place and not without it, so restoring the
-          exact behavior that was confirmed working takes priority over the theoretical case for
-          removing it. */}
-      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && isValidEmail(email) && (
+          No email gate: requestPayerEmail is set on the paymentRequest, so the wallet supplies
+          the email itself — the button shows as soon as canMakePayment() resolves true. */}
+      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && (
         <div className="mb-2">
           <PaymentRequestButtonElement
             options={{
@@ -1496,12 +1493,6 @@ export default function CheckoutForm({
             }}
           />
           <div className="text-xs text-gray-500 mt-2">Pay with Apple Pay / Google Pay</div>
-        </div>
-      )}
-
-      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && !isValidEmail(email) && (
-        <div className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
-          Enter a valid email address above to use Apple Pay or Google Pay
         </div>
       )}
 
