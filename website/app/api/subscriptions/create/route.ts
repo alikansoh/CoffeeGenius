@@ -93,7 +93,8 @@ export async function POST(req: NextRequest) {
     const variantLabel = `${coffee?.name || "Coffee"} — ${variant.size} — ${variant.grind}`;
 
     // Ensure the Stripe prices reflect the variant's current subscription settings.
-    const { prices, subscriptionPrice } = await ensureStripeSubscriptionPrices(variant);
+    const { prices, subscriptionPrice, shippingPencePerCycle: normalShippingPencePerCycle } =
+      await ensureStripeSubscriptionPrices(variant);
     const matchingPrice = prices.find((p) => p.frequencyWeeks === frequencyWeeks);
     if (!matchingPrice) {
       return NextResponse.json({ error: "Could not price that delivery frequency" }, { status: 500 });
@@ -156,13 +157,14 @@ export async function POST(req: NextRequest) {
 
     let startingPriceId = matchingPrice.stripePriceId;
     let introPrice: number | undefined;
+    let shippingPencePerCycle = normalShippingPencePerCycle;
     if (effectiveIntro) {
       const created = await createIntroStripePrice(variant, frequencyWeeks, effectiveIntro.percentOff);
       startingPriceId = created.stripePriceId;
       introPrice = created.introPrice;
+      shippingPencePerCycle = created.shippingPencePerCycle;
     }
 
-    // Subscriptions never carry a delivery charge — always free delivery, every cycle.
     const stripe = getStripe();
 
     // Reuse an existing Stripe Customer for this email if one exists (skip the lookup when
@@ -240,7 +242,7 @@ export async function POST(req: NextRequest) {
           discountPercent: variant.subscriptionDiscountPercent || 0,
           subscriptionPrice: introPrice ?? subscriptionPrice,
           frequencyWeeks,
-          shippingPencePerCycle: 0,
+          shippingPencePerCycle,
           status: "incomplete",
           cancelAtPeriodEnd: false,
           introCouponId: effectiveIntro?.couponId,
@@ -277,7 +279,7 @@ export async function POST(req: NextRequest) {
         clientSecret,
         subscriptionId: stripeSubscription.id,
         subscriptionPrice: introPrice ?? subscriptionPrice,
-        shippingPence: 0, // subscriptions never carry a delivery charge
+        shippingPence: shippingPencePerCycle,
         introOffer: effectiveIntro
           ? { percentOff: effectiveIntro.percentOff, cycles: effectiveIntro.cycles }
           : null,

@@ -32,6 +32,7 @@ type Subscription = {
   currentPeriodEnd?: string;
   createdAt: string;
   image?: string;
+  shippingPencePerCycle?: number;
 };
 
 function getStatusColor(status: string) {
@@ -300,8 +301,16 @@ export default function ManageSubscriptionByTokenPage({
               </div>
 
               <div className="relative flex items-center gap-1.5 mt-4">
-                <Truck size={13} className="text-emerald-400" />
-                <span className="text-xs text-emerald-400 font-semibold">Delivery is always free</span>
+                <Truck size={13} className={(sub.shippingPencePerCycle ?? 0) > 0 ? "text-white/50" : "text-emerald-400"} />
+                <span
+                  className={`text-xs font-semibold ${
+                    (sub.shippingPencePerCycle ?? 0) > 0 ? "text-white/70" : "text-emerald-400"
+                  }`}
+                >
+                  {(sub.shippingPencePerCycle ?? 0) > 0
+                    ? `£${(sub.shippingPencePerCycle! / 100).toFixed(2)} delivery per order`
+                    : "Delivery is free"}
+                </span>
               </div>
             </div>
 

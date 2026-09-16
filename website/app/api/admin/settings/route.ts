@@ -52,6 +52,9 @@ export async function PATCH(req: NextRequest) {
     if (typeof body.deliveryPricePence === 'number') updates.deliveryPricePence = body.deliveryPricePence;
     if (typeof body.freeDeliveryThresholdPence === 'number') updates.freeDeliveryThresholdPence = body.freeDeliveryThresholdPence;
     if (typeof body.freeDeliveryEnabled === 'boolean') updates.freeDeliveryEnabled = body.freeDeliveryEnabled;
+    if (typeof body.subscriptionDeliveryPricePence === 'number') updates.subscriptionDeliveryPricePence = body.subscriptionDeliveryPricePence;
+    if (typeof body.subscriptionFreeDeliveryThresholdPence === 'number') updates.subscriptionFreeDeliveryThresholdPence = body.subscriptionFreeDeliveryThresholdPence;
+    if (typeof body.subscriptionFreeDeliveryEnabled === 'boolean') updates.subscriptionFreeDeliveryEnabled = body.subscriptionFreeDeliveryEnabled;
 
     // Basic validation
     if (updates.deliveryPricePence !== undefined && (updates.deliveryPricePence as number) < 0) {
@@ -59,6 +62,12 @@ export async function PATCH(req: NextRequest) {
     }
     if (updates.freeDeliveryThresholdPence !== undefined && (updates.freeDeliveryThresholdPence as number) < 0) {
       return NextResponse.json({ error: 'freeDeliveryThresholdPence must be >= 0' }, { status: 400 });
+    }
+    if (updates.subscriptionDeliveryPricePence !== undefined && (updates.subscriptionDeliveryPricePence as number) < 0) {
+      return NextResponse.json({ error: 'subscriptionDeliveryPricePence must be >= 0' }, { status: 400 });
+    }
+    if (updates.subscriptionFreeDeliveryThresholdPence !== undefined && (updates.subscriptionFreeDeliveryThresholdPence as number) < 0) {
+      return NextResponse.json({ error: 'subscriptionFreeDeliveryThresholdPence must be >= 0' }, { status: 400 });
     }
 
     // Upsert singleton

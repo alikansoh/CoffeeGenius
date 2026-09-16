@@ -43,6 +43,8 @@ export async function notifySubscriptionManageLink(opts: {
   manageToken: string;
   /** "initial" for the very first charge, "renewal" for every cycle after */
   reason: "initial" | "renewal";
+  /** Delivery fee already included in subscriptionPrice, in pence — 0/undefined means free. */
+  shippingPencePerCycle?: number;
   /** Set only while an intro offer is still active on this subscription — explains that the
    *  price shown is temporary and what it reverts to, so the later price increase isn't a
    *  surprise. The initial charge itself counts as delivery 1 of cyclesLimit. */
@@ -94,7 +96,13 @@ export async function notifySubscriptionManageLink(opts: {
       <div style="border:1px solid #e5e7eb;border-radius:12px;padding:16px 18px;margin-bottom:20px;">
         <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">${escapeHtml(opts.variantLabel)}</p>
         <p style="margin:0;font-size:18px;font-weight:700;">£${opts.subscriptionPrice.toFixed(2)} <span style="font-size:13px;font-weight:400;color:#6b7280;">every ${opts.frequencyWeeks} week${opts.frequencyWeeks > 1 ? "s" : ""}</span></p>
-        <p style="margin:6px 0 0;font-size:13px;color:#059669;font-weight:600;">Delivery is always free</p>
+        <p style="margin:6px 0 0;font-size:13px;color:${
+          (opts.shippingPencePerCycle ?? 0) > 0 ? "#6b7280" : "#059669"
+        };font-weight:600;">${
+          (opts.shippingPencePerCycle ?? 0) > 0
+            ? `Includes £${(opts.shippingPencePerCycle! / 100).toFixed(2)} delivery`
+            : "Delivery is free"
+        }</p>
       </div>
 
       ${
@@ -119,7 +127,9 @@ export async function notifySubscriptionManageLink(opts: {
     intro,
     "",
     `${opts.variantLabel} — £${opts.subscriptionPrice.toFixed(2)} every ${opts.frequencyWeeks} week${opts.frequencyWeeks > 1 ? "s" : ""}`,
-    "Delivery is always free.",
+    (opts.shippingPencePerCycle ?? 0) > 0
+      ? `Includes £${(opts.shippingPencePerCycle! / 100).toFixed(2)} delivery.`
+      : "Delivery is free.",
     ...(introNote ? ["", introNote] : []),
     "",
     `Manage your subscription: ${manageUrl}`,

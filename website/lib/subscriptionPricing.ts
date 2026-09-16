@@ -1,6 +1,7 @@
 import { getStripe } from "./stripeClient";
 import CoffeeVariant, { ICoffeeVariant } from "@/models/CoffeeVariant";
 import Coffee from "@/models/Coffee";
+import Settings from "@/models/Settings";
 
 /** The delivery frequencies offered for every subscribable variant. */
 export const SUBSCRIPTION_FREQUENCIES_WEEKS = [1, 2, 3, 4] as const;
@@ -21,6 +22,21 @@ export function computeSubscriptionPrice(normalPrice: number, discountPercent: n
 }
 
 /**
+ * Subscription delivery fee — a separate control from one-off order delivery (see
+ * /admin/settings, "Subscription delivery" section). Checked against the per-delivery
+ * subscription price itself (a renewal has no cart to sum), so this is a single deterministic
+ * function of a variant + the current global settings, not something computed per-customer.
+ */
+async function getSubscriptionDeliveryFeePence(basePricePence: number): Promise<number> {
+  const settings = await Settings.findOne().lean();
+  const priceP = settings?.subscriptionDeliveryPricePence ?? 499;
+  const thresholdP = settings?.subscriptionFreeDeliveryThresholdPence ?? 3000;
+  const enabled = settings?.subscriptionFreeDeliveryEnabled ?? true;
+  if (enabled && basePricePence >= thresholdP) return 0;
+  return priceP;
+}
+
+/**
  * Ensures a variant with subscriptions enabled has a live Stripe recurring
  * Price for every offered delivery frequency, creating the Stripe
  * Product/Prices as needed. The charge amount is the same across
@@ -33,12 +49,22 @@ export function computeSubscriptionPrice(normalPrice: number, discountPercent: n
  */
 export async function ensureStripeSubscriptionPrices(
   variant: ICoffeeVariant
-): Promise<{ stripeProductId: string; prices: { frequencyWeeks: number; stripePriceId: string }[]; subscriptionPrice: number }> {
-  const subscriptionPrice = computeSubscriptionPrice(
+): Promise<{
+  stripeProductId: string;
+  prices: { frequencyWeeks: number; stripePriceId: string }[];
+  /** Total charged per delivery — coffee price plus any delivery fee, i.e. what the Stripe
+   *  Price actually bills. Not just the coffee's own subscribe-and-save price. */
+  subscriptionPrice: number;
+  shippingPencePerCycle: number;
+}> {
+  const basePrice = computeSubscriptionPrice(
     variant.price,
     variant.subscriptionDiscountPercent || 0
   );
-  const unitAmountPence = Math.round(subscriptionPrice * 100);
+  const basePricePence = Math.round(basePrice * 100);
+  const shippingPencePerCycle = await getSubscriptionDeliveryFeePence(basePricePence);
+  const unitAmountPence = basePricePence + shippingPencePerCycle;
+  const subscriptionPrice = Number((unitAmountPence / 100).toFixed(2));
 
   const stripe = getStripe();
 
@@ -86,7 +112,7 @@ export async function ensureStripeSubscriptionPrices(
     prices.push({ frequencyWeeks, stripePriceId: price.id });
   }
 
-  return { stripeProductId: productId, prices, subscriptionPrice };
+  return { stripeProductId: productId, prices, subscriptionPrice, shippingPencePerCycle };
 }
 
 /**
@@ -104,13 +130,17 @@ export async function createIntroStripePrice(
   variant: ICoffeeVariant,
   frequencyWeeks: number,
   introPercentOff: number
-): Promise<{ stripePriceId: string; introPrice: number }> {
+): Promise<{ stripePriceId: string; introPrice: number; shippingPencePerCycle: number }> {
   const normalSubscribePrice = computeSubscriptionPrice(
     variant.price,
     variant.subscriptionDiscountPercent || 0
   );
-  const introPrice = computeSubscriptionPrice(normalSubscribePrice, introPercentOff);
-  const unitAmountPence = Math.round(introPrice * 100);
+  // The delivery fee is never discounted by the intro offer — only the coffee itself is.
+  const introCoffeePrice = computeSubscriptionPrice(normalSubscribePrice, introPercentOff);
+  const introCoffeePricePence = Math.round(introCoffeePrice * 100);
+  const shippingPencePerCycle = await getSubscriptionDeliveryFeePence(introCoffeePricePence);
+  const unitAmountPence = introCoffeePricePence + shippingPencePerCycle;
+  const introPrice = Number((unitAmountPence / 100).toFixed(2));
 
   const stripe = getStripe();
 
@@ -139,7 +169,7 @@ export async function createIntroStripePrice(
     },
   });
 
-  return { stripePriceId: price.id, introPrice };
+  return { stripePriceId: price.id, introPrice, shippingPencePerCycle };
 }
 
 /**

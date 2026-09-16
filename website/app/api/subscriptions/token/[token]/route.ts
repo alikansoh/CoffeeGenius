@@ -34,7 +34,7 @@ export async function GET(
       manageTokenExpiresAt: { $gt: new Date() },
     })
       .select(
-        "_id variantId coffeeId variantLabel subscriptionPrice frequencyWeeks status cancelAtPeriodEnd introActive introDiscountPercent currentPeriodEnd createdAt shippingAddress"
+        "_id variantId coffeeId variantLabel subscriptionPrice shippingPencePerCycle frequencyWeeks status cancelAtPeriodEnd introActive introDiscountPercent currentPeriodEnd createdAt shippingAddress"
       )
       .lean();
 
@@ -139,6 +139,7 @@ export async function PATCH(
       }
 
       let newPriceId: string;
+      let shippingPencePerCycle = subscription.shippingPencePerCycle ?? 0;
       if (subscription.introActive && subscription.introDiscountPercent) {
         const created = await createIntroStripePrice(
           variant,
@@ -146,14 +147,17 @@ export async function PATCH(
           subscription.introDiscountPercent
         );
         newPriceId = created.stripePriceId;
+        shippingPencePerCycle = created.shippingPencePerCycle;
       } else {
-        const { prices } = await ensureStripeSubscriptionPrices(variant);
+        const { prices, shippingPencePerCycle: normalShippingPencePerCycle } =
+          await ensureStripeSubscriptionPrices(variant);
         const matching = prices.find((p) => p.frequencyWeeks === frequencyWeeks);
         if (!matching) {
           return NextResponse.json({ success: false, error: "Could not price that frequency" }, { status: 500 });
         }
         newPriceId = matching.stripePriceId;
         subscription.normalStripePriceId = matching.stripePriceId;
+        shippingPencePerCycle = normalShippingPencePerCycle;
       }
 
       const updated = await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
@@ -163,6 +167,7 @@ export async function PATCH(
 
       subscription.frequencyWeeks = frequencyWeeks;
       subscription.stripePriceId = newPriceId;
+      subscription.shippingPencePerCycle = shippingPencePerCycle;
       // Changing the interval moves the next billing date — reflect that immediately rather
       // than waiting on the next webhook sync, so the UI's "next delivery" is never stale.
       const updatedItem = updated.items.data[0];
@@ -206,6 +211,7 @@ export async function PATCH(
           cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
           frequencyWeeks: subscription.frequencyWeeks,
           subscriptionPrice: subscription.subscriptionPrice,
+          shippingPencePerCycle: subscription.shippingPencePerCycle,
           currentPeriodEnd: subscription.currentPeriodEnd,
         },
       },

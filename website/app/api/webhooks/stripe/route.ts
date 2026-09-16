@@ -22,7 +22,7 @@ import Subscription from '@/models/Subscription';
 import { notifySubscriptionManageLink } from '@/lib/notifySubscriptionManage';
 import { notifySubscriptionPaymentFailed } from '@/lib/notifySubscriptionPaymentFailed';
 import { mintManageToken } from '@/lib/subscriptionManageToken';
-import { computeSubscriptionPrice } from '@/lib/subscriptionPricing';
+import { computeSubscriptionPrice, ensureStripeSubscriptionPrices } from '@/lib/subscriptionPricing';
 import { notifyAdminNewSubscription } from '@/lib/notifyAdminNewSubscription';
 import { notifyTelegramNewSubscription } from '@/lib/notifyTelegramSubscription';
 
@@ -1198,6 +1198,20 @@ async function sendSubscriptionManageLinkEmail(
     sub.manageTokenExpiresAt = expiresAt;
     await sub.save();
 
+    // For the intro-offer note's "reverts to £X" figure — needs to match what will actually be
+    // charged post-revert, delivery fee included, not just the coffee-only discounted price.
+    let introNormalPriceWithDelivery: number | undefined;
+    if (sub.introActive && sub.introCyclesLimit) {
+      try {
+        const variant = await CoffeeVariant.findById(sub.variantId);
+        if (variant) {
+          introNormalPriceWithDelivery = (await ensureStripeSubscriptionPrices(variant)).subscriptionPrice;
+        }
+      } catch {
+        // fall back below
+      }
+    }
+
     const result = await notifySubscriptionManageLink({
       email: sub.email,
       name: sub.name,
@@ -1205,6 +1219,7 @@ async function sendSubscriptionManageLinkEmail(
       subscriptionPrice: sub.subscriptionPrice,
       frequencyWeeks: sub.frequencyWeeks,
       manageToken: sub.manageToken,
+      shippingPencePerCycle: sub.shippingPencePerCycle,
       reason: billingReason === 'subscription_create' ? 'initial' : 'renewal',
       // Only explain the intro pricing while it's still active — once it's reverted, the price
       // shown above already IS the regular price, so there's nothing to explain.
@@ -1212,7 +1227,9 @@ async function sendSubscriptionManageLinkEmail(
         sub.introActive && sub.introCyclesLimit
           ? {
               cyclesLimit: sub.introCyclesLimit,
-              normalPrice: computeSubscriptionPrice(sub.normalPrice, sub.discountPercent || 0),
+              normalPrice:
+                introNormalPriceWithDelivery ??
+                computeSubscriptionPrice(sub.normalPrice, sub.discountPercent || 0),
             }
           : undefined,
     });
@@ -1354,8 +1371,17 @@ async function fulfilSubscriptionDelivery(
     const qty = item?.quantity && item.quantity > 0 ? item.quantity : 1;
     // Price off what was actually charged on this invoice (pence), not sub.subscriptionPrice —
     // that field can already reflect a post-intro price swap that only applies to future cycles.
-    const totalPricePounds = Number(((invoice.amount_paid || 0) / 100).toFixed(2));
-    const unitPricePounds = Number((totalPricePounds / qty).toFixed(2));
+    const totalPaidPence = invoice.amount_paid || 0;
+    // The delivery fee (per admin's "Subscription delivery" settings) is baked into the Stripe
+    // Price's unit_amount alongside the coffee price, so it's multiplied by qty just like the
+    // coffee price is — split it back out here for accurate subtotal/shipping reporting on the
+    // Order, same breakdown a one-off order gets.
+    const shippingPenceTotal = (sub.shippingPencePerCycle || 0) * qty;
+    const subtotalPence = Math.max(0, totalPaidPence - shippingPenceTotal);
+    const totalPricePounds = Number((totalPaidPence / 100).toFixed(2));
+    const subtotalPounds = Number((subtotalPence / 100).toFixed(2));
+    const shippingPounds = Number((shippingPenceTotal / 100).toFixed(2));
+    const unitPricePounds = Number((subtotalPounds / qty).toFixed(2));
 
     try {
       await decrementOneAtomic(null, { id: String(sub.variantId), qty, source: 'variant' });
@@ -1374,13 +1400,13 @@ async function fulfilSubscriptionDelivery(
           name: sub.variantLabel,
           qty,
           unitPrice: unitPricePounds,
-          totalPrice: totalPricePounds,
+          totalPrice: subtotalPounds,
           source: 'variant',
         },
       ],
-      subtotal: totalPricePounds,
+      subtotal: subtotalPounds,
       discount: 0,
-      shipping: 0,
+      shipping: shippingPounds,
       total: totalPricePounds,
       currency: (invoice.currency || 'gbp').toLowerCase(),
       status: 'paid',
@@ -1442,13 +1468,13 @@ async function fulfilSubscriptionDelivery(
                 name: sub.variantLabel,
                 qty,
                 unitPrice: unitPricePounds,
-                totalPrice: totalPricePounds,
+                totalPrice: subtotalPounds,
                 source: 'coffee',
               },
             ],
-            subtotal: totalPricePounds,
+            subtotal: subtotalPounds,
             discount: 0,
-            shipping: 0,
+            shipping: shippingPounds,
             total: totalPricePounds,
             couponName: undefined,
             client: {
@@ -1572,15 +1598,33 @@ async function handleSubscriptionIntroCycle(
     }
   }
 
+  // Recompute via ensureStripeSubscriptionPrices rather than hand-multiplying normalPrice by
+  // discountPercent — that hand computation omits the subscription delivery fee entirely,
+  // which would leave subscriptionPrice/shippingPencePerCycle wrong (too low) for the rest of
+  // this subscription's life after the intro period ends.
+  let revertedSubscriptionPrice = Number(
+    (updated.normalPrice * (1 - (updated.discountPercent || 0) / 100)).toFixed(2)
+  );
+  let revertedShippingPencePerCycle = updated.shippingPencePerCycle ?? 0;
+  try {
+    const variant = await CoffeeVariant.findById(updated.variantId);
+    if (variant) {
+      const priced = await ensureStripeSubscriptionPrices(variant);
+      revertedSubscriptionPrice = priced.subscriptionPrice;
+      revertedShippingPencePerCycle = priced.shippingPencePerCycle;
+    }
+  } catch (err) {
+    console.warn('⚠️ Could not recompute post-intro price/delivery fee, using discount-only fallback:', getErrorMessage(err));
+  }
+
   await Subscription.updateOne(
     { _id: updated._id },
     {
       $set: {
         introActive: false,
         stripePriceId: updated.normalStripePriceId || updated.stripePriceId,
-        subscriptionPrice: Number(
-          (updated.normalPrice * (1 - (updated.discountPercent || 0) / 100)).toFixed(2)
-        ),
+        subscriptionPrice: revertedSubscriptionPrice,
+        shippingPencePerCycle: revertedShippingPencePerCycle,
       },
     }
   ).exec();

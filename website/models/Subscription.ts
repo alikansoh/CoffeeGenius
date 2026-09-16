@@ -61,11 +61,16 @@ export interface ISubscription extends Document {
 
   /** Delivery cadence in weeks, e.g. 2/4/6 */
   frequencyWeeks: number;
-  /** Per-cycle delivery fee, added as a second Stripe subscription item when the recurring
-   *  amount doesn't clear the store's free-delivery threshold. 0 (or unset) means free delivery —
-   *  decided once at signup and held stable for the life of the subscription. */
+  /** Per-cycle delivery fee (see /admin/settings' "Subscription delivery" section) — baked
+   *  into stripePriceId's own unit_amount alongside the coffee price, not a second Stripe
+   *  item, since the fee only depends on the coffee price vs. the threshold (same for every
+   *  customer on that variant). 0 means free delivery. Recomputed at signup, frequency change,
+   *  and when an intro offer ends — otherwise held stable for the life of the subscription,
+   *  same as the coffee price itself. */
   shippingPencePerCycle?: number;
+  /** @deprecated unused — kept only so old documents that still have these don't break */
   stripeShippingPriceId?: string;
+  /** @deprecated unused — kept only so old documents that still have these don't break */
   stripeShippingItemId?: string;
   status: SubscriptionStatus;
 

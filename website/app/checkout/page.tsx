@@ -284,6 +284,10 @@ export default function CheckoutPage() {
     clientSecret: string | null;
     introOffer: { percentOff: number; cycles: number } | null;
     chargePrice: number | null; // per-unit price actually charged today (intro price if active)
+    /** Delivery fee baked into chargePrice, per delivery — 0 means free (see admin settings'
+     *  "Subscription delivery" section). Shown as its own line for clarity even though it's
+     *  already included in chargePrice/the actual Stripe charge. */
+    shippingPence: number | null;
   };
   const subscriptionIntentKeysRef = useRef<Record<string, string>>({});
   const [subResults, setSubResults] = useState<Record<string, SubscriptionPricing>>({});
@@ -321,6 +325,7 @@ export default function CheckoutPage() {
               ? { percentOff: data.introOffer.percentOff, cycles: data.introOffer.cycles }
               : null,
             chargePrice: typeof data.subscriptionPrice === "number" ? data.subscriptionPrice : null,
+            shippingPence: typeof data.shippingPence === "number" ? data.shippingPence : null,
           },
         }));
         return data;
@@ -361,7 +366,8 @@ export default function CheckoutPage() {
   }, [mounted, subscriptionItems, hasOneTimeItems, subscriptionCouponCode]);
 
   // What each subscription actually charges today (intro price while active, else normal) —
-  // subscriptions never carry a delivery charge, so no shipping component here.
+  // already includes any subscription delivery fee, since that's baked into the Stripe Price
+  // itself rather than billed as a separate line (see lib/subscriptionPricing.ts).
   const subscriptionChargeAmount = subscriptionItems.reduce((sum, it) => {
     const chargePrice = subResults[it.id]?.chargePrice;
     return sum + (chargePrice ?? it.price) * it.quantity;
@@ -780,18 +786,28 @@ export default function CheckoutPage() {
                   <span className="text-sm font-medium text-gray-600 block">Recurring subtotal</span>
                   {subscriptionItems.map((it) => {
                     const result = subResults[it.id];
+                    const chargePrice = result?.chargePrice ?? it.price;
+                    const shippingPence = result?.shippingPence ?? null;
                     return (
                       <div key={it.id}>
                         <div className="flex justify-between items-center gap-3">
                           <span className="text-xs text-gray-500 truncate">{it.name}</span>
                           <span className="text-sm sm:text-base font-semibold text-black whitespace-nowrap">
-                            £{(it.price * it.quantity).toFixed(2)} every {it.frequencyWeeks} week
+                            £{(chargePrice * it.quantity).toFixed(2)} every {it.frequencyWeeks} week
                             {(it.frequencyWeeks || 1) > 1 ? "s" : ""}
                           </span>
                         </div>
                         <div className="flex justify-between items-center gap-3">
                           <span className="text-xs text-gray-500">Delivery</span>
-                          <span className="text-xs font-medium text-black">FREE</span>
+                          <span className="text-xs font-medium text-black">
+                            {shippingPence === null ? (
+                              "—"
+                            ) : shippingPence === 0 ? (
+                              "FREE"
+                            ) : (
+                              `£${penceToPounds(shippingPence).toFixed(2)}`
+                            )}
+                          </span>
                         </div>
                         {result?.introOffer && (
                           <p className="text-xs text-gray-500">
