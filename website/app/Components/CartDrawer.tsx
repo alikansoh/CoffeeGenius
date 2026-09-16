@@ -110,13 +110,27 @@ export default function CartDrawer() {
   const coffeeItems = allCoffeeItems.filter((item) => !item.isSubscription);
   const equipmentItems = mounted ? getItemsByType("equipment") : [];
 
-  // Shipping calculation uses pence internally
-  const subtotalPence = Math.round(totalPrice * 100);
-  const shippingPence = computeShippingPence(subtotalPence, {
-    deliveryPricePence: deliveryPence,
-    freeDeliveryThresholdPence: thresholdPence,
-    freeDeliveryEnabled: freeEnabled,
-  });
+  // Shipping calculation uses pence internally — the one-off order delivery threshold is
+  // checked against one-off items ONLY. Subscription items never factor into this: each one
+  // already has its own delivery fee (if any) baked into its price at subscribe time, using a
+  // completely separate "Subscription delivery" setting (see /admin/settings) with its own
+  // threshold — mixing the two would both use the wrong rule AND the wrong basis (combining
+  // subscription totals into a one-off threshold check inflates it past what the customer
+  // actually pays, or wrongly waives a fee a subscription item should have).
+  const oneOffSubtotalPence =
+    Math.round(totalPrice * 100) -
+    subscriptionItems.reduce((sum, item) => sum + Math.round(item.price * item.quantity * 100), 0);
+  // No one-off items at all -> nothing to charge one-off shipping on, regardless of threshold
+  // (computeShippingPence(0, ...) would otherwise treat an empty subtotal as "below threshold"
+  // and wrongly charge delivery for a basket that's subscription-only).
+  const hasOneOffItems = coffeeItems.length > 0 || equipmentItems.length > 0;
+  const shippingPence = !hasOneOffItems
+    ? 0
+    : computeShippingPence(oneOffSubtotalPence, {
+        deliveryPricePence: deliveryPence,
+        freeDeliveryThresholdPence: thresholdPence,
+        freeDeliveryEnabled: freeEnabled,
+      });
   const shipping = penceToPounds(shippingPence);
   const grandTotal = Math.round((totalPrice + shipping) * 100) / 100;
 
@@ -329,6 +343,15 @@ export default function CartDrawer() {
                                   {item.subscriptionDiscountPercent
                                     ? ` with ${item.subscriptionDiscountPercent}% discount`
                                     : ""}
+                                </div>
+                                <div className="mt-0.5 text-xs">
+                                  {(item.subscriptionShippingPence ?? 0) > 0 ? (
+                                    <span className="text-gray-500">
+                                      Includes {formatPenceToGBP(item.subscriptionShippingPence!)} delivery
+                                    </span>
+                                  ) : (
+                                    <span className="text-green-600">Free delivery</span>
+                                  )}
                                 </div>
                               </div>
                               <div className="text-sm font-semibold whitespace-nowrap">
@@ -603,19 +626,21 @@ export default function CartDrawer() {
                   <span className="text-gray-600">Subtotal</span>
                   <span className="font-medium">{formatPrice(totalPrice)}</span>
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-600">Shipping</span>
-                  <span className="font-medium">
-                    {shippingPence === 0 ? (
-                      <span className="text-green-600">FREE</span>
-                    ) : (
-                      formatPenceToGBP(shippingPence)
-                    )}
-                  </span>
-                </div>
-                {freeEnabled && subtotalPence < thresholdPence && (
+                {hasOneOffItems && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">Shipping</span>
+                    <span className="font-medium">
+                      {shippingPence === 0 ? (
+                        <span className="text-green-600">FREE</span>
+                      ) : (
+                        formatPenceToGBP(shippingPence)
+                      )}
+                    </span>
+                  </div>
+                )}
+                {hasOneOffItems && freeEnabled && oneOffSubtotalPence < thresholdPence && (
                   <div className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded">
-                    Add {formatPenceToGBP(thresholdPence - subtotalPence)} more
+                    Add {formatPenceToGBP(thresholdPence - oneOffSubtotalPence)} more
                     for free shipping
                   </div>
                 )}

@@ -33,6 +33,12 @@ export interface CartItem {
   /** The standard subscribe & save discount % baked into `price` — shown on checkout
    *  as "Delivery every N weeks with X% discount", separate from any coupon/intro offer. */
   subscriptionDiscountPercent?: number;
+  /** Subscription delivery fee already baked into `price` (see /admin/settings' "Subscription
+   *  delivery" section), in pence — 0/undefined means free. Snapshotted when added to the cart,
+   *  same as `price` itself; not re-checked against settings again until the subscription is
+   *  actually created server-side. Lets the basket show the real per-item delivery status
+   *  instead of running it through the one-off order delivery calculation. */
+  subscriptionShippingPence?: number;
 }
 
 interface CartStore {

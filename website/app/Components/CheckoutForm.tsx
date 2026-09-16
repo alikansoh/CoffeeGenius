@@ -1475,8 +1475,11 @@ export default function CheckoutForm({
     <form onSubmit={handleSubmit} method="POST" autoComplete="on" noValidate className="space-y-4 sm:space-y-6">
       {/* Apple Pay / Google Pay isn't offered for subscriptions in this phase — the express-pay
           confirmation path below assumes a single one-off charge and isn't wired up to also
-          confirm a second (subscription) charge the way the normal card form below is. */}
-      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && isValidEmail(email) && (
+          confirm a second (subscription) charge the way the normal card form below is.
+          No email gate here — requestPayerEmail: true (see the paymentRequest() call above)
+          means the wallet itself supplies the email, so the customer never has to type one
+          first just to see the button. */}
+      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && (
         <div className="mb-2">
           <PaymentRequestButtonElement
             options={{
@@ -1491,12 +1494,6 @@ export default function CheckoutForm({
             }}
           />
           <div className="text-xs text-gray-500 mt-2">Pay with Apple Pay / Google Pay</div>
-        </div>
-      )}
-
-      {!isSubscriptionCheckout && !secondaryClientSecrets?.length && canUsePaymentRequest && paymentRequest && !isValidEmail(email) && (
-        <div className="mb-2 p-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600">
-          Enter a valid email address above to use Apple Pay or Google Pay
         </div>
       )}
 

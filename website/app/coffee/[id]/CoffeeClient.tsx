@@ -977,6 +977,7 @@ export default function ProductDetailPage() {
         isSubscription: true,
         frequencyWeeks: subscribeFrequencyWeeks,
         subscriptionDiscountPercent: selectedVariant.subscriptionDiscountPercent || 0,
+        subscriptionShippingPence: subscriptionPricePreview?.shippingPencePerCycle ?? undefined,
       },
       1
     );
