@@ -37,6 +37,23 @@ async function getSubscriptionDeliveryFeePence(basePricePence: number): Promise<
 }
 
 /**
+ * Pure DB-only computation of what a variant's subscription actually charges per delivery
+ * (coffee price + delivery fee) — no Stripe calls, so it's cheap enough to call on every page
+ * render/selection change for display purposes. This is the exact same math
+ * ensureStripeSubscriptionPrices uses to set the real Stripe Price, so a displayed price here
+ * never drifts from what actually gets charged at signup.
+ */
+export async function computeSubscriptionChargeWithDelivery(
+  variant: Pick<ICoffeeVariant, "price" | "subscriptionDiscountPercent">
+): Promise<{ subscriptionPrice: number; basePrice: number; shippingPencePerCycle: number }> {
+  const basePrice = computeSubscriptionPrice(variant.price, variant.subscriptionDiscountPercent || 0);
+  const basePricePence = Math.round(basePrice * 100);
+  const shippingPencePerCycle = await getSubscriptionDeliveryFeePence(basePricePence);
+  const subscriptionPrice = Number(((basePricePence + shippingPencePerCycle) / 100).toFixed(2));
+  return { subscriptionPrice, basePrice, shippingPencePerCycle };
+}
+
+/**
  * Ensures a variant with subscriptions enabled has a live Stripe recurring
  * Price for every offered delivery frequency, creating the Stripe
  * Product/Prices as needed. The charge amount is the same across
@@ -57,14 +74,8 @@ export async function ensureStripeSubscriptionPrices(
   subscriptionPrice: number;
   shippingPencePerCycle: number;
 }> {
-  const basePrice = computeSubscriptionPrice(
-    variant.price,
-    variant.subscriptionDiscountPercent || 0
-  );
-  const basePricePence = Math.round(basePrice * 100);
-  const shippingPencePerCycle = await getSubscriptionDeliveryFeePence(basePricePence);
-  const unitAmountPence = basePricePence + shippingPencePerCycle;
-  const subscriptionPrice = Number((unitAmountPence / 100).toFixed(2));
+  const { subscriptionPrice, shippingPencePerCycle } = await computeSubscriptionChargeWithDelivery(variant);
+  const unitAmountPence = Math.round(subscriptionPrice * 100);
 
   const stripe = getStripe();
 

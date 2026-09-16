@@ -363,6 +363,13 @@ export default function ProductDetailPage() {
   const [purchaseType, setPurchaseType] = useState<"onetime" | "subscribe">(
     "onetime"
   );
+  // Real per-delivery price (coffee + any subscription delivery fee) fetched from the same
+  // pricing engine /api/subscriptions/create actually charges from — a hand-computed client-side
+  // estimate here would silently drift from what gets charged once a delivery fee applies.
+  const [subscriptionPricePreview, setSubscriptionPricePreview] = useState<{
+    subscriptionPrice: number;
+    shippingPencePerCycle: number;
+  } | null>(null);
   const [activeAccordion, setActiveAccordion] = useState<string | null>(
     "details"
   );
@@ -764,6 +771,31 @@ export default function ProductDetailPage() {
     );
   }, [product, selectedSize, selectedGrind, selectedRoastStyle, derivedIsOmni]);
 
+  // Real subscribe price (coffee + delivery fee) for whichever variant is currently selected —
+  // refetched whenever the selection changes, so switching size/grind updates the shown price.
+  useEffect(() => {
+    if (!selectedVariant?.subscriptionEnabled) {
+      setSubscriptionPricePreview(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/subscriptions/price-preview?variantId=${selectedVariant._id}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (cancelled || !data) return;
+        setSubscriptionPricePreview({
+          subscriptionPrice: data.subscriptionPrice,
+          shippingPencePerCycle: data.shippingPencePerCycle,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSubscriptionPricePreview(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVariant?._id, selectedVariant?.subscriptionEnabled]);
+
   useEffect(() => {
     setUserSelectedGrind(null);
   }, [selectedRoastStyle]);
@@ -933,8 +965,9 @@ export default function ProductDetailPage() {
         variantId: selectedVariant._id,
         name: `${product?.name} — ${selectedSize} — ${selectedGrind}`,
         price:
+          subscriptionPricePreview?.subscriptionPrice ??
           selectedVariant.price *
-          (1 - (selectedVariant.subscriptionDiscountPercent || 0) / 100),
+            (1 - (selectedVariant.subscriptionDiscountPercent || 0) / 100),
         img: selectedVariant.img || product?.img || "/test.webp",
         size: selectedVariant.size,
         grind: selectedVariant.grind,
@@ -1958,13 +1991,24 @@ export default function ProductDetailPage() {
                           >
                             £
                             {(
+                              subscriptionPricePreview?.subscriptionPrice ??
                               selectedVariant.price *
-                              (1 -
-                                (selectedVariant.subscriptionDiscountPercent ||
-                                  0) /
-                                  100)
+                                (1 -
+                                  (selectedVariant.subscriptionDiscountPercent ||
+                                    0) /
+                                    100)
                             ).toFixed(2)}
                             /delivery
+                            {subscriptionPricePreview &&
+                              (subscriptionPricePreview.shippingPencePerCycle === 0 ? (
+                                <span className="block text-[10px] normal-case font-normal mt-0.5 text-emerald-500">
+                                  Free delivery
+                                </span>
+                              ) : (
+                                <span className="block text-[10px] normal-case font-normal mt-0.5 text-zinc-400">
+                                  Incl. £{(subscriptionPricePreview.shippingPencePerCycle / 100).toFixed(2)} delivery
+                                </span>
+                              ))}
                           </p>
                         </button>
                       </div>
@@ -2038,12 +2082,12 @@ export default function ProductDetailPage() {
                           <ShoppingCart size={18} />
                           Subscribe — £
                           {(
-                            selectedVariant.price *
-                            (1 -
-                              (selectedVariant.subscriptionDiscountPercent ||
-                                0) /
-                                100) *
-                            quantity
+                            (subscriptionPricePreview?.subscriptionPrice ??
+                              selectedVariant.price *
+                                (1 -
+                                  (selectedVariant.subscriptionDiscountPercent ||
+                                    0) /
+                                    100)) * quantity
                           ).toFixed(2)}
                           /delivery
                         </>
