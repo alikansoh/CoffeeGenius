@@ -1381,7 +1381,7 @@ export default function CreateVariantsPage({
                               <input
                                 type="number"
                                 min="0"
-                                value={variant.stock}
+                                value={variant.stock === 0 ? "" : variant.stock}
                                 onChange={(e) =>
                                   handleVariantChange(
                                     i,
@@ -1418,7 +1418,7 @@ export default function CreateVariantsPage({
                                     min={0}
                                     max={100}
                                     step={1}
-                                    value={variant.subscriptionDiscountPercent}
+                                    value={variant.subscriptionDiscountPercent === 0 ? "" : variant.subscriptionDiscountPercent}
                                     onChange={(e) =>
                                       handleVariantChange(
                                         i,

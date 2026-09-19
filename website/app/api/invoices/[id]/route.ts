@@ -373,22 +373,22 @@ export async function PUT(
       }
     }
 
-    // ✅ Resend email if requested
+    // ✅ Resend email if requested — awaited (not fire-and-forget): on Vercel, an un-awaited
+    // promise can be killed the moment the response below is returned, so the email would
+    // silently never send.
+    let emailError: string | null = null;
     if (sendEmail) {
-      processInvoice(invoiceData, companyInfo)
-        .then(async () => {
-          await Invoice.findByIdAndUpdate(id, { $set: { sent: true, sentAt: new Date() } });
-          console.log(`✉️ Updated invoice sent: ${id}`);
-        })
-        .catch(async (err: unknown) => {
-          console.error("⚠️ Failed to send updated invoice:", err);
-          await Invoice.findByIdAndUpdate(id, {
-            $set: {
-              sent: false,
-              sendError: err instanceof Error ? err.message : String(err),
-            },
-          });
+      try {
+        await processInvoice(invoiceData, companyInfo);
+        await Invoice.findByIdAndUpdate(id, { $set: { sent: true, sentAt: new Date() } });
+        console.log(`✉️ Updated invoice sent: ${id}`);
+      } catch (err: unknown) {
+        console.error("⚠️ Failed to send updated invoice:", err);
+        emailError = err instanceof Error ? err.message : String(err);
+        await Invoice.findByIdAndUpdate(id, {
+          $set: { sent: false, sendError: emailError },
         });
+      }
     }
 
     return NextResponse.json(
@@ -399,6 +399,8 @@ export async function PUT(
           orderNumber: updated.orderNumber,
           total: updated.total,
         },
+        emailSent: sendEmail ? !emailError : undefined,
+        emailError: emailError ?? undefined,
       },
       { status: 200 }
     );

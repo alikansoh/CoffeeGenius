@@ -540,20 +540,29 @@ export default function CreateInvoiceForm({ invoice, isEditing = false }: Create
         throw new Error(data.error || `Failed to ${isEditing ? "update" : "create"} invoice (${res.status})`);
       }
 
-      setToast({
-        type: "success",
-        message: isEditing
-          ? shouldSendEmail
-            ? "Invoice updated and sent successfully!"
-            : "Invoice updated successfully!"
-          : shouldSendEmail
-            ? "Invoice created and sent successfully!"
-            : "Invoice created successfully!",
-      });
+      const emailFailed = shouldSendEmail && data.emailSent === false;
+
+      if (emailFailed) {
+        setToast({
+          type: "error",
+          message: `Invoice ${isEditing ? "updated" : "created"}, but the email failed to send: ${data.emailError || "unknown error"}. You can retry from the invoice's "Send reminder" action.`,
+        });
+      } else {
+        setToast({
+          type: "success",
+          message: isEditing
+            ? shouldSendEmail
+              ? "Invoice updated and sent successfully!"
+              : "Invoice updated successfully!"
+            : shouldSendEmail
+              ? "Invoice created and sent successfully!"
+              : "Invoice created successfully!",
+        });
+      }
 
       setTimeout(() => {
         window.location.href = "/admin/invoice";
-      }, 1500);
+      }, emailFailed ? 4000 : 1500);
     } catch (err) {
       setToast({
         type: "error",

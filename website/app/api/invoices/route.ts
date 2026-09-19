@@ -296,21 +296,22 @@ export async function POST(req: Request) {
         const pdfBuffer = await generateInvoicePDF(invoiceData, companyInfo);
 
         if (sendEmail) {
-          sendInvoiceEmail(invoiceData, Buffer.from(pdfBuffer))
-            .then(async () => {
-              await Invoice.findByIdAndUpdate(invoice._id, {
-                sent: true,
-                sentAt: new Date(),
-              });
-              console.log(`✉️ Manual invoice sent (background): ${invoice._id.toString()}`);
-            })
-            .catch(async (err: unknown) => {
-              console.error('⚠️ Failed to send manual invoice (background):', err);
-              await Invoice.findByIdAndUpdate(invoice._id, {
-                sent: false,
-                sendError: err instanceof Error ? err.message : String(err),
-              });
+          // Awaited (not fire-and-forget): on Vercel, an un-awaited promise can be killed the
+          // moment the response below is returned, so the email would silently never send.
+          try {
+            await sendInvoiceEmail(invoiceData, Buffer.from(pdfBuffer));
+            await Invoice.findByIdAndUpdate(invoice._id, {
+              sent: true,
+              sentAt: new Date(),
             });
+            console.log(`✉️ Manual invoice sent: ${invoice._id.toString()}`);
+          } catch (err: unknown) {
+            console.error('⚠️ Failed to send manual invoice:', err);
+            await Invoice.findByIdAndUpdate(invoice._id, {
+              sent: false,
+              sendError: err instanceof Error ? err.message : String(err),
+            });
+          }
         }
 
         const uint8 = new Uint8Array(pdfBuffer);
@@ -331,22 +332,26 @@ export async function POST(req: Request) {
       }
     }
 
+    let emailError: string | null = null;
+
     if (sendEmail) {
-      processInvoice(invoiceData, companyInfo)
-        .then(async () => {
-          await Invoice.findByIdAndUpdate(invoice._id, {
-            sent: true,
-            sentAt: new Date(),
-          });
-          console.log(`✉️ Manual invoice sent: ${invoice._id.toString()}`);
-        })
-        .catch(async (err: unknown) => {
-          console.error('⚠️ Failed to send manual invoice:', err);
-          await Invoice.findByIdAndUpdate(invoice._id, {
-            sent: false,
-            sendError: err instanceof Error ? err.message : String(err),
-          });
+      // Awaited (not fire-and-forget): on Vercel, an un-awaited promise can be killed the
+      // moment the response below is returned, so the email would silently never send.
+      try {
+        await processInvoice(invoiceData, companyInfo);
+        await Invoice.findByIdAndUpdate(invoice._id, {
+          sent: true,
+          sentAt: new Date(),
         });
+        console.log(`✉️ Manual invoice sent: ${invoice._id.toString()}`);
+      } catch (err: unknown) {
+        console.error('⚠️ Failed to send manual invoice:', err);
+        emailError = err instanceof Error ? err.message : String(err);
+        await Invoice.findByIdAndUpdate(invoice._id, {
+          sent: false,
+          sendError: emailError,
+        });
+      }
     }
 
     return NextResponse.json(
@@ -357,6 +362,8 @@ export async function POST(req: Request) {
           orderNumber: invoiceNumber,
           total: invoice.total,
         },
+        emailSent: sendEmail ? !emailError : undefined,
+        emailError: emailError ?? undefined,
       },
       { status: 201 }
     );
